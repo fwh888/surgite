@@ -33,7 +33,7 @@ Accepts a repo path on the local filesystem. Runs `git log` for the given date r
 **Request body:**
 ```json
 {
-  "repo_path": "/home/nick/projects/arbiter",
+  "repo_path": "/home/nick/dev/Arbiter",
   "since": "2026-05-01",
   "until": "2026-05-14"
 }
@@ -42,7 +42,7 @@ Accepts a repo path on the local filesystem. Runs `git log` for the given date r
 **Response:**
 ```json
 {
-  "repo": "arbiter",
+  "repo": "Arbiter",
   "inserted": 12,
   "updated": 0,
   "unchanged": 3
@@ -66,7 +66,7 @@ Returns a list of commits. All query params are optional.
 | `since` | date (YYYY-MM-DD) | `?since=2026-05-01` |
 | `until` | date (YYYY-MM-DD) | `?until=2026-05-14` |
 | `author` | string | `?author=nick` |
-| `repo` | string | `?repo=arbiter` |
+| `repo` | string | `?repo=Arbiter` |
 | `limit` | int (default 50) | `?limit=100` |
 | `offset` | int (default 0) | `?offset=50` |
 
@@ -81,7 +81,7 @@ Returns a list of commits. All query params are optional.
       "date": "2026-05-14",
       "author": "Nick Coleman",
       "message": "add scan systemd timer",
-      "repo": "arbiter",
+      "repo": "Arbiter",
       "ingested_at": "2026-05-14T09:00:00Z"
     }
   ]
@@ -117,8 +117,8 @@ Returns an aggregated view. Useful for generating standup text.
   "period": { "since": "2026-05-07", "until": "2026-05-14" },
   "total_commits": 11,
   "by_repo": {
-    "arbiter": 8,
-    "standup": 3
+    "Arbiter": 8,
+    "standup-gen": 3
   },
   "by_day": {
     "2026-05-13": 4,
@@ -139,19 +139,19 @@ The CLI is invoked via the `standup` console script (defined in `pyproject.toml`
 
 ```bash
 # Print commits to stdout
-standup /path/to/repo --since 2026-05-01
+standup /home/nick/dev/Arbiter --since 2026-05-01
 
 # Filter by author
-standup /path/to/repo --since 2026-05-01 --author "Nick Coleman"
+standup /home/nick/dev/Arbiter --since 2026-05-01 --author "Nick Coleman"
 
 # Write output to a file
-standup /path/to/repo --since 2026-05-01 --output standup.txt
+standup /home/nick/dev/Arbiter --since 2026-05-01 --output standup.txt
 
 # Generate an AI summary (existing feature, uses GROQ_API_KEY)
-standup /path/to/repo --since 2026-05-01 --summarize
+standup /home/nick/dev/Arbiter --since 2026-05-01 --summarize
 
 # Ingest into the API instead of printing (new in this upgrade)
-standup /path/to/repo --since 2026-05-01 --ingest http://localhost:8000
+standup /home/nick/dev/Arbiter --since 2026-05-01 --ingest http://localhost:8000
 ```
 
 ---
@@ -211,7 +211,7 @@ uv run alembic upgrade head
 uv run uvicorn standup.api:app --reload --host "${API_HOST:-127.0.0.1}" --port "${API_PORT:-8000}"
 
 # Run the CLI
-uv run standup /path/to/repo --since 2026-05-01
+uv run standup /home/nick/dev/Arbiter --since 2026-05-01
 ```
 
 ---
@@ -255,8 +255,8 @@ Once the API is running, create a script `ingest_all.sh`:
 ```bash
 #!/bin/bash
 REPOS=(
-  "/home/nick/projects/arbiter"
-  "/home/nick/projects/standup"
+  "/home/nick/dev/Arbiter"
+  "/home/nick/dev/standup-gen"
 )
 
 for repo in "${REPOS[@]}"; do
