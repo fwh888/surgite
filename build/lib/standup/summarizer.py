@@ -2,9 +2,19 @@ from groq import Groq
 
 def summarize_commits(summary: str) -> str:
     client = Groq()
-    prompt = f"Summarize the following git commit messages into a standup update suitable for sending to a manager: \n\n{summary}"
     response = client.chat.completions.create(
         model = "llama-3.1-8b-instant",
-        messages = [{"role": "user", "content": prompt}]
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are helping Nick write his weekly standup update. "
+                    "Nick is the developer who wrote all the commits. "
+                    "Given his git commits, write a brief, plain standup summary in first person. "
+                    "No bullet points, no headers, no fluff — just some sentences he can copy and send."
+                ),
+            },
+            {"role": "user", "content": summary},
+        ],
     )
     return response.choices[0].message.content or "No summary available."
