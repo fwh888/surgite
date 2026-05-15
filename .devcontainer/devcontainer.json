@@ -3,7 +3,7 @@
   "dockerComposeFile": ["../docker-compose.yml"],
   "service": "app",
   "workspaceFolder": "/workspace",
-  "postCreateCommand": "uv sync",
+  "postCreateCommand": "uv sync && npm install -g @anthropic-ai/claude-code",
   "forwardPorts": [8000, 5432],
   "portsAttributes": {
     "8000": { "label": "API" },
@@ -14,7 +14,8 @@
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance",
-        "ms-python.debugpy"
+        "ms-python.debugpy",
+        "anthropic.claude-code"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/workspace/.venv/bin/python"
