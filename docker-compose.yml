@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - .:/workspace:cached
+      # Uncomment and adjust to mount local repos the CLI/API will ingest:
+      # - /Users/nicholas/dev:/repos:ro
+    command: sleep infinity
+    environment:
+      DATABASE_URL: postgresql://standup:standup@db:5432/standup
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: standup
+      POSTGRES_PASSWORD: standup
+      POSTGRES_DB: standup
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U standup"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  pgdata:
