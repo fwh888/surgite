@@ -1,6 +1,6 @@
 # standup-gen
 
-Generates a standup summary from a git repository's commit history. Optionally uses AI (via Groq) to turn the raw commits into a short, readable paragraph you can copy and send.
+Generates a summary from a git repository's commit history. Optionally uses AI (via Groq) to turn the raw commits into a short, readable paragraph you can copy and send.
 
 ## Setup
 
