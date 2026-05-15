@@ -62,17 +62,3 @@ standup /path/to/your/repo --since 1.day.ago --summarize
 | `--author` | *(none)* | Filter to a specific author |
 | `--summarize` | off | Use AI to write a prose summary |
 | `--output` | *(stdout)* | Write output to a file instead |
-
-## Personalizing the AI summary
-
-The AI prompt in `standup/summarizer.py` is written for myself (Nick). So update the prompt in the summarizer file if you want it to be accurate for you.
-
-```python
-"content": (
-    "You are helping <YOUR NAME> write their daily standup update. "
-    "<YOUR NAME> is the developer who wrote all the commits. "
-    ...
-),
-```
-
-You may also want to adjust the tone or format instructions in that same string.
