@@ -8,7 +8,7 @@ on:
 jobs:
   typecheck:
     name: Type check (mypy)
-    runs-on: ubuntu-latest
+    runs-on: host
     steps:
       - uses: actions/checkout@v4
 
@@ -23,7 +23,7 @@ jobs:
 
   lockfile:
     name: Lock file drift
-    runs-on: ubuntu-latest
+    runs-on: host
     steps:
       - uses: actions/checkout@v4
 
@@ -34,8 +34,8 @@ jobs:
         run: uv lock --check
 
   audit:
-    name: Dependency audit
-    runs-on: ubuntu-latest
+    name: Dependency audit (pip-audit)
+    runs-on: host
     steps:
       - uses: actions/checkout@v4
 
