@@ -1,18 +1,40 @@
 import subprocess
 from standup.models import Commit
 
-def get_raw_log(repo_path: str, since: str, until: str, author: str | None = None) -> str:
+def _is_git_ref(repo_path: str, value: str) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", value],
+        capture_output=True,
+        cwd=repo_path
+    )
+    return result.returncode == 0
+
+def get_raw_log(repo_path: str, since: str, until: str, author: str | None = None, since_commit: str | None = None) -> str:
     """
-    args: repo_path, since, until, author
+    args: repo_path, since, until, author, since_commit
 
     Fetches the specified raw git logs.
     """
     cmd = ["git", "log",
-        f"--since={since}",
-        f"--until={until}",
         "--pretty=format:%H\x1f%ad\x1f%an\x1f%s",
         "--date=short"]
-    
+
+    until_is_ref = _is_git_ref(repo_path, until)
+
+    if since_commit:
+        if until_is_ref:
+            cmd.append(f"{since_commit}..{until}")
+        else:
+            cmd.append(f"{since_commit}..")
+            cmd.append(f"--until={until}")
+    else:
+        if until_is_ref:
+            cmd.append(until)
+            cmd.append(f"--since={since}")
+        else:
+            cmd.append(f"--since={since}")
+            cmd.append(f"--until={until}")
+
     if author:
         cmd.append(f"--author={author}")
 
