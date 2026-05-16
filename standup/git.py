@@ -10,7 +10,7 @@ def get_raw_log(repo_path: str, since: str, until: str, author: str | None = Non
     cmd = ["git", "log",
         f"--since={since}",
         f"--until={until}",
-        "--pretty=format:%H|%ad|%an|%s",
+        "--pretty=format:%H\x1f%ad\x1f%an\x1f%s",
         "--date=short"]
     
     if author:
@@ -33,4 +33,4 @@ def parse_log(raw_log: str) -> list[Commit]:
     Parses the raw git log into a list of Commit objects.
     """
     lines = raw_log.splitlines()
-    return [Commit(*line.split("|")) for line in lines] # Unpacking the split line directly into the Commit dataclass constructor
+    return [Commit(*line.split("\x1f")) for line in lines] # Unpacking the split line directly into the Commit dataclass constructor
