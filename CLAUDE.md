@@ -12,6 +12,8 @@ uv sync
 uv run standup /path/to/repo --since 7.days.ago
 uv run standup /path/to/repo --since 2026-05-01 --summarize     # requires GROQ_API_KEY
 uv run standup /path/to/repo --since 2026-05-01 --output out.txt
+uv run standup /path/to/repo --since 2026-05-01 --until 2026-05-10
+uv run standup /path/to/repo --since 7.days.ago --author "Alice"
 
 # Install as a global tool (makes `standup` available anywhere)
 uv tool install .
@@ -21,9 +23,6 @@ uv run uvicorn standup.api:app --reload --host "${API_HOST:-127.0.0.1}" --port "
 
 # Run migrations (once db.py and alembic exist)
 uv run alembic upgrade head
-
-# Start Postgres via Docker
-docker compose up -d
 ```
 
 There is no test suite yet.
@@ -42,10 +41,8 @@ git.get_raw_log()  →  git.parse_log()  →  formatter.format_log()  →  stdou
 - `standup/models.py` — `Commit` dataclass (`hash`, `date`, `author`, `message`)
 - `standup/git.py` — runs `git log` via subprocess; `get_raw_log()` returns raw text, `parse_log()` returns `list[Commit]`
 - `standup/formatter.py` — formats `Commit` objects to `[date] message (author) <short_hash>` strings
-- `standup/summarizer.py` — sends formatted log to Groq (`llama-3.1-8b-instant`) for a plain-English standup paragraph; the system prompt is personalized for Nick and should be updated for other users
+- `standup/summarizer.py` — sends formatted log to Groq (`llama-3.1-8b-instant`); outputs an "Accomplishments:" bullet list in neutral language; identity is injected via `STANDUP_USER`/`STANDUP_ROLE` env vars
 - `standup/standup.py` — argparse CLI entry point; registered as the `standup` console script in `pyproject.toml`
-
-**Known issue:** `git.py` currently uses `|` as a field delimiter, which breaks if a commit message contains `|`. The upgrade spec calls for switching to `\x1f` (ASCII unit separator).
 
 ## Planned v1 Upgrade (in progress)
 
