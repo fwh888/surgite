@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 @dataclass
 class Commit:
-    hash: str
-    date: str
-    author: str
-    message: str
+    hash: str # full 40 char git hash
+    date: str # YYYY-MM-DD
+    author: str # name string
+    message: str # commit message string
 
