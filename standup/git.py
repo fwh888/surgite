@@ -55,4 +55,8 @@ def parse_log(raw_log: str) -> list[Commit]:
     Parses the raw git log into a list of Commit objects.
     """
     lines = raw_log.splitlines()
-    return [Commit(*line.split("\x1f")) for line in lines] # Unpacking the split line directly into the Commit dataclass constructor
+    commits = []
+    for line in lines:
+        hash, date, author, message = line.split("\x1f", maxsplit=3)
+        commits.append(Commit(hash=hash, date=date, author=author, message=message))
+    return commits
