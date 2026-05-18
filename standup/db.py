@@ -5,7 +5,7 @@ from standup.config import DATABASE_URL
 
 engine = create_engine(DATABASE_URL)
 
-class Base(DeclarativeBase):
+class Base(DeclarativeBase): # Base class for SQLAlchemy models
     pass
 
 class CommitRow(Base):
