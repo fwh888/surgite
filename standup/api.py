@@ -49,3 +49,31 @@ def list_commits(
         "total": total,
         "commits": [_row_to_dict(r) for r in rows],
     }
+
+@app.get("/commits/{hash}")
+def get_commit(hash: str):
+    if len(hash) < 7:
+        raise HTTPException(status_code=400, detail="Hash prefix must be at least 7 characters")
+
+    with get_session() as session:
+        if len(hash) == 40:
+            row = session.get(CommitRow, hash)
+            if not row:
+                raise HTTPException(status_code=404, detail="Commit not found")
+            return _row_to_dict(row)
+
+        rows = session.scalars(
+            select(CommitRow).where(CommitRow.hash.startswith(hash))
+        ).all()
+
+        if not rows:
+            raise HTTPException(status_code=404, detail="Commit not found")
+        if len(rows) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Prefix matches multiple commits",
+                    "candidates": [r.hash for r in rows],
+                },
+            )
+        return _row_to_dict(rows[0])
