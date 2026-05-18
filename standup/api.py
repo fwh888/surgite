@@ -7,6 +7,7 @@ from standup.config import GROQ_API_KEY
 from datetime import date, datetime, timezone, timedelta
 
 # FastAPI instance 
+# TODO: Add POST /ingest endpoint (Route 3)
 
 app = FastAPI()
 
