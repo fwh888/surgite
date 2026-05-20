@@ -1,0 +1,63 @@
+"""
+Test config. DATABASE_URL and GROQ_API_KEY must be set BEFORE any `standup.*`
+import, because `standup.config` reads them at module-load time and
+`standup.db` creates the engine at module-load time.
+"""
+import os
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+_db_file = Path(tempfile.gettempdir()) / "standup_test.db"
+if _db_file.exists():
+    _db_file.unlink()
+os.environ["DATABASE_URL"] = f"sqlite:///{_db_file}"
+# Force GROQ_API_KEY empty so ai-summary tests see "not set". load_dotenv() in
+# standup.config respects pre-existing env vars and won't override this.
+os.environ["GROQ_API_KEY"] = ""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from standup.api import app
+from standup.db import Base, CommitRow, engine, get_session
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _schema():
+    Base.metadata.create_all(engine)
+    yield
+    Base.metadata.drop_all(engine)
+
+
+@pytest.fixture(autouse=True)
+def _clean_tables():
+    yield
+    with get_session() as s:
+        s.query(CommitRow).delete()
+        s.commit()
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+@pytest.fixture
+def add_commit():
+    def _add(**overrides):
+        defaults = {
+            "hash": "a" * 40,
+            "short_hash": "aaaaaaa",
+            "date": "2026-05-19",
+            "author": "Alice",
+            "message": "init",
+            "repo": "demo",
+            "ingested_at": datetime.now(timezone.utc),
+        }
+        defaults.update(overrides)
+        with get_session() as s:
+            s.add(CommitRow(**defaults))
+            s.commit()
+
+    return _add
