@@ -14,56 +14,72 @@ uv run standup /path/to/repo --since 2026-05-01 --summarize     # requires GROQ_
 uv run standup /path/to/repo --since 2026-05-01 --output out.txt
 uv run standup /path/to/repo --since 2026-05-01 --until 2026-05-10
 uv run standup /path/to/repo --since 7.days.ago --author "Alice"
+uv run standup /path/to/repo --since-commit abc1234               # range from a commit
 
 # Install as a global tool (makes `standup` available anywhere)
 uv tool install .
 
-# Start the API (once api.py exists)
+# Start the Postgres dev database
+docker compose up -d
+
+# Run migrations
+uv run alembic upgrade head
+
+# Start the API
 uv run uvicorn standup.api:app --reload --host "${API_HOST:-127.0.0.1}" --port "${API_PORT:-8000}"
 
-# Run migrations (once db.py and alembic exist)
-uv run alembic upgrade head
+# Run tests
+uv run pytest
 ```
-
-There is no test suite yet.
 
 ## Architecture
 
-This is a Python CLI tool (and planned REST API) for generating standup summaries from git history.
+This is a Python CLI tool and FastAPI REST API for generating standup summaries from git history. The CLI is standalone (prints/writes formatted log, optionally AI-summarized). The API persists commits in Postgres and exposes them with filtering and summary endpoints.
 
-**Current data flow:**
+**Data flow:**
 
 ```
-git.get_raw_log()  →  git.parse_log()  →  formatter.format_log()  →  stdout / file
-                                                                  ↘  summarizer.summarize_commits()  →  Groq API
+CLI:  git.get_raw_log()  →  git.parse_log()  →  formatter.format_log()  →  stdout / file
+                                                                        ↘  summarizer.summarize_commits()  →  Groq API
+
+API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postgres)
+      GET /commits, /commits/{hash}, /summary  →  SQLAlchemy query  →  JSON
+      GET /summary?ai=true  →  formatter.format_log  →  summarizer  →  Groq API
 ```
 
-- `standup/models.py` — `Commit` dataclass (`hash`, `date`, `author`, `message`)
-- `standup/git.py` — runs `git log` via subprocess; `get_raw_log()` returns raw text, `parse_log()` returns `list[Commit]`
+- `standup/models.py` — `Commit` dataclass (`hash`, `date`, `author`, `message`, optional `repo`, `ingested_at`)
+- `standup/git.py` — runs `git log` via subprocess; `get_raw_log()` supports `since`, `until`, `author`, and `since_commit` (auto-detects whether `until` is a git ref); `parse_log()` returns `list[Commit]`
 - `standup/formatter.py` — formats `Commit` objects to `[date] message (author) <short_hash>` strings
 - `standup/summarizer.py` — sends formatted log to Groq (`llama-3.1-8b-instant`); outputs an "Accomplishments:" bullet list in neutral language; identity is injected via `STANDUP_USER`/`STANDUP_ROLE` env vars
 - `standup/standup.py` — argparse CLI entry point; registered as the `standup` console script in `pyproject.toml`
+- `standup/config.py` — loads `DATABASE_URL` (required), `API_HOST`, `API_PORT`, `GROQ_API_KEY` from env via `python-dotenv`
+- `standup/db.py` — SQLAlchemy engine, `Base`, `CommitRow` ORM model (`commits` table), and `get_session()` factory
+- `standup/schemas.py` — Pydantic request models (`IngestRequest`)
+- `standup/api.py` — FastAPI app with routes:
+  - `POST /ingest` — runs `git log` against `repo_path`, upserts into `commits` (insert / update / unchanged counts returned)
+  - `GET /commits` — paginated list with `since`/`until`/`author`/`repo`/`limit`/`offset` filters
+  - `GET /commits/{hash}` — lookup by full or prefix hash; 400 for invalid hex, 404 for not found, 409 for ambiguous prefix
+  - `GET /summary` — aggregates by repo and day over the full filtered set; `ai=true` runs the Groq summarizer (capped at `AI_SUMMARY_MAX_COMMITS = 500` to bound token cost)
+  - `SQLAlchemyError` is mapped to a 503 globally
+- `alembic/` — migrations; `e5e311c2e5f0_create_commits_table.py` is the initial schema
+- `tests/` — pytest suite covering the API; `conftest.py` swaps in a temp SQLite DB and clears tables between tests
 
-## Planned v1 Upgrade (in progress)
+## Planned upgrades
 
-The upgrade adds persistence and a REST API on top of the existing CLI. Follow the build order in `docs/upgrade-plan.md` — do not skip steps. Key additions:
+- CLI `--ingest <url>` flag to POST to the API instead of printing (not yet wired up in `standup/standup.py`)
+- **v2:** a repo management table (`repos`), new CRUD routes, and a web UI (vanilla JS/Alpine.js served by FastAPI, or React/Vite SPA — see `docs/v2-frontend.md`)
 
-- `standup/config.py` — reads `DATABASE_URL`, `API_HOST`, `API_PORT`, `GROQ_API_KEY` from env
-- `standup/db.py` — SQLAlchemy engine, session factory, ORM model for `commits` table; `Commit` gains `repo` and `ingested_at` fields; uses Alembic for migrations
-- `standup/api.py` — FastAPI app with routes: `POST /ingest`, `GET /commits`, `GET /commits/{hash}`, `GET /summary`
-- CLI gets a new `--ingest <url>` flag to POST to the API instead of printing
-
-**Planned v2** adds a repo management table (`repos`), new CRUD routes, and a web UI (vanilla JS/Alpine.js served by FastAPI, or React/Vite SPA — see `docs/v2-frontend.md`).
+Step-by-step build notes live in `docs/upgrade-plan.md` and `docs/guides/`.
 
 ## Environment Variables
 
 | Variable | Notes |
 |---|---|
+| `DATABASE_URL` | **Required.** `postgresql://standup:standup@localhost:5432/standup` for local dev; the test suite overrides this with a temp SQLite file in `tests/conftest.py` |
 | `GROQ_API_KEY` | Required for `--summarize` and `GET /summary?ai=true` |
-| `DATABASE_URL` | `postgresql://standup:standup@localhost:5432/standup` — required once the DB layer exists |
 | `API_HOST` | Defaults to `127.0.0.1` |
 | `API_PORT` | Defaults to `8000` |
 | `STANDUP_USER` | Name injected into the summarizer prompt (e.g. `Alice`); defaults to `the developer` |
 | `STANDUP_ROLE` | Optional role description (e.g. `backend engineer at Acme`) appended to the identity in the prompt |
 
-The CLI loads `.env` via `python-dotenv` on startup.
+The CLI loads `.env` via `python-dotenv` on startup (and `standup.config` does the same for the API).
