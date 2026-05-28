@@ -1,3 +1,7 @@
+[build-system]
+requires = ["uv_build>=0.9"]
+build-backend = "uv_build"
+
 [project]
 name = "standup-gen"
 version = "0.1.0"
@@ -10,13 +14,26 @@ dependencies = [
     "sqlalchemy>=2.0.49",
     "alembic>=1.18.4",
     "psycopg2-binary>=2.9.12",
+    "fastapi>=0.136.1",
+    "uvicorn>=0.47.0",
+    "requests>=2.34.2",
 ]
 
 [project.scripts]
 standup = "standup.standup:main"
 
+[tool.uv.build-backend]
+module-name = "standup"
+module-root = ""
+
 [dependency-groups]
 dev = [
     "mypy>=1.15.0",
     "pip-audit>=2.9.0",
+    "pytest>=8.3.0",
+    "httpx>=0.27.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
