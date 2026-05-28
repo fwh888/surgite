@@ -164,7 +164,7 @@ def ingest(req: IngestRequest):
 
     since = (req.since or date.today() - timedelta(days=7)).isoformat()
     until = (req.until or date.today()).isoformat()
-    repo_name = os.path.basename(req.repo_path.rstrip("/"))
+    repo_name = os.path.basename(os.path.abspath(req.repo_path))
 
     try:
         raw = get_raw_log(req.repo_path, since, until)
@@ -188,10 +188,8 @@ def ingest(req: IngestRequest):
                     ingested_at=datetime.now(timezone.utc),
                 ))
                 inserted += 1
-            elif (existing.author, existing.message, existing.date) != (c.author, c.message, c.date):
-                existing.author = c.author
-                existing.message = c.message
-                existing.date = c.date
+            elif existing.repo != repo_name:
+                existing.repo = repo_name
                 existing.ingested_at = datetime.now(timezone.utc)
                 updated += 1
             else:
