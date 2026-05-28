@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.9"]
+build-backend = "uv_build"
 
 [project]
 name = "standup-gen"
@@ -22,8 +22,9 @@ dependencies = [
 [project.scripts]
 standup = "standup.standup:main"
 
-[tool.setuptools.packages.find]
-include = ["standup*"]
+[tool.uv.build-backend]
+module-name = "standup"
+module-root = ""
 
 [dependency-groups]
 dev = [
