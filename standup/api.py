@@ -27,6 +27,7 @@ async def _sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
 
 
 def _row_to_dict(row: CommitRow) -> dict:
+    """Convert a CommitRow to a dictionary."""
     return {
         "hash": row.hash,
         "short_hash": row.short_hash,
