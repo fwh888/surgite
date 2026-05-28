@@ -2,6 +2,15 @@
 
 This file provides guidance to AI coding assistants (Claude Code, Cursor, Copilot, etc.) when working with code in this repository.
 
+## Project principles
+
+This project is deliberately minimalist and easy to maintain. When suggesting or writing code, hold the line on:
+
+- **No dead code, no bloat, no "just in case" branches.** If a check, parameter, or abstraction has no real caller or scenario today, leave it out.
+- **No duplicated logic.** If two places do the same thing, extract a shared helper rather than copy-pasting. Prefer one source of truth per behaviour.
+- **Use dataclasses (or Pydantic models at boundaries) for structured data** rather than ad-hoc dicts/tuples — they document the shape and make refactors safe.
+- **Fewer lines is better, all else equal.** Prefer the simplest version that handles real cases; expand only when reality demands it.
+
 ## Commands
 
 ```bash
