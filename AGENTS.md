@@ -78,8 +78,6 @@ API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postg
 - CLI `--ingest <url>` flag to POST to the API instead of printing (not yet wired up in `standup/standup.py`)
 - **v2:** a repo management table (`repos`), new CRUD routes, and a web UI (vanilla JS/Alpine.js served by FastAPI, or React/Vite SPA — see `docs/v2-frontend.md`)
 
-Step-by-step build notes live in `docs/upgrade-plan.md` and `docs/guides/`.
-
 ## Environment Variables
 
 | Variable | Notes |

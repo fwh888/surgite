@@ -8,7 +8,7 @@ This picks up after the v1 upgrade plan is complete. The API is running, commits
 
 ### New: `repos` table
 
-Right now repos are hardcoded in `ingest_all.sh`. The UI needs to manage them dynamically.
+Right now repos are listed in a flat file read by `scripts/ingest_all.sh`. The UI needs to manage them dynamically.
 
 ```
 repos
@@ -33,7 +33,7 @@ POST   /repos/{id}/ingest  → manually trigger ingest for one repo
 
 ### Change to automation
 
-`ingest_all.sh` can be simplified — instead of hardcoding paths, it just hits `POST /repos/{id}/ingest` for each registered repo. Or the API can expose a `POST /ingest/all` endpoint that does it in one call.
+`scripts/ingest_all.sh` can be simplified — instead of reading a flat file, it just hits `POST /repos/{id}/ingest` for each registered repo. Or the API can expose a `POST /ingest/all` endpoint that does it in one call.
 
 ---
 
