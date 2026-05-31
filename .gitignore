@@ -7,3 +7,5 @@ build/
 .env
 .vscode/
 testing.py
+repos.txt
+ingest.log

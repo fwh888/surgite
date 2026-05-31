@@ -1,0 +1,5 @@
+# Repos to ingest nightly — one absolute path per line.
+# Copy to repos.txt and edit. Blank lines and '#' comments are ignored.
+#
+# /Users/nicholas/dev/Arbiter
+# /Users/nicholas/dev/standup-gen

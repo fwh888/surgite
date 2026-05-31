@@ -21,8 +21,6 @@ The CLI stays first-class. The API and UI exist so the tool can be run as a smal
 | Repo management routes (`/repos`) | planned | see [docs/v2-frontend.md](docs/v2-frontend.md) |
 | Web UI | planned | see [docs/v2-frontend.md](docs/v2-frontend.md) |
 
-Step-by-step build notes live in [docs/upgrade-plan.md](docs/upgrade-plan.md) and [docs/guides/](docs/guides/).
-
 ## Setup
 
 1. Install [uv](https://docs.astral.sh/uv/) if you don't have it:
