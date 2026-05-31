@@ -7,13 +7,15 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, func
 from sqlalchemy.exc import SQLAlchemyError
 
+import requests
+
 from standup.db import get_session, CommitRow
 from standup.formatter import format_log
 from standup.git import get_raw_log, parse_log
 from standup.models import Commit
 from standup.schemas import IngestRequest
-from standup.summarizer import summarize_commits
-from standup.config import GROQ_API_KEY
+from standup import summarizer
+from standup.summarizer import ProviderError
 
 # Cap on commits sent to the LLM in /summary?ai=true to bound token cost.
 AI_SUMMARY_MAX_COMMITS = 500
@@ -67,6 +69,13 @@ def _query_commits(
         return total, [_row_to_dict(r) for r in rows]
 
 
+@app.get("/providers")
+def providers():
+    """List summary providers, their default model, and whether each is
+    configured. A client (UI/CLI) can use this to let the user pick one."""
+    return {"default": summarizer.default_provider(), "providers": summarizer.provider_status()}
+
+
 @app.get("/commits")
 def list_commits(
     since: date | None = None,
@@ -117,6 +126,7 @@ def summary(
     author: str | None = None,
     repo: str | None = None,
     ai: bool = False,
+    provider: str | None = None,
 ):
     total, commits = _query_commits(since, until, author, repo, limit=None, offset=0)
 
@@ -127,9 +137,9 @@ def summary(
         by_day[c["date"]] += 1
 
     ai_summary = None
+    ai_provider = None
+    ai_model = None
     if ai:
-        if not GROQ_API_KEY:
-            raise HTTPException(status_code=400, detail="GROQ_API_KEY is not set")
         if len(commits) > AI_SUMMARY_MAX_COMMITS:
             raise HTTPException(
                 status_code=413,
@@ -142,7 +152,16 @@ def summary(
             Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"])
             for c in commits
         ]
-        ai_summary = summarize_commits(format_log(commit_objs))
+        try:
+            result = summarizer.generate_summary(format_log(commit_objs), provider=provider)
+        except ProviderError as e:
+            # Unknown provider or missing API key: the caller's problem.
+            raise HTTPException(status_code=400, detail=str(e))
+        except requests.RequestException as e:
+            raise HTTPException(status_code=502, detail=f"Provider request failed: {e}")
+        ai_summary = result["summary"]
+        ai_provider = result["provider"]
+        ai_model = result["model"]
 
     return {
         "period": {
@@ -154,6 +173,8 @@ def summary(
         "by_day": dict(sorted(by_day.items())),
         "commits": commits,
         "ai_summary": ai_summary,
+        "ai_provider": ai_provider,
+        "ai_model": ai_model,
     }
 
 

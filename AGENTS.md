@@ -19,7 +19,7 @@ uv sync
 
 # Run the CLI
 uv run standup /path/to/repo --since 7.days.ago
-uv run standup /path/to/repo --since 2026-05-01 --summarize     # requires GROQ_API_KEY
+uv run standup /path/to/repo --since 2026-05-01 --summarize     # requires a provider API key
 uv run standup /path/to/repo --since 2026-05-01 --output out.txt
 uv run standup /path/to/repo --since 2026-05-01 --until 2026-05-10
 uv run standup /path/to/repo --since 7.days.ago --author "Alice"
@@ -49,26 +49,28 @@ This is a Python CLI tool and FastAPI REST API for generating standup summaries 
 
 ```
 CLI:  git.get_raw_log()  →  git.parse_log()  →  formatter.format_log()  →  stdout / file
-                                                                        ↘  summarizer.summarize_commits()  →  Groq API
+                                                                        ↘  summarizer.summarize_commits()  →  LLM provider
 
 API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postgres)
       GET /commits, /commits/{hash}, /summary  →  SQLAlchemy query  →  JSON
-      GET /summary?ai=true  →  formatter.format_log  →  summarizer  →  Groq API
+      GET /summary?ai=true[&provider=]  →  formatter.format_log  →  summarizer  →  LLM provider
+      GET /providers  →  available providers + default model
 ```
 
 - `standup/models.py` — `Commit` dataclass (`hash`, `date`, `author`, `message`, optional `repo`, `ingested_at`)
 - `standup/git.py` — runs `git log` via subprocess; `get_raw_log()` supports `since`, `until`, `author`, and `since_commit` (auto-detects whether `until` is a git ref); `parse_log()` returns `list[Commit]`
 - `standup/formatter.py` — formats `Commit` objects to `[date] message (author) <short_hash>` strings
-- `standup/summarizer.py` — sends formatted log to Groq (`llama-3.1-8b-instant`); outputs an "Accomplishments:" bullet list in neutral language; identity is injected via `STANDUP_USER`/`STANDUP_ROLE` env vars
+- `standup/summarizer.py` — model-agnostic summarization. A `Provider` dataclass + `PROVIDERS` registry support **anthropic** (Messages API, default), **groq**, and **deepseek** (both OpenAI-compatible chat); all calls go over plain HTTP via `requests` (no provider SDK). Provider is chosen by the `LLM_PROVIDER` env var or per call; `generate_summary()` returns `{summary, provider, model}`, `summarize_commits()` is the CLI's text-only wrapper, `provider_status()` powers `GET /providers`. Outputs an "Accomplishments:" bullet list; identity injected via `STANDUP_USER`/`STANDUP_ROLE`
 - `standup/standup.py` — argparse CLI entry point; registered as the `standup` console script in `pyproject.toml`
-- `standup/config.py` — loads `DATABASE_URL` (required), `API_HOST`, `API_PORT`, `GROQ_API_KEY` from env via `python-dotenv`
+- `standup/config.py` — loads `DATABASE_URL` (required), `API_HOST`, `API_PORT` from env via `python-dotenv` (provider keys are read in `summarizer` at call time)
 - `standup/db.py` — SQLAlchemy engine, `Base`, `CommitRow` ORM model (`commits` table), and `get_session()` factory
 - `standup/schemas.py` — Pydantic request models (`IngestRequest`)
 - `standup/api.py` — FastAPI app with routes:
   - `POST /ingest` — runs `git log` against `repo_path`, upserts into `commits` (insert / update / unchanged counts returned)
   - `GET /commits` — paginated list with `since`/`until`/`author`/`repo`/`limit`/`offset` filters
   - `GET /commits/{hash}` — lookup by full or prefix hash; 400 for invalid hex, 404 for not found, 409 for ambiguous prefix
-  - `GET /summary` — aggregates by repo and day over the full filtered set; `ai=true` runs the Groq summarizer (capped at `AI_SUMMARY_MAX_COMMITS = 500` to bound token cost)
+  - `GET /summary` — aggregates by repo and day over the full filtered set; `ai=true` runs the summarizer (capped at `AI_SUMMARY_MAX_COMMITS = 500` to bound token cost); optional `provider=` overrides the default; response includes `ai_provider`/`ai_model`. Unknown provider or missing key → 400; provider HTTP failure → 502
+  - `GET /providers` — lists providers, their default model, and whether each has a key configured (for a UI/CLI to offer a choice)
   - `SQLAlchemyError` is mapped to a 503 globally
 - `alembic/` — migrations; `e5e311c2e5f0_create_commits_table.py` is the initial schema
 - `tests/` — pytest suite covering the API; `conftest.py` swaps in a temp SQLite DB and clears tables between tests
@@ -83,7 +85,9 @@ API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postg
 | Variable | Notes |
 |---|---|
 | `DATABASE_URL` | **Required.** `postgresql://standup:standup@localhost:5432/standup` for local dev; the test suite overrides this with a temp SQLite file in `tests/conftest.py` |
-| `GROQ_API_KEY` | Required for `--summarize` and `GET /summary?ai=true` |
+| `LLM_PROVIDER` | Summary provider: `anthropic` (default), `groq`, or `deepseek` |
+| `ANTHROPIC_API_KEY` / `GROQ_API_KEY` / `DEEPSEEK_API_KEY` | Key for the chosen provider; required for `--summarize` and `GET /summary?ai=true` |
+| `ANTHROPIC_MODEL` / `GROQ_MODEL` / `DEEPSEEK_MODEL` | Optional per-provider model override (defaults: `claude-haiku-4-5-20251001`, `llama-3.1-8b-instant`, `deepseek-chat`) |
 | `API_HOST` | Defaults to `127.0.0.1` |
 | `API_PORT` | Defaults to `8000` |
 | `STANDUP_USER` | Name injected into the summarizer prompt (e.g. `Alice`); defaults to `the developer` |

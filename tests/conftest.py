@@ -1,6 +1,6 @@
 """
-Test config. DATABASE_URL and GROQ_API_KEY must be set BEFORE any `standup.*`
-import, because `standup.config` reads them at module-load time and
+Test config. DATABASE_URL and the provider API keys must be set BEFORE any
+`standup.*` import, because `standup.config` reads them at module-load time and
 `standup.db` creates the engine at module-load time.
 """
 import os
@@ -12,9 +12,12 @@ _db_file = Path(tempfile.gettempdir()) / "standup_test.db"
 if _db_file.exists():
     _db_file.unlink()
 os.environ["DATABASE_URL"] = f"sqlite:///{_db_file}"
-# Force GROQ_API_KEY empty so ai-summary tests see "not set". load_dotenv() in
-# standup.config respects pre-existing env vars and won't override this.
+# Force every provider key empty so ai-summary tests see "not set" regardless of
+# the developer's .env. load_dotenv() in standup.config respects pre-existing
+# env vars and won't override these.
 os.environ["GROQ_API_KEY"] = ""
+os.environ["DEEPSEEK_API_KEY"] = ""
+os.environ["ANTHROPIC_API_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient

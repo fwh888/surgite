@@ -45,19 +45,20 @@ uv tool update-shell
 
 Restart your terminal or `source ~/.zshrc` — after that, `standup` will be available anywhere.
 
-4. Set your Groq API key (only needed for `--summarize` / `?ai=true`):
+4. Set a provider API key (only needed for `--summarize` / `?ai=true`). The default provider is Anthropic; set `LLM_PROVIDER` to `groq` or `deepseek` to switch:
 
 **zsh** (`~/.zshrc`):
 
 ```zsh
-echo 'export GROQ_API_KEY=your_key_here' >> ~/.zshrc
+echo 'export ANTHROPIC_API_KEY=your_key_here' >> ~/.zshrc
 source ~/.zshrc
 ```
 
 Or create a `.env` file in the repo root:
 
 ```bash
-GROQ_API_KEY=your_key_here
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your_key_here
 DATABASE_URL=postgresql://standup:standup@localhost:5432/standup
 ```
 
@@ -89,6 +90,7 @@ standup /path/to/your/repo --since 1.day.ago --summarize
 - `POST /ingest` — runs `git log` against a repo path and upserts commits
 - `GET /commits` — paginated list with `since`/`until`/`author`/`repo` filters
 - `GET /commits/{hash}` — lookup by full or prefix hash
-- `GET /summary` — aggregate by repo and day; `?ai=true` runs the Groq summarizer
+- `GET /summary` — aggregate by repo and day; `?ai=true` runs the AI summarizer (optional `&provider=anthropic|groq|deepseek`)
+- `GET /providers` — list available summary providers and the default
 
 See [AGENTS.md](AGENTS.md) for the full architecture overview.
