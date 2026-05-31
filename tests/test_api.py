@@ -70,6 +70,34 @@ def test_summary_ai_without_key_returns_400(client):
     assert r.status_code == 400
 
 
+def test_providers_lists_all_with_anthropic_default(client):
+    body = client.get("/providers").json()
+    assert body["default"] == "anthropic"
+    names = {p["name"] for p in body["providers"]}
+    assert {"anthropic", "groq", "deepseek"} <= names
+    # conftest clears every key, so nothing is available in tests.
+    assert all(p["available"] is False for p in body["providers"])
+
+
+def test_summary_ai_unknown_provider_returns_400(client, add_commit):
+    add_commit()
+    assert client.get("/summary?ai=true&provider=bogus").status_code == 400
+
+
+def test_summary_ai_uses_selected_provider(client, add_commit, monkeypatch):
+    add_commit()
+    from standup import summarizer
+
+    def fake_generate(commit_log, provider=None, model=None):
+        return {"summary": "Accomplishments:\n- shipped it", "provider": "groq", "model": "x"}
+
+    monkeypatch.setattr(summarizer, "generate_summary", fake_generate)
+    body = client.get("/summary?ai=true&provider=groq").json()
+    assert body["ai_summary"].startswith("Accomplishments:")
+    assert body["ai_provider"] == "groq"
+    assert body["ai_model"] == "x"
+
+
 def test_ingest_rejects_missing_repo_path(client):
     r = client.post("/ingest", json={"repo_path": "/nonexistent/path/xyz"})
     assert r.status_code == 400
