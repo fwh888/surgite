@@ -31,7 +31,7 @@ class Provider:
 
     @property
     def api_key(self) -> str | None:
-        # Read at call time so .env (loaded by standup.config) is in effect.
+        # Read at call time so .env (loaded by backend.config) is in effect.
         return os.environ.get(self.key_env) or None
 
     def model(self, override: str | None = None) -> str:

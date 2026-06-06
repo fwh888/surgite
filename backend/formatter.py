@@ -1,4 +1,4 @@
-from standup.models import Commit
+from backend.models import Commit
 
 def format_commit(commit: Commit) -> str:
     return f"[{commit.date}] {commit.message} ({commit.author}) <{commit.hash[:7]}>"

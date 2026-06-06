@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, String, DateTime, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session
-from standup.config import DATABASE_URL
+from backend.config import DATABASE_URL
 
 engine = create_engine(DATABASE_URL)
 

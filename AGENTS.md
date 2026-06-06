@@ -35,7 +35,7 @@ docker compose up -d
 uv run alembic upgrade head
 
 # Start the API
-uv run uvicorn standup.api:app --reload --host "${API_HOST:-127.0.0.1}" --port "${API_PORT:-8000}"
+uv run uvicorn backend.api:app --reload --host "${API_HOST:-127.0.0.1}" --port "${API_PORT:-8000}"
 
 # Run tests
 uv run pytest
@@ -57,15 +57,15 @@ API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postg
       GET /providers  →  available providers + default model
 ```
 
-- `standup/models.py` — `Commit` dataclass (`hash`, `date`, `author`, `message`, optional `repo`, `ingested_at`)
-- `standup/git.py` — runs `git log` via subprocess; `get_raw_log()` supports `since`, `until`, `author`, and `since_commit` (auto-detects whether `until` is a git ref); `parse_log()` returns `list[Commit]`
-- `standup/formatter.py` — formats `Commit` objects to `[date] message (author) <short_hash>` strings
-- `standup/summarizer.py` — model-agnostic summarization. A `Provider` dataclass + `PROVIDERS` registry support **anthropic** (Messages API, default), **groq**, and **deepseek** (both OpenAI-compatible chat); all calls go over plain HTTP via `requests` (no provider SDK). Provider is chosen by the `LLM_PROVIDER` env var or per call; `generate_summary()` returns `{summary, provider, model}`, `summarize_commits()` is the CLI's text-only wrapper, `provider_status()` powers `GET /providers`. Outputs an "Accomplishments:" bullet list; identity injected via `STANDUP_USER`/`STANDUP_ROLE`
-- `standup/standup.py` — argparse CLI entry point; registered as the `standup` console script in `pyproject.toml`
-- `standup/config.py` — loads `DATABASE_URL` (required), `API_HOST`, `API_PORT` from env via `python-dotenv` (provider keys are read in `summarizer` at call time)
-- `standup/db.py` — SQLAlchemy engine, `Base`, `CommitRow` ORM model (`commits` table), and `get_session()` factory
-- `standup/schemas.py` — Pydantic request models (`IngestRequest`)
-- `standup/api.py` — FastAPI app with routes:
+- `backend/models.py` — `Commit` dataclass (`hash`, `date`, `author`, `message`, optional `repo`, `ingested_at`)
+- `backend/git.py` — runs `git log` via subprocess; `get_raw_log()` supports `since`, `until`, `author`, and `since_commit` (auto-detects whether `until` is a git ref); `parse_log()` returns `list[Commit]`
+- `backend/formatter.py` — formats `Commit` objects to `[date] message (author) <short_hash>` strings
+- `backend/summarizer.py` — model-agnostic summarization. A `Provider` dataclass + `PROVIDERS` registry support **anthropic** (Messages API, default), **groq**, and **deepseek** (both OpenAI-compatible chat); all calls go over plain HTTP via `requests` (no provider SDK). Provider is chosen by the `LLM_PROVIDER` env var or per call; `generate_summary()` returns `{summary, provider, model}`, `summarize_commits()` is the CLI's text-only wrapper, `provider_status()` powers `GET /providers`. Outputs an "Accomplishments:" bullet list; identity injected via `STANDUP_USER`/`STANDUP_ROLE`
+- `backend/standup.py` — argparse CLI entry point; registered as the `standup` console script in `pyproject.toml`
+- `backend/config.py` — loads `DATABASE_URL` (required), `API_HOST`, `API_PORT` from env via `python-dotenv` (provider keys are read in `summarizer` at call time)
+- `backend/db.py` — SQLAlchemy engine, `Base`, `CommitRow` ORM model (`commits` table), and `get_session()` factory
+- `backend/schemas.py` — Pydantic request models (`IngestRequest`)
+- `backend/api.py` — FastAPI app with routes:
   - `POST /ingest` — runs `git log` against `repo_path`, upserts into `commits` (insert / update / unchanged counts returned)
   - `GET /commits` — paginated list with `since`/`until`/`author`/`repo`/`limit`/`offset` filters
   - `GET /commits/{hash}` — lookup by full or prefix hash; 400 for invalid hex, 404 for not found, 409 for ambiguous prefix
@@ -77,8 +77,8 @@ API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postg
 
 ## Planned upgrades
 
-- CLI `--ingest <url>` flag to POST to the API instead of printing (not yet wired up in `standup/standup.py`)
-- **v2:** a repo management table (`repos`), new CRUD routes, and a web UI (vanilla JS/Alpine.js served by FastAPI, or React/Vite SPA — see `docs/v2-frontend.md`)
+- CLI `--ingest <url>` flag to POST to the API instead of printing (not yet wired up in `backend/standup.py`)
+- **v2:** the repo management table (`repos`) and CRUD routes are done; remaining work is a web UI — a SvelteKit SPA served by FastAPI (see `docs/v2-svelte-plan.md`)
 
 ## Environment Variables
 
@@ -93,4 +93,4 @@ API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postg
 | `STANDUP_USER` | Name injected into the summarizer prompt (e.g. `Alice`); defaults to `the developer` |
 | `STANDUP_ROLE` | Optional role description (e.g. `backend engineer at Acme`) appended to the identity in the prompt |
 
-The CLI loads `.env` via `python-dotenv` on startup (and `standup.config` does the same for the API).
+The CLI loads `.env` via `python-dotenv` on startup (and `backend.config` does the same for the API).
