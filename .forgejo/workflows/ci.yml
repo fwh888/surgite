@@ -60,3 +60,15 @@ jobs:
 
       - name: Run pytest
         run: uv run pytest -q
+
+  frontend:
+    name: Frontend build
+    runs-on: host
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node dependencies
+        run: cd frontend && npm ci
+
+      - name: Build SvelteKit SPA
+        run: cd frontend && npm run build
