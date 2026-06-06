@@ -9,6 +9,8 @@ export interface Repo {
 	id: number;
 	name: string;
 	path: string;
+	clone_url: string | null;
+	remote: boolean;
 	added_at: string | null;
 	last_ingested_at: string | null;
 }

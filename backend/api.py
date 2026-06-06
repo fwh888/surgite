@@ -1,4 +1,5 @@
 import os
+import subprocess
 from collections import defaultdict
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
@@ -46,6 +47,8 @@ def _repo_to_dict(row: RepoRow) -> dict:
         "id": row.id,
         "name": row.name,
         "path": row.path,
+        "clone_url": row.clone_url,
+        "remote": row.clone_url is not None,
         "added_at": row.added_at.isoformat() if row.added_at else None,
         "last_ingested_at": row.last_ingested_at.isoformat() if row.last_ingested_at else None,
     }
@@ -210,14 +213,27 @@ def list_repos():
 
 @app.post("/repos", status_code=201)
 def create_repo(req: RepoCreate):
-    if not os.path.isdir(req.path):
-        raise HTTPException(status_code=400, detail="path does not exist")
-    name = os.path.basename(os.path.abspath(req.path))
+    from backend.git import is_remote_url, _repo_name_from_url
+
+    if is_remote_url(req.path):
+        clone_url = req.path
+        name = _repo_name_from_url(clone_url)
+    else:
+        if not os.path.isdir(req.path):
+            raise HTTPException(status_code=400, detail="path does not exist")
+        clone_url = None
+        name = os.path.basename(os.path.abspath(req.path))
+
     with get_session() as session:
         existing = session.scalar(select(RepoRow).where(RepoRow.path == req.path))
         if existing:
             raise HTTPException(status_code=409, detail="Repo already registered")
-        repo = RepoRow(name=name, path=req.path, added_at=datetime.now(timezone.utc))
+        repo = RepoRow(
+            name=name,
+            path=req.path,
+            clone_url=clone_url,
+            added_at=datetime.now(timezone.utc),
+        )
         session.add(repo)
         session.commit()
         session.refresh(repo)
@@ -240,18 +256,33 @@ def ingest_repo(
     since: date | None = None,
     until: date | None = None,
 ):
+    from backend.git import is_remote_url, ensure_repo
+    from backend.config import REPO_CACHE_DIR
+
     with get_session() as session:
         repo = session.get(RepoRow, repo_id)
         if not repo:
             raise HTTPException(status_code=404, detail="Repo not found")
-        if not os.path.isdir(repo.path):
-            raise HTTPException(status_code=400, detail="Repo path no longer exists on disk")
+
+        # Determine the actual path to run git log against
+        if repo.clone_url:
+            try:
+                actual_path = ensure_repo(repo.name, repo.clone_url, REPO_CACHE_DIR)
+            except subprocess.CalledProcessError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to clone/fetch remote repo: {e.stderr.strip()}"
+                )
+        else:
+            if not os.path.isdir(repo.path):
+                raise HTTPException(status_code=400, detail="Repo path no longer exists on disk")
+            actual_path = repo.path
 
         since_str = (since or date.today() - timedelta(days=7)).isoformat()
         until_str = (until or date.today()).isoformat()
 
         try:
-            raw = get_raw_log(repo.path, since_str, until_str)
+            raw = get_raw_log(actual_path, since_str, until_str)
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=f"Git error: {e}")
 

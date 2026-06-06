@@ -45,7 +45,14 @@
 				<li class="flex items-center justify-between gap-4 px-4 py-3">
 					<div class="min-w-0">
 						<p class="truncate font-medium text-slate-900">{repo.name}</p>
-						<p class="truncate text-xs text-slate-400">{repo.path}</p>
+						<p class="truncate text-xs text-slate-400">
+						{#if repo.remote}
+							<span class="inline-block mr-1">🌐</span>
+							{repo.clone_url}
+						{:else}
+							{repo.path}
+						{/if}
+					</p>
 					</div>
 					<div class="flex shrink-0 items-center gap-3">
 						<span class="text-xs text-slate-500">

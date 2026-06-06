@@ -1,5 +1,62 @@
+import os
+import re
 import subprocess
+from pathlib import Path
+
 from backend.models import Commit
+
+REMOTE_PATTERNS = re.compile(r'^(https?://|git@|git://|ssh://)')
+
+def is_remote_url(path: str) -> bool:
+    """Detect if a path looks like a remote git URL."""
+    return bool(REMOTE_PATTERNS.match(path))
+
+def _repo_name_from_url(url: str) -> str:
+    """Extract a human-friendly repo name from a remote URL.
+    Examples:
+      https://github.com/user/repo.git -> repo
+      git@github.com:user/repo.git -> repo
+      https://github.com/user/repo -> repo
+    """
+    name = url.rstrip("/")
+    if name.endswith(".git"):
+        name = name[:-4]
+    if ":" in name and not name.startswith("http"):
+        name = name.split(":")[-1]
+    name = name.rstrip("/").split("/")[-1]
+    return name
+
+def ensure_repo(name: str, url: str, cache_dir: str) -> str:
+    """Ensure a remote repo is cloned (shallow). Returns the local path.
+
+    If already cloned, fetches latest. Uses --depth for efficiency.
+    """
+    dest = os.path.join(cache_dir, name)
+    Path(cache_dir).mkdir(parents=True, exist_ok=True)
+
+    if os.path.isdir(os.path.join(dest, ".git")):
+        subprocess.run(
+            ["git", "fetch", "--depth", "100", "origin"],
+            cwd=dest,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "reset", "--hard", "origin/HEAD"],
+            cwd=dest,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    else:
+        subprocess.run(
+            ["git", "clone", "--depth", "100", url, dest],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    return dest
 
 def _is_git_ref(repo_path: str, value: str) -> bool:
     result = subprocess.run(
