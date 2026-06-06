@@ -9,11 +9,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import requests
 
-from standup.db import get_session, CommitRow
+from standup.db import get_session, CommitRow, RepoRow
 from standup.formatter import format_log
 from standup.git import get_raw_log, parse_log
 from standup.models import Commit
-from standup.schemas import IngestRequest
+from standup.schemas import IngestRequest, RepoCreate
 from standup import summarizer
 from standup.summarizer import ProviderError
 
@@ -26,6 +26,16 @@ app = FastAPI()
 @app.exception_handler(SQLAlchemyError)
 async def _sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
     return JSONResponse(status_code=503, content={"detail": "Database unavailable"})
+
+
+def _repo_to_dict(row: RepoRow) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "path": row.path,
+        "added_at": row.added_at.isoformat() if row.added_at else None,
+        "last_ingested_at": row.last_ingested_at.isoformat() if row.last_ingested_at else None,
+    }
 
 
 def _row_to_dict(row: CommitRow) -> dict:
@@ -176,6 +186,89 @@ def summary(
         "ai_provider": ai_provider,
         "ai_model": ai_model,
     }
+
+
+@app.get("/repos")
+def list_repos():
+    with get_session() as session:
+        rows = session.scalars(select(RepoRow)).all()
+        return {"repos": [_repo_to_dict(r) for r in rows]}
+
+
+@app.post("/repos", status_code=201)
+def create_repo(req: RepoCreate):
+    if not os.path.isdir(req.path):
+        raise HTTPException(status_code=400, detail="path does not exist")
+    name = os.path.basename(os.path.abspath(req.path))
+    with get_session() as session:
+        existing = session.scalar(select(RepoRow).where(RepoRow.path == req.path))
+        if existing:
+            raise HTTPException(status_code=409, detail="Repo already registered")
+        repo = RepoRow(name=name, path=req.path, added_at=datetime.now(timezone.utc))
+        session.add(repo)
+        session.commit()
+        session.refresh(repo)
+        return _repo_to_dict(repo)
+
+
+@app.delete("/repos/{repo_id}", status_code=204)
+def delete_repo(repo_id: int):
+    with get_session() as session:
+        repo = session.get(RepoRow, repo_id)
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repo not found")
+        session.delete(repo)
+        session.commit()
+
+
+@app.post("/repos/{repo_id}/ingest")
+def ingest_repo(
+    repo_id: int,
+    since: date | None = None,
+    until: date | None = None,
+):
+    with get_session() as session:
+        repo = session.get(RepoRow, repo_id)
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repo not found")
+        if not os.path.isdir(repo.path):
+            raise HTTPException(status_code=400, detail="Repo path no longer exists on disk")
+
+        since_str = (since or date.today() - timedelta(days=7)).isoformat()
+        until_str = (until or date.today()).isoformat()
+
+        try:
+            raw = get_raw_log(repo.path, since_str, until_str)
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=f"Git error: {e}")
+
+        commits = parse_log(raw)
+        inserted = updated = unchanged = 0
+
+        for c in commits:
+            existing = session.get(CommitRow, c.hash)
+            if existing is None:
+                session.add(CommitRow(
+                    hash=c.hash,
+                    short_hash=c.hash[:7],
+                    date=c.date,
+                    author=c.author,
+                    message=c.message,
+                    repo=repo.name,
+                    ingested_at=datetime.now(timezone.utc),
+                ))
+                inserted += 1
+            elif existing.repo != repo.name:
+                existing.repo = repo.name
+                existing.ingested_at = datetime.now(timezone.utc)
+                updated += 1
+            else:
+                unchanged += 1
+
+        repo.last_ingested_at = datetime.now(timezone.utc)
+        session.commit()
+
+    return {"repo": repo.name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
 
 
 @app.post("/ingest")
