@@ -1,15 +1,28 @@
 <script lang="ts">
-	import { generateSummary, type Repo, type Summary } from '$lib/api';
+	import { onMount } from 'svelte';
+	import { generateSummary, fetchProviders, type Repo, type Summary, type ProviderInfo } from '$lib/api';
 
 	let { repos }: { repos: Repo[] } = $props();
 
 	let repoName = $state(''); // '' = all repos
 	let days = $state(7);
 	let useAi = $state(true);
+	let selectedProvider = $state('');
+	let providers = $state<ProviderInfo[]>([]);
 	let generating = $state(false);
 	let error = $state<string | null>(null);
 	let result = $state<Summary | null>(null);
 	let copied = $state(false);
+
+	onMount(async () => {
+		try {
+			const data = await fetchProviders();
+			providers = data.providers;
+			selectedProvider = data.default;
+		} catch {
+			// Providers endpoint unavailable — leave list empty, dropdown hidden.
+		}
+	});
 
 	function sinceDate(n: number): string {
 		const d = new Date();
@@ -26,7 +39,8 @@
 			result = await generateSummary({
 				repo: repoName || undefined,
 				since: sinceDate(days),
-				ai: useAi
+				ai: useAi,
+				provider: useAi ? selectedProvider || undefined : undefined
 			});
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to generate summary';
@@ -70,6 +84,19 @@
 			<input type="checkbox" bind:checked={useAi} class="rounded border-slate-300" />
 			AI summary
 		</label>
+
+		{#if useAi && providers.length > 0}
+			<select
+				bind:value={selectedProvider}
+				class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
+			>
+				{#each providers as p (p.name)}
+					<option value={p.name}>
+						{p.name} ({p.model}){p.available ? '' : ' — no key'}
+					</option>
+				{/each}
+			</select>
+		{/if}
 
 		<button
 			onclick={generate}

@@ -78,6 +78,18 @@ export interface SummaryParams {
 	provider?: string;
 }
 
+export interface ProviderInfo {
+	name: string;
+	model: string;
+	available: boolean;
+	default: boolean;
+}
+
+export interface ProvidersResponse {
+	default: string;
+	providers: ProviderInfo[];
+}
+
 export function generateSummary(params: SummaryParams = {}) {
 	const q = new URLSearchParams();
 	if (params.repo) q.set('repo', params.repo);
@@ -88,3 +100,6 @@ export function generateSummary(params: SummaryParams = {}) {
 	const qs = q.toString();
 	return request<Summary>(`/summary${qs ? `?${qs}` : ''}`);
 }
+
+export const fetchProviders = () =>
+	request<ProvidersResponse>('/providers');
