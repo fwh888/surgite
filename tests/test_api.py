@@ -288,7 +288,7 @@ def test_cli_ingest_http_error_exits_nonzero(monkeypatch):
 
 
 def test_cli_without_ingest_prints_formatted_log(monkeypatch):
-    monkeypatch.setattr("backend.standup.get_raw_log", lambda *a, **kw: "abc1234 2026-06-01 Alice: fix bug")
+    monkeypatch.setattr("backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug")
     monkeypatch.setattr("sys.argv", ["standup", "/r"])
     stdout = io.StringIO()
     monkeypatch.setattr("sys.stdout", stdout)
