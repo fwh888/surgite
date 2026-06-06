@@ -43,6 +43,9 @@ jobs:
       - name: Sync dependencies
         run: uv sync --group dev
 
+      - name: Upgrade pip
+        run: uv pip install --upgrade pip
+
       - name: Run pip-audit
         run: uv run pip-audit
 
