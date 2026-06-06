@@ -23,7 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from standup.api import app
-from standup.db import Base, CommitRow, engine, get_session
+from standup.db import Base, CommitRow, RepoRow, engine, get_session
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -38,6 +38,7 @@ def _clean_tables():
     yield
     with get_session() as s:
         s.query(CommitRow).delete()
+        s.query(RepoRow).delete()
         s.commit()
 
 
@@ -62,5 +63,25 @@ def add_commit():
         with get_session() as s:
             s.add(CommitRow(**defaults))
             s.commit()
+
+    return _add
+
+
+@pytest.fixture
+def add_repo():
+    def _add(**overrides):
+        defaults = {
+            "name": "demo",
+            "path": "/tmp/demo",
+            "added_at": datetime.now(timezone.utc),
+            "last_ingested_at": None,
+        }
+        defaults.update(overrides)
+        with get_session() as s:
+            repo = RepoRow(**defaults)
+            s.add(repo)
+            s.commit()
+            s.refresh(repo)
+            return repo.id
 
     return _add

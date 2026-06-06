@@ -44,7 +44,7 @@ jobs:
         run: uv sync --group dev
 
       - name: Run pip-audit
-        run: uv run pip-audit
+        run: uv export --no-dev --no-hashes --no-emit-project | uv run pip-audit -r /dev/stdin
 
   test:
     name: Tests (pytest)

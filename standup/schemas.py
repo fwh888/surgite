@@ -5,3 +5,6 @@ class IngestRequest(BaseModel):
     repo_path: str
     since: date | None = None
     until: date | None = None
+
+class RepoCreate(BaseModel):
+    path: str
