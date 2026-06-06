@@ -180,6 +180,125 @@ def test_ingest_repo_updates_last_ingested_at(client, add_repo, tmp_path, monkey
 # --- /ingest ---
 
 
+import io
+from unittest.mock import MagicMock
+
+import requests as requests_lib
+import pytest
+
+from backend.standup import main
+
+
+# --- CLI --ingest ---
+
+
+def test_cli_ingest_posts_to_api(monkeypatch):
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"repo": "myrepo", "inserted": 3, "updated": 1, "unchanged": 2}
+    mock_resp.raise_for_status.return_value = None
+    post_calls = []
+
+    def fake_post(url, json, **kwargs):
+        post_calls.append((url, json))
+        return mock_resp
+
+    monkeypatch.setattr("backend.standup.requests.post", fake_post)
+    monkeypatch.setattr("sys.argv", ["standup", "/some/repo", "--ingest", "http://localhost:8000"])
+    stdout = io.StringIO()
+    monkeypatch.setattr("sys.stdout", stdout)
+
+    main()
+
+    assert len(post_calls) == 1
+    assert post_calls[0][0] == "http://localhost:8000/ingest"
+    assert post_calls[0][1] == {"repo_path": "/some/repo"}
+    assert "Ingested into myrepo: 3 inserted, 1 updated, 2 unchanged" in stdout.getvalue()
+
+
+def test_cli_ingest_passes_since_and_until(monkeypatch):
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"repo": "demo", "inserted": 0, "updated": 0, "unchanged": 0}
+    mock_resp.raise_for_status.return_value = None
+    post_calls = []
+
+    def fake_post(url, json, **kwargs):
+        post_calls.append((url, json))
+        return mock_resp
+
+    monkeypatch.setattr("backend.standup.requests.post", fake_post)
+    monkeypatch.setattr("sys.argv", ["standup", "/p", "--ingest", "http://localhost:8000", "--since", "2026-05-01", "--until", "2026-05-10"])
+    stdout = io.StringIO()
+    monkeypatch.setattr("sys.stdout", stdout)
+
+    main()
+
+    assert post_calls[0][1] == {"repo_path": "/p", "since": "2026-05-01", "until": "2026-05-10"}
+
+
+def test_cli_ingest_strips_trailing_slash(monkeypatch):
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"repo": "x", "inserted": 0, "updated": 0, "unchanged": 0}
+    mock_resp.raise_for_status.return_value = None
+    post_calls = []
+
+    def fake_post(url, json, **kwargs):
+        post_calls.append(url)
+        return mock_resp
+
+    monkeypatch.setattr("backend.standup.requests.post", fake_post)
+    monkeypatch.setattr("sys.argv", ["standup", "/r", "--ingest", "http://localhost:8000/"])
+    monkeypatch.setattr("sys.stdout", io.StringIO())
+
+    main()
+
+    assert post_calls[0] == "http://localhost:8000/ingest"
+
+
+def test_cli_ingest_connection_error_exits_nonzero(monkeypatch):
+    def fake_post(url, json, **kwargs):
+        raise requests_lib.ConnectionError("refused")
+
+    monkeypatch.setattr("backend.standup.requests.post", fake_post)
+    monkeypatch.setattr("sys.argv", ["standup", "/r", "--ingest", "http://localhost:1"])
+    stderr = io.StringIO()
+    monkeypatch.setattr("sys.stderr", stderr)
+
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+    assert "refused" in stderr.getvalue()
+
+
+def test_cli_ingest_http_error_exits_nonzero(monkeypatch):
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status.side_effect = requests_lib.HTTPError("500 Server Error")
+
+    def fake_post(url, json, **kwargs):
+        return mock_resp
+
+    monkeypatch.setattr("backend.standup.requests.post", fake_post)
+    monkeypatch.setattr("sys.argv", ["standup", "/r", "--ingest", "http://localhost:8000"])
+    stderr = io.StringIO()
+    monkeypatch.setattr("sys.stderr", stderr)
+
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+    assert "500 Server Error" in stderr.getvalue()
+
+
+def test_cli_without_ingest_prints_formatted_log(monkeypatch):
+    monkeypatch.setattr("backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug")
+    monkeypatch.setattr("sys.argv", ["standup", "/r"])
+    stdout = io.StringIO()
+    monkeypatch.setattr("sys.stdout", stdout)
+
+    main()
+
+    assert "Alice" in stdout.getvalue()
+    assert "abc1234" in stdout.getvalue()
+
+
 def test_ingest_rejects_missing_repo_path(client):
     r = client.post("/ingest", json={"repo_path": "/nonexistent/path/xyz"})
     assert r.status_code == 400

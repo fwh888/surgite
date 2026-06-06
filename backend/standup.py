@@ -1,4 +1,5 @@
 import argparse
+import sys
 from backend.git import get_raw_log, parse_log
 from backend.formatter import format_log
 from backend.summarizer import summarize_commits
@@ -34,8 +35,12 @@ def main():
         if args.until:
             payload["until"] = args.until
         url = args.ingest.rstrip("/") + "/ingest"
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
+        try:
+            response = requests.post(url, json=payload)
+            response.raise_for_status()
+        except requests.RequestException as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
         result = response.json()
         print(f"Ingested into {result['repo']}: {result['inserted']} inserted, {result['updated']} updated, {result['unchanged']} unchanged")
         return
