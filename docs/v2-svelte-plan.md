@@ -42,21 +42,22 @@ collide with Python's existing (gitignored) `build/` packaging artifacts.
 ```
 standup-gen/
 ├── backend/            # Python package (API + CLI), formerly standup/
-├── frontend/           # NEW — SvelteKit app
+├── frontend/           # NEW — SvelteKit app (TypeScript)
 │   ├── src/
 │   │   ├── routes/
-│   │   │   ├── +layout.js     # ssr = false, prerender = true
-│   │   │   └── +page.svelte   # the one page
+│   │   │   ├── +layout.ts       # ssr = false, prerender = true
+│   │   │   ├── +layout.svelte   # imports layout.css, renders children
+│   │   │   ├── layout.css       # @import "tailwindcss";
+│   │   │   └── +page.svelte     # the one page
 │   │   ├── lib/
-│   │   │   ├── api.js         # thin fetch wrapper, one fn per endpoint
+│   │   │   ├── api.ts           # thin fetch wrapper + typed Repo/Commit/Summary shapes
 │   │   │   └── components/
 │   │   │       ├── RepoList.svelte
 │   │   │       ├── AddRepoForm.svelte
 │   │   │       └── SummaryPanel.svelte
-│   │   └── app.css            # @import "tailwindcss";
-│   ├── svelte.config.js       # adapter-static + fallback
-│   ├── vite.config.js
-│   └── build/                 # static output FastAPI serves (gitignored)
+│   ├── svelte.config.js         # adapter-static, fallback: '200.html'
+│   ├── vite.config.ts           # @tailwindcss/vite + sveltekit plugins
+│   └── build/                   # static output FastAPI serves (gitignored)
 └── ...
 ```
 
@@ -64,20 +65,20 @@ standup-gen/
 
 ## Steps
 
-### 1. Scaffold
+### 1. Scaffold ✅ done
 
 ```bash
-cd frontend  # created by the command below; run from repo root
-npx sv create frontend
+npx sv create frontend   # run interactively from repo root
 ```
 
-During the prompts: pick the **minimal/SPA** skeleton, **TypeScript optional** (plain JS is
-fine for a project this size), and select **Tailwind** from the add-ons so it's wired in
-during scaffolding (avoids a separate Tailwind install). Then `npm install`.
+Choices made: **SvelteKit minimal** template, **TypeScript** (TS syntax), **tailwindcss**
+add-on (with **no** Tailwind sub-plugins — the typography/forms sub-prompt is what hangs a
+fully-flagged non-interactive run), **npm** as the package manager. This wires Tailwind v4 via
+`@tailwindcss/vite` automatically — no separate install.
 
-### 2. Configure SPA mode (no SSR)
+### 2. Configure SPA mode (no SSR) ✅ done
 
-`frontend/src/routes/+layout.js`:
+`frontend/src/routes/+layout.ts`:
 ```javascript
 export const ssr = false;       // FastAPI is the backend; no server rendering
 export const prerender = true;  // prerender the static shell at build time
@@ -121,9 +122,10 @@ is a useful thing to understand. (Alternative considered: Vite's `server.proxy`.
 because our API paths have no common prefix — `/repos`, `/commits`, `/summary`, `/providers`,
 `/ingest` — so proxying is fiddlier than one CORS block.)
 
-### 4. API client (`src/lib/api.js`)
+### 4. API client (`src/lib/api.ts`)
 
-One function per endpoint, fetch kept out of components:
+One function per endpoint, fetch kept out of components, with typed `Repo`/`Commit`/`Summary`
+shapes documenting the API contract:
 - `listRepos()` → `GET /repos`
 - `addRepo(path)` → `POST /repos`
 - `deleteRepo(id)` → `DELETE /repos/{id}`
@@ -163,7 +165,6 @@ unknown paths; with a single page it isn't needed yet.)
 ## Deferred (not now)
 
 - Frontend unit tests (Vitest/Playwright) — wait until the UI has logic worth testing.
-- TypeScript — can adopt later; the components port unchanged.
 - Polishing for open source — README screenshot/GIF, picking a LICENSE, and making the CLI
   config degrade gracefully (no `KeyError` on missing `DATABASE_URL`). Do after the UI works.
 
