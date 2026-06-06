@@ -98,6 +98,88 @@ def test_summary_ai_uses_selected_provider(client, add_commit, monkeypatch):
     assert body["ai_model"] == "x"
 
 
+# --- /repos ---
+
+
+def test_list_repos_empty(client):
+    r = client.get("/repos")
+    assert r.status_code == 200
+    assert r.json() == {"repos": []}
+
+
+def test_create_repo_returns_201(client, tmp_path):
+    r = client.post("/repos", json={"path": str(tmp_path)})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["name"] == tmp_path.name
+    assert body["path"] == str(tmp_path)
+    assert body["last_ingested_at"] is None
+    assert body["id"] is not None
+
+
+def test_create_repo_appears_in_list(client, tmp_path):
+    client.post("/repos", json={"path": str(tmp_path)})
+    repos = client.get("/repos").json()["repos"]
+    assert len(repos) == 1
+    assert repos[0]["path"] == str(tmp_path)
+
+
+def test_create_repo_duplicate_path_returns_409(client, tmp_path):
+    client.post("/repos", json={"path": str(tmp_path)})
+    r = client.post("/repos", json={"path": str(tmp_path)})
+    assert r.status_code == 409
+
+
+def test_create_repo_nonexistent_path_returns_400(client):
+    r = client.post("/repos", json={"path": "/nonexistent/path/xyz"})
+    assert r.status_code == 400
+
+
+def test_delete_repo(client, add_repo):
+    repo_id = add_repo()
+    r = client.delete(f"/repos/{repo_id}")
+    assert r.status_code == 204
+    assert client.get("/repos").json()["repos"] == []
+
+
+def test_delete_repo_not_found_returns_404(client):
+    assert client.delete("/repos/999").status_code == 404
+
+
+def test_ingest_repo_not_found_returns_404(client):
+    assert client.post("/repos/999/ingest").status_code == 404
+
+
+def test_ingest_repo_path_gone_returns_400(client, add_repo):
+    repo_id = add_repo(path="/nonexistent/path/xyz")
+    assert client.post(f"/repos/{repo_id}/ingest").status_code == 400
+
+
+def test_ingest_repo_not_a_git_repo_returns_400(client, add_repo, tmp_path):
+    repo_id = add_repo(path=str(tmp_path))
+    r = client.post(f"/repos/{repo_id}/ingest")
+    assert r.status_code == 400
+    assert "Git error" in r.json()["detail"]
+
+
+def test_ingest_repo_updates_last_ingested_at(client, add_repo, tmp_path, monkeypatch):
+    from standup import api as api_module
+
+    monkeypatch.setattr(api_module, "get_raw_log", lambda *a, **kw: "")
+    monkeypatch.setattr(api_module, "parse_log", lambda raw: [])
+
+    repo_id = add_repo(path=str(tmp_path))
+    r = client.post(f"/repos/{repo_id}/ingest")
+    assert r.status_code == 200
+    assert r.json() == {"repo": "demo", "inserted": 0, "updated": 0, "unchanged": 0}
+
+    repo = client.get("/repos").json()["repos"][0]
+    assert repo["last_ingested_at"] is not None
+
+
+# --- /ingest ---
+
+
 def test_ingest_rejects_missing_repo_path(client):
     r = client.post("/ingest", json={"repo_path": "/nonexistent/path/xyz"})
     assert r.status_code == 400

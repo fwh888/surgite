@@ -243,6 +243,7 @@ def ingest_repo(
             raise HTTPException(status_code=400, detail=f"Git error: {e}")
 
         commits = parse_log(raw)
+        repo_name = repo.name
         inserted = updated = unchanged = 0
 
         for c in commits:
@@ -268,7 +269,7 @@ def ingest_repo(
         repo.last_ingested_at = datetime.now(timezone.utc)
         session.commit()
 
-    return {"repo": repo.name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
+    return {"repo": repo_name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
 
 
 @app.post("/ingest")
