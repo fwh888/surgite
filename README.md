@@ -8,7 +8,7 @@ Three layers, built in order:
 
 1. **CLI** (`standup`) — point it at a git repo, get a formatted log or an AI-written prose summary. Standalone, no database required for this path.
 2. **REST API** (FastAPI + Postgres) — ingests commits into a `commits` table and exposes filterable read endpoints plus an AI summary endpoint. Backs both the automation scripts and the web UI.
-3. **Web frontend** — a browser UI for registering repos, triggering ingests, and generating copy-pasteable standup summaries (for Slack/email) without touching the terminal. See [docs/v2-frontend.md](docs/v2-frontend.md) for the sketch.
+3. **Web frontend** — a browser UI for registering repos, triggering ingests, and generating copy-pasteable standup summaries (for Slack/email) without touching the terminal. See [docs/v2-svelte-plan.md](docs/v2-svelte-plan.md) for the build plan.
 
 The CLI stays first-class. The API and UI exist so the tool can be run as a small personal service across multiple repos without re-running commands by hand.
 
@@ -17,9 +17,9 @@ The CLI stays first-class. The API and UI exist so the tool can be run as a smal
 | Component | Status | Entry point |
 |---|---|---|
 | CLI | working | `standup` / `uv run standup` |
-| REST API | working (commit ingest + read + summary) | `uv run uvicorn standup.api:app --reload` |
-| Repo management routes (`/repos`) | planned | see [docs/v2-frontend.md](docs/v2-frontend.md) |
-| Web UI | planned | see [docs/v2-frontend.md](docs/v2-frontend.md) |
+| REST API | working (commit ingest + read + summary) | `uv run uvicorn backend.api:app --reload` |
+| Repo management routes (`/repos`) | working (list / add / delete / ingest) | `uv run uvicorn backend.api:app --reload` |
+| Web UI | planned | see [docs/v2-svelte-plan.md](docs/v2-svelte-plan.md) |
 
 ## Setup
 
@@ -67,7 +67,7 @@ DATABASE_URL=postgresql://standup:standup@localhost:5432/standup
 ```bash
 docker compose up -d
 uv run alembic upgrade head
-uv run uvicorn standup.api:app --reload
+uv run uvicorn backend.api:app --reload
 ```
 
 ## CLI usage

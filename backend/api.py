@@ -9,13 +9,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import requests
 
-from standup.db import get_session, CommitRow, RepoRow
-from standup.formatter import format_log
-from standup.git import get_raw_log, parse_log
-from standup.models import Commit
-from standup.schemas import IngestRequest, RepoCreate
-from standup import summarizer
-from standup.summarizer import ProviderError
+from backend.db import get_session, CommitRow, RepoRow
+from backend.formatter import format_log
+from backend.git import get_raw_log, parse_log
+from backend.models import Commit
+from backend.schemas import IngestRequest, RepoCreate
+from backend import summarizer
+from backend.summarizer import ProviderError
 
 # Cap on commits sent to the LLM in /summary?ai=true to bound token cost.
 AI_SUMMARY_MAX_COMMITS = 500

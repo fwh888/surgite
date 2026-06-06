@@ -19,10 +19,10 @@ dependencies = [
 ]
 
 [project.scripts]
-standup = "standup.standup:main"
+standup = "backend.standup:main"
 
 [tool.uv.build-backend]
-module-name = "standup"
+module-name = "backend"
 module-root = ""
 
 [dependency-groups]

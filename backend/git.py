@@ -1,5 +1,5 @@
 import subprocess
-from standup.models import Commit
+from backend.models import Commit
 
 def _is_git_ref(repo_path: str, value: str) -> bool:
     result = subprocess.run(

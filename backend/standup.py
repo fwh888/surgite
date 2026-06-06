@@ -1,7 +1,7 @@
 import argparse
-from standup.git import get_raw_log, parse_log
-from standup.formatter import format_log
-from standup.summarizer import summarize_commits
+from backend.git import get_raw_log, parse_log
+from backend.formatter import format_log
+from backend.summarizer import summarize_commits
 from dotenv import load_dotenv
 import requests
 

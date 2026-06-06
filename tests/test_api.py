@@ -86,7 +86,7 @@ def test_summary_ai_unknown_provider_returns_400(client, add_commit):
 
 def test_summary_ai_uses_selected_provider(client, add_commit, monkeypatch):
     add_commit()
-    from standup import summarizer
+    from backend import summarizer
 
     def fake_generate(commit_log, provider=None, model=None):
         return {"summary": "Accomplishments:\n- shipped it", "provider": "groq", "model": "x"}
@@ -163,7 +163,7 @@ def test_ingest_repo_not_a_git_repo_returns_400(client, add_repo, tmp_path):
 
 
 def test_ingest_repo_updates_last_ingested_at(client, add_repo, tmp_path, monkeypatch):
-    from standup import api as api_module
+    from backend import api as api_module
 
     monkeypatch.setattr(api_module, "get_raw_log", lambda *a, **kw: "")
     monkeypatch.setattr(api_module, "parse_log", lambda raw: [])
