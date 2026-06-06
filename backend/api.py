@@ -1,9 +1,12 @@
 import os
 from collections import defaultdict
 from datetime import date, datetime, timezone, timedelta
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -21,6 +24,16 @@ from backend.summarizer import ProviderError
 AI_SUMMARY_MAX_COMMITS = 500
 
 app = FastAPI()
+
+# Allow the Vite dev server (separate origin) to call the API during development.
+# In production the frontend is served same-origin from the static mount below, so
+# these origins simply go unused.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(SQLAlchemyError)
@@ -312,3 +325,11 @@ def ingest(req: IngestRequest):
         session.commit()
 
     return {"repo": repo_name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
+
+
+# Serve the built SvelteKit SPA same-origin in production. Mounted LAST so it never
+# shadows the API routes above, and only when the build exists (in dev the frontend
+# runs on the Vite server instead, so this is skipped and startup doesn't fail).
+_FRONTEND_BUILD = Path(__file__).resolve().parent.parent / "frontend" / "build"
+if _FRONTEND_BUILD.is_dir():
+    app.mount("/", StaticFiles(directory=_FRONTEND_BUILD, html=True), name="frontend")
