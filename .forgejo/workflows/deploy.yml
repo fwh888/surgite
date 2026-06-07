@@ -1,0 +1,28 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Build, push, and deploy
+    runs-on: host
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Forgejo registry
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login forgejo.lan --username "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Build and push image
+        run: |
+          docker build -t forgejo.lan/ncoleman/standup-gen-app:latest .
+          docker push forgejo.lan/ncoleman/standup-gen-app:latest
+
+      - name: Trigger Komodo deploy
+        run: |
+          curl -sf -X POST https://komodo.lan/api/execute/DeployStack \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${{ secrets.KOMODO_API_KEY }}" \
+            -H "x-api-secret: ${{ secrets.KOMODO_API_SECRET }}" \
+            -d '{"stack": "standup-gen"}'
