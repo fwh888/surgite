@@ -158,13 +158,22 @@ def summary(
 
     by_repo: dict[str, int] = defaultdict(int)
     by_day: dict[str, int] = defaultdict(int)
+    repo_commits: dict[str, list[Commit]] = {}
     for c in commits:
-        by_repo[c["repo"]] += 1
+        repo_name = c["repo"]
+        by_repo[repo_name] += 1
         by_day[c["date"]] += 1
+        commit_obj = Commit(
+            hash=c["hash"], date=c["date"], author=c["author"], message=c["message"]
+        )
+        repo_commits.setdefault(repo_name, []).append(commit_obj)
+
+    log_by_repo = {name: format_log(cs) for name, cs in repo_commits.items()}
 
     ai_summary = None
     ai_provider = None
     ai_model = None
+    ai_summaries = None
     if ai:
         if len(commits) > AI_SUMMARY_MAX_COMMITS:
             raise HTTPException(
@@ -174,14 +183,12 @@ def summary(
                     f"({len(commits)} > {AI_SUMMARY_MAX_COMMITS}); narrow the date range."
                 ),
             )
-        commit_objs = [
-            Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"])
-            for c in commits
-        ]
+        ai_summaries = summarizer.generate_summary_per_repo(log_by_repo, provider=provider)
+        # Backward-compat combined summary (first available repo, or all joined)
+        all_commit_objs = [Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"]) for c in commits]
         try:
-            result = summarizer.generate_summary(format_log(commit_objs), provider=provider)
+            result = summarizer.generate_summary(format_log(all_commit_objs), provider=provider)
         except ProviderError as e:
-            # Unknown provider or missing API key: the caller's problem.
             raise HTTPException(status_code=400, detail=str(e))
         except requests.RequestException as e:
             raise HTTPException(status_code=502, detail=f"Provider request failed: {e}")
@@ -198,9 +205,11 @@ def summary(
         "by_repo": dict(by_repo),
         "by_day": dict(sorted(by_day.items())),
         "commits": commits,
+        "log_by_repo": log_by_repo,
         "ai_summary": ai_summary,
         "ai_provider": ai_provider,
         "ai_model": ai_model,
+        "ai_summaries": ai_summaries,
     }
 
 

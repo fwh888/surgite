@@ -38,9 +38,11 @@ export interface Summary {
 	by_repo: Record<string, number>;
 	by_day: Record<string, number>;
 	commits: Commit[];
+	log_by_repo: Record<string, string> | null;
 	ai_summary: string | null;
 	ai_provider: string | null;
 	ai_model: string | null;
+	ai_summaries: Record<string, { summary: string; provider: string; model: string }> | null;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
