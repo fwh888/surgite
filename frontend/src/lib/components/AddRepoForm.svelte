@@ -4,8 +4,6 @@
 
 	let { onAdded }: { onAdded: () => void } = $props();
 
-	// Focus the field when the form opens, without the `autofocus` attribute
-	// (which is an accessibility anti-pattern svelte-check flags).
 	function focusOnMount(node: HTMLInputElement) {
 		node.focus();
 	}
@@ -33,15 +31,15 @@
 				await ingestRepo(repo.id);
 				ingestState = 'idle';
 				open = false;
-				toasts.success(`Added ${repo.name}`);
+				toasts.success(`added ${repo.name}`);
 				onAdded();
 			} catch (e2) {
 				ingestState = 'error';
-				ingestError = e2 instanceof Error ? e2.message : 'Ingest failed';
+				ingestError = e2 instanceof Error ? e2.message : 'ingest failed';
 				onAdded();
 			}
 		} catch (e2) {
-			error = e2 instanceof Error ? e2.message : 'Failed to add repo';
+			error = e2 instanceof Error ? e2.message : 'failed to add repo';
 			submitting = false;
 		}
 	}
@@ -60,39 +58,40 @@
 	{#if open}
 		<form onsubmit={submit} class="flex flex-col gap-2">
 			<div class="flex items-center gap-2">
+				<span class="text-accent" aria-hidden="true">❯</span>
 				<input
 					bind:value={input}
 					use:focusOnMount
 					placeholder="https://github.com/user/repo.git"
-					class="flex-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500"
+					class="flex-1 border border-border bg-bg px-2 py-1.5 text-sm text-fg placeholder:text-fg-faint"
 				/>
 				<button
 					type="submit"
 					disabled={submitting || ingestState === 'ingesting'}
-					class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-indigo-600 dark:hover:bg-indigo-500"
+					class="border border-border bg-surface px-3 py-1.5 text-sm text-fg transition hover:bg-surface-2 disabled:opacity-50"
 				>
-					{submitting ? 'Adding…' : ingestState === 'ingesting' ? 'Ingesting…' : 'Add'}
+					{submitting ? 'adding…' : ingestState === 'ingesting' ? '⣾ ingesting…' : 'add-repo'}
 				</button>
-				<button type="button" onclick={cancel} class="px-2 py-1.5 text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200">
-					Cancel
+				<button type="button" onclick={cancel} class="px-2 py-1.5 text-sm text-fg-muted transition hover:text-fg">
+					cancel
 				</button>
 			</div>
 		</form>
 		{#if ingestState === 'ingesting'}
-			<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Ingesting commits…</p>
+			<p class="mt-2 text-xs text-fg-muted">ingesting commits…</p>
 		{/if}
 		{#if ingestError}
-			<p class="mt-2 text-xs text-amber-600 dark:text-amber-400">Repo added but ingest failed: {ingestError}</p>
+			<p class="mt-2 text-xs text-warn">repo added but ingest failed: {ingestError}</p>
 		{/if}
 		{#if error}
-			<p class="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+			<p class="mt-2 text-xs text-err">{error}</p>
 		{/if}
 	{:else}
 		<button
 			onclick={() => (open = true)}
-			class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+			class="border border-border bg-surface px-3 py-1.5 text-sm text-fg transition hover:bg-surface-2"
 		>
-			+ Add repo
+			<span class="text-accent">❯</span> add-repo
 		</button>
 	{/if}
 </div>

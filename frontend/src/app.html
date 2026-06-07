@@ -5,15 +5,15 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
 		<script>
-			// Apply the saved (or system) theme before first paint to avoid a flash.
+			// Apply the saved colorscheme before first paint to avoid a flash.
 			(function () {
+				var valid = ['github-dark', 'light', 'nord', 'catppuccin', 'solarized', 'terminal'];
+				var t = 'github-dark';
 				try {
-					var t = localStorage.getItem('theme');
-					if (t !== 'light' && t !== 'dark') {
-						t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-					}
-					if (t === 'dark') document.documentElement.classList.add('dark');
+					var s = localStorage.getItem('theme');
+					if (valid.indexOf(s) !== -1) t = s;
 				} catch (e) {}
+				document.documentElement.setAttribute('data-theme', t);
 			})();
 		</script>
 		%sveltekit.head%
