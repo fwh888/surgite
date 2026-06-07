@@ -15,6 +15,9 @@ on the way to a 1.0.0 release.
 - Toast notifications for repo ingest / add / delete actions and clipboard errors,
   so successful actions now give clear feedback instead of failing silently.
 - Empty-state hint and a "No commits in this period" state in the summary panel.
+- Summary controls: a custom date range (in addition to the 7/14/30-day presets)
+  and an optional author filter.
+- Export a repo's summary to a file — Markdown for AI summaries, text for raw logs.
 
 ### Changed
 
