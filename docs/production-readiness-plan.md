@@ -95,11 +95,13 @@ heavy*. Every item below should earn its place.
       `conftest.py` gets an E402 per-file ignore for its deliberate env-before-import.
 - [x] Add a frontend **typecheck** step — `npm run check` (svelte-check) now runs in
       the CI `frontend` job before the build.
-- [ ] Expand tests beyond the API:
-  - [ ] CLI argument parsing + output (`backend/standup.py`).
-  - [ ] `summarizer.py` provider selection / error paths (mock HTTP).
-  - [ ] `git.py` log parsing edge cases.
-  - [ ] A minimal frontend test (component or smoke) — even one establishes the pattern.
+- [x] Expand tests beyond the API (32 → 78 backend tests + a frontend suite):
+  - [x] CLI `--summarize` / `--output` paths (`backend/standup.py`).
+  - [x] `summarizer.py` provider selection / status / both HTTP paths (mocked) / errors.
+  - [x] `git.py` URL detection, repo-name parsing, log parsing, real-repo roundtrip.
+  - [x] `formatter.py` formatting.
+  - [x] Frontend: vitest + a `renderMarkdown` test (incl. XSS-escaping) — establishes
+        the pattern and wires `npm run test` into CI.
 - [ ] Tighten mypy (consider `--strict` incrementally) and document the bar.
 - [ ] Add a coverage signal (not necessarily a hard gate) so gaps are visible.
 

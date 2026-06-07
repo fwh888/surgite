@@ -321,6 +321,36 @@ def test_cli_without_ingest_prints_formatted_log(monkeypatch):
     assert "abc1234" in stdout.getvalue()
 
 
+def test_cli_summarize_runs_the_summarizer(monkeypatch):
+    monkeypatch.setattr(
+        "backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
+    )
+    monkeypatch.setattr(
+        "backend.standup.summarize_commits", lambda text, **kw: "Accomplishments:\n- fixed a bug"
+    )
+    monkeypatch.setattr("sys.argv", ["standup", "/r", "--summarize"])
+    stdout = io.StringIO()
+    monkeypatch.setattr("sys.stdout", stdout)
+
+    main()
+
+    assert "Accomplishments:" in stdout.getvalue()
+
+
+def test_cli_output_writes_to_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
+    )
+    out_file = tmp_path / "summary.txt"
+    monkeypatch.setattr("sys.argv", ["standup", "/r", "--output", str(out_file)])
+
+    main()
+
+    written = out_file.read_text()
+    assert "fix bug" in written
+    assert "Alice" in written
+
+
 def test_ingest_rejects_missing_repo_path(client):
     r = client.post("/ingest", json={"repo_path": "/nonexistent/path/xyz"})
     assert r.status_code == 400
