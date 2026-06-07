@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+env:
+  IMAGE: ${{ vars.REGISTRY_HOST }}/ncoleman/standup-gen-app:latest
+
 jobs:
   deploy:
     name: Build, push, and deploy
@@ -11,17 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to Forgejo registry
-        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login forgejo.lan --username "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+      - name: Log in to container registry
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${{ vars.REGISTRY_HOST }}" --username "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
       - name: Build and push image
         run: |
-          docker build -t forgejo.lan/ncoleman/standup-gen-app:latest .
-          docker push forgejo.lan/ncoleman/standup-gen-app:latest
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
 
       - name: Trigger Komodo deploy
         run: |
-          curl -sf -X POST https://komodo.lan/execute/DeployStack \
+          curl -sf -X POST "${{ vars.KOMODO_URL }}/execute/DeployStack" \
             -H "Content-Type: application/json" \
             -H "x-api-key: ${{ secrets.KOMODO_API_KEY }}" \
             -H "x-api-secret: ${{ secrets.KOMODO_API_SECRET }}" \

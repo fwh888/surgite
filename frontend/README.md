@@ -1,42 +1,27 @@
-# sv
+# standup-gen frontend
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+SvelteKit SPA (Svelte 5 + Tailwind v4) for the standup-gen web app: register repos,
+trigger ingests, and generate standup summaries from the browser. Built to static
+assets via `@sveltejs/adapter-static` and served same-origin by the FastAPI backend
+in production.
 
-## Creating a project
+For the full project (backend, CLI, Docker quickstart), see the
+[root README](../README.md).
 
-If you're seeing this, you've probably already done this step. Congrats!
+## Development
 
-```sh
-# create a new project
-npx sv create my-app
+```bash
+npm install
+npm run dev      # Vite dev server on :5173, calls the API on :8000 cross-origin
 ```
 
-To recreate this project with the same configuration:
+Run the backend (`uv run uvicorn backend.api:app --reload`) alongside it. To point at
+a non-default backend, set `VITE_API_BASE` — see [.env.example](.env.example).
 
-```sh
-# recreate this project
-npx sv@0.15.4 create --template minimal --types ts --add tailwindcss="plugins:none" --install npm frontend
+## Build & check
+
+```bash
+npm run build    # production build → ./build (served by the backend)
+npm run preview  # preview the production build locally
+npm run check    # svelte-check (type + a11y diagnostics)
 ```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.

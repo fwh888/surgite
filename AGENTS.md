@@ -75,10 +75,12 @@ API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postg
 - `alembic/` — migrations; `e5e311c2e5f0_create_commits_table.py` is the initial schema
 - `tests/` — pytest suite covering the API; `conftest.py` swaps in a temp SQLite DB and clears tables between tests
 
+- `frontend/` — SvelteKit SPA (Svelte 5 + Tailwind v4) for managing repos and generating summaries; built to static assets and served same-origin by FastAPI via the `StaticFiles` mount at the end of `backend/api.py`
+
 ## Planned upgrades
 
 - CLI `--ingest <url>` flag to POST to the API instead of printing (not yet wired up in `backend/standup.py`)
-- **v2:** the repo management table (`repos`) and CRUD routes are done; remaining work is a web UI — a SvelteKit SPA served by FastAPI (see `docs/v2-svelte-plan.md`)
+- See [docs/production-readiness-plan.md](docs/production-readiness-plan.md) for the roadmap to a polished public release
 
 ## Environment Variables
 

@@ -1,96 +1,135 @@
 # standup-gen
 
-Generates standup summaries from git commit history. Started as a CLI and is growing into a small self-hosted web app for managing repos, ingesting commits on a schedule, and grabbing a daily or weekly summary from the browser instead of re-running CLI flags.
+Generate standup summaries from your git commit history — as a plain formatted log
+or an AI-written prose summary. Use it as a one-off CLI, or self-host the small web
+app to register repos, ingest commits on a schedule, and grab a copy-pasteable daily
+or weekly summary from the browser.
 
-## What this is meant to be
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Three layers, built in order:
+<!-- TODO(P1): add a screenshot/GIF of the web UI (light + dark) once seeded with
+     sample data — see docs/production-readiness-plan.md -->
 
-1. **CLI** (`standup`) — point it at a git repo, get a formatted log or an AI-written prose summary. Standalone, no database required for this path.
-2. **REST API** (FastAPI + Postgres) — ingests commits into a `commits` table and exposes filterable read endpoints plus an AI summary endpoint. Backs both the automation scripts and the web UI.
-3. **Web frontend** — a browser UI for registering repos, triggering ingests, and generating copy-pasteable standup summaries (for Slack/email) without touching the terminal. See [docs/v2-svelte-plan.md](docs/v2-svelte-plan.md) for the build plan.
+## What it is
 
-The CLI stays first-class. The API and UI exist so the tool can be run as a small personal service across multiple repos without re-running commands by hand.
+Three layers that build on each other; the CLI stays first-class and works on its own:
 
-## Components
+| Layer | What it does | Status |
+| --- | --- | --- |
+| **CLI** (`standup`) | Point it at a git repo, get a formatted log or an AI prose summary. No database required. | Working |
+| **REST API** (FastAPI + Postgres) | Ingests commits into a `commits` table, exposes filterable read + summary endpoints, and CRUD for registered repos. | Working |
+| **Web UI** (SvelteKit) | Register repos, trigger ingests, and generate standup summaries from the browser — light/dark themed. Served same-origin by the API. | Working |
 
-| Component | Status | Entry point |
-|---|---|---|
-| CLI | working | `standup` / `uv run standup` |
-| REST API | working (commit ingest + read + summary) | `uv run uvicorn backend.api:app --reload` |
-| Repo management routes (`/repos`) | working (list / add / delete / ingest) | `uv run uvicorn backend.api:app --reload` |
-| Web UI | planned | see [docs/v2-svelte-plan.md](docs/v2-svelte-plan.md) |
+## Quickstart (self-hosted web app)
 
-## Setup
-
-1. Install [uv](https://docs.astral.sh/uv/) if you don't have it:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-2. Clone the repo and install `standup` as a global command:
+Runs Postgres + the API + the bundled web UI with one command.
 
 ```bash
-git clone https://github.com/nicoleman0/standup-gen.git
+git clone https://codeberg.org/ncoleman/standup-gen.git
 cd standup-gen
-uv tool install .
+cp .env.example .env          # optional: add a provider key for AI summaries
+docker compose up --build
 ```
 
-3. Add `uv`'s tool bin to your PATH (only needed once):
+Then open <http://localhost:8000>. Migrations run automatically on startup.
 
-```bash
-uv tool update-shell
-```
+The app works **without** an LLM key — you'll get formatted commit logs and
+non-AI summaries. Add a provider key to `.env` (see [Configuration](#configuration))
+to enable AI-written prose summaries.
 
-Restart your terminal or `source ~/.zshrc` — after that, `standup` will be available anywhere.
+## CLI (standalone)
 
-4. Set a provider API key (only needed for `--summarize` / `?ai=true`). The default provider is Anthropic; set `LLM_PROVIDER` to `groq` or `deepseek` to switch:
+The CLI needs no database or server.
 
-**zsh** (`~/.zshrc`):
+1. Install [uv](https://docs.astral.sh/uv/):
 
-```zsh
-echo 'export ANTHROPIC_API_KEY=your_key_here' >> ~/.zshrc
-source ~/.zshrc
-```
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
 
-Or create a `.env` file in the repo root:
+2. Install `standup` as a global command:
 
-```bash
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=your_key_here
-DATABASE_URL=postgresql://standup:standup@localhost:5432/standup
-```
+   ```bash
+   git clone https://codeberg.org/ncoleman/standup-gen.git
+   cd standup-gen
+   uv tool install .
+   uv tool update-shell   # adds uv's tool bin to PATH (once); restart your shell after
+   ```
 
-5. For the API / web app path, start Postgres and run migrations:
+3. (Optional) For AI summaries, set a provider key — e.g. in `~/.zshrc`:
 
-```bash
-docker compose up -d
-uv run alembic upgrade head
-uv run uvicorn backend.api:app --reload
-```
+   ```bash
+   export ANTHROPIC_API_KEY=your_key_here
+   ```
 
-## CLI usage
+Usage:
 
 ```bash
 standup /path/to/your/repo --since 1.day.ago --summarize
 ```
 
 | Flag | Default | Description |
-|------|---------|-------------|
+| ---- | ------- | ----------- |
 | `repo_path` | *(required)* | Path to the git repository |
 | `--since` | `7.days.ago` | How far back to look |
 | `--until` | `now` | End of the range |
 | `--author` | *(none)* | Filter to a specific author |
-| `--summarize` | off | Use AI to write a prose summary |
+| `--since-commit` | *(none)* | Range starting from a given commit |
+| `--summarize` | off | Use AI to write a prose summary (needs a provider key) |
 | `--output` | *(stdout)* | Write output to a file instead |
 
-## API endpoints (current)
+## Configuration
+
+Set these in `.env` (web app) or your shell (CLI). Only the provider you actually use
+needs a key.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | derived from `POSTGRES_*` | Full SQLAlchemy URL. If unset, built from the `POSTGRES_*` vars below. |
+| `POSTGRES_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_DB` | `db` / `5432` / `standup` / `standup` / `standup` | Used to assemble `DATABASE_URL` when it isn't set directly. |
+| `LLM_PROVIDER` | `anthropic` | Summary provider: `anthropic`, `groq`, or `deepseek`. |
+| `ANTHROPIC_API_KEY` / `GROQ_API_KEY` / `DEEPSEEK_API_KEY` | *(none)* | Key for the chosen provider; required for `--summarize` and `GET /summary?ai=true`. |
+| `ANTHROPIC_MODEL` / `GROQ_MODEL` / `DEEPSEEK_MODEL` | per-provider | Optional model overrides (defaults: `claude-haiku-4-5-20251001`, `llama-3.1-8b-instant`, `deepseek-chat`). |
+| `STANDUP_USER` | `the developer` | Name injected into the summary prompt. |
+| `STANDUP_ROLE` | *(none)* | Optional role description appended to the prompt identity. |
+| `API_HOST` / `API_PORT` | `127.0.0.1` / `8000` | Where the API binds. |
+| `INGEST_INTERVAL` | `300` | Seconds between automatic background ingests of registered repos. |
+| `REPO_CACHE_DIR` | `/var/standup/repos` | Where the app clones registered repos for ingest. |
+
+## API endpoints
 
 - `POST /ingest` — runs `git log` against a repo path and upserts commits
-- `GET /commits` — paginated list with `since`/`until`/`author`/`repo` filters
+- `GET /commits` — paginated list with `since` / `until` / `author` / `repo` filters
 - `GET /commits/{hash}` — lookup by full or prefix hash
-- `GET /summary` — aggregate by repo and day; `?ai=true` runs the AI summarizer (optional `&provider=anthropic|groq|deepseek`)
+- `GET /summary` — aggregate by repo and day; `?ai=true` runs the AI summarizer
+  (optional `&provider=anthropic|groq|deepseek`)
 - `GET /providers` — list available summary providers and the default
+- `GET /repos`, `POST /repos`, `DELETE /repos/{id}`, `POST /repos/{id}/ingest` —
+  manage registered repos
 
-See [AGENTS.md](AGENTS.md) for the full architecture overview.
+## Development
+
+```bash
+uv sync --group dev                     # install deps (incl. dev tools)
+docker compose up -d db                 # Postgres for local dev
+uv run alembic upgrade head             # run migrations
+uv run uvicorn backend.api:app --reload # API at http://127.0.0.1:8000
+cd frontend && npm install && npm run dev   # frontend dev server (proxies to API)
+uv run pytest                           # tests
+```
+
+See [AGENTS.md](AGENTS.md) for the full architecture overview, and
+[docs/production-readiness-plan.md](docs/production-readiness-plan.md) for the roadmap
+to a polished public release.
+
+## Contributing
+
+Contributions are welcome. The project is deliberately minimalist — see the principles
+in [AGENTS.md](AGENTS.md). (Contributor guide, issue templates, and a code of conduct
+are on the way; see the roadmap.)
+
+The canonical repository is on Codeberg: <https://codeberg.org/ncoleman/standup-gen>.
+
+## License
+
+[MIT](LICENSE) © 2026 Nick Coleman

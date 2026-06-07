@@ -1,0 +1,161 @@
+# Production Readiness & Open-Source Plan
+
+Status: **Draft** · Owner: @ncoleman · Target: first public-ready release (`v1.0.0`)
+
+The core works: CLI, FastAPI + Postgres backend, and a SvelteKit web UI (with dark
+mode) are all functional. This document is the plan to take it from "works on my
+machine" to something a stranger can self-host, trust, and contribute to.
+
+Hosting (**decided**): keep the self-hosted **Forgejo** instance (on the maintainer's
+LAN) as the canonical dev/CI/CD home, with **Codeberg** as the public mirror and the
+project's public face. No infra migration for now — instead, every public-facing file
+is kept **host-agnostic** (no LAN hostnames, self-contained compose) so a future flip
+to Codeberg-primary needs zero rework. Because the LAN Forgejo URL isn't publicly
+reachable, all public docs/links point at the Codeberg mirror
+(`codeberg.org/ncoleman/standup-gen`) — never the LAN address, and not `github.com`.
+
+> **Maintainer infra note:** the published `docker-compose.yml` now builds from source
+> and reads the registry image from `APP_IMAGE`. The Komodo deploy must set
+> `APP_IMAGE=<registry-host>/ncoleman/standup-gen-app:latest` in the stack env, or prod
+> will build from source instead of pulling. `deploy.yml` now reads `vars.REGISTRY_HOST`
+> and `vars.KOMODO_URL` (set these in Forgejo repo settings → Actions → Variables).
+
+---
+
+## Where we are today
+
+| Area | State |
+| --- | --- |
+| CLI (`standup`) | Working |
+| REST API (ingest / commits / summary / providers / repos CRUD) | Working |
+| Web UI (SvelteKit SPA, dark mode) | Working |
+| CI | mypy · uv.lock drift · pip-audit · pytest · frontend build |
+| Tests | API only (`tests/test_api.py`, ~316 lines). No CLI, summarizer, or frontend tests |
+| Deploy | Forgejo registry → Komodo (maintainer's private infra; compose + workflow now host-agnostic) |
+| Docs | `README.md`, `AGENTS.md`, this plan. `docs/` now exists |
+| Contributor files | None (no CONTRIBUTING, CoC, SECURITY, issue/PR templates, CHANGELOG) |
+| Linting / formatting | None (no ruff for Python, no lint script for frontend) |
+
+---
+
+## Guiding principles
+
+Carried from `AGENTS.md`: minimalist, no dead code, no bloat, fewer lines is
+better. "Professional" here means *trustworthy and approachable*, not *enterprise
+heavy*. Every item below should earn its place.
+
+---
+
+## Phase 1 — Truth & trust (docs are correct)
+
+*Goal: nothing in the repo lies to a new reader. This is the cheapest, highest-trust work; do it first.*
+
+- [x] Rewrite `README.md` to reflect reality: UI is shipped, component status table
+      updated, "planned/v2" framing dropped.
+- [x] Fix the broken `docs/v2-svelte-plan.md` link (removed from `README.md` and
+      `AGENTS.md`; the historical plan is superseded by the shipped UI).
+- [x] Point clone/install instructions at the canonical Codeberg URL.
+- [x] Add a "Quickstart" that gets a user to a running UI via `docker compose up`,
+      separate from the CLI-only path. (Added `build: .` to compose so it builds from
+      source when the private image isn't reachable.)
+- [x] Document the data model / config / LLM-provider story in a user-facing form
+      (Configuration table + API endpoints in `README.md`).
+- [x] Replace the default `sv` scaffolding boilerplate in `frontend/README.md`.
+- [ ] Add a **screenshot or short GIF** of the web UI (light + dark). *Placeholder
+      TODO left in `README.md`; needs the app running with seeded data to look good.*
+- [ ] `LICENSE` — confirm MIT is the intended license and the year/holder is right
+      (currently `2026 Nick Coleman`). *Open question for the maintainer.*
+
+## Phase 2 — Easy self-hosting
+
+*Goal: a stranger clones, runs one or two commands, and has it working — no private infra.*
+
+- [ ] **Portable `docker-compose.yml`**: bundle Postgres + backend + frontend so
+      `docker compose up` yields a working app. Strip any `*.lan` assumptions.
+- [ ] Pin/parameterize the published image (don't hardcode `forgejo.lan/...` for
+      end users; offer a build-from-source compose path).
+- [ ] **First-run experience**: migrations run automatically (or a one-liner),
+      sensible defaults, clear error if `DATABASE_URL` / provider key is missing.
+- [ ] Complete, accurate `.env.example` for both root and `frontend/` with comments.
+- [ ] Document running **without** an LLM key (CLI log + non-AI summary paths still
+      work) so the tool is useful before anyone signs up for a provider.
+- [ ] Health/readiness endpoint + a documented "is it up?" check.
+- [ ] Optional: publish images to a public registry (Codeberg/ghcr) so users don't
+      have to build.
+
+## Phase 3 — Code quality & tests
+
+*Goal: contributions can be reviewed and merged with confidence; CI catches regressions.*
+
+- [ ] Add **ruff** (lint + format) for Python; wire into CI and document
+      `uv run ruff check` / `format` in `AGENTS.md`.
+- [ ] Add a frontend **lint + typecheck** step (`svelte-check` already present —
+      add it to CI; consider prettier/eslint).
+- [ ] Expand tests beyond the API:
+  - [ ] CLI argument parsing + output (`backend/standup.py`).
+  - [ ] `summarizer.py` provider selection / error paths (mock HTTP).
+  - [ ] `git.py` log parsing edge cases.
+  - [ ] A minimal frontend test (component or smoke) — even one establishes the pattern.
+- [ ] Tighten mypy (consider `--strict` incrementally) and document the bar.
+- [ ] Add a coverage signal (not necessarily a hard gate) so gaps are visible.
+
+## Phase 4 — Contributor onramp
+
+*Goal: a motivated stranger can figure out how to help in one sitting.*
+
+- [ ] `CONTRIBUTING.md` — dev setup (`uv sync`, `docker compose`, run tests),
+      branch/PR conventions, the minimalist principles, how to run CI locally.
+- [ ] `CODE_OF_CONDUCT.md` (Contributor Covenant).
+- [ ] `SECURITY.md` — how to report a vulnerability privately (note: this app runs
+      `git log` via subprocess and takes repo paths/URLs — call out the trust model).
+- [ ] Issue & PR templates under `.forgejo/` (Forgejo/Codeberg `ISSUE_TEMPLATE`).
+- [ ] `CHANGELOG.md` (Keep a Changelog format) starting at the first tagged release.
+- [ ] Label a few **good first issues** once the tracker is public.
+- [ ] Keep `AGENTS.md` as the architecture source of truth; link it from CONTRIBUTING.
+
+## Phase 5 — Product polish
+
+*Goal: it feels finished, not a prototype.*
+
+- [ ] Error / empty / loading states across the UI (no repos yet, ingest failed,
+      provider key missing, network error).
+- [ ] Accessibility pass (keyboard nav, focus states, color contrast in both themes,
+      semantic markup).
+- [ ] Copy-to-clipboard polish for the standup summary (the core user action).
+- [ ] Responsive/mobile check.
+- [ ] Consistent loading + toast/feedback patterns.
+- [ ] Optional: a small docs/landing page (could be the README rendered on Codeberg
+      Pages) with the screenshot and one-paragraph pitch.
+
+---
+
+## Release gate — what "v1.0.0" requires
+
+A tagged `v1.0.0` ships when:
+
+1. README is accurate and has a screenshot + 5-minute quickstart. *(P1)*
+2. `docker compose up` works on a clean machine with no private infra. *(P2)*
+3. CI runs lint + typecheck + tests for **both** backend and frontend, green. *(P3)*
+4. CONTRIBUTING, CoC, SECURITY, and issue/PR templates exist. *(P4)*
+5. No broken links, no "planned" features that are actually shipped (or vice versa).
+6. `version` bumped in `pyproject.toml` (0.1.0 → 1.0.0) and `frontend/package.json`,
+   with a `CHANGELOG.md` entry and a git tag.
+
+Phase 5 polish can continue past v1.0.0 — it shouldn't block the first public release.
+
+---
+
+## Suggested ordering
+
+P1 (docs truth) → P2 (self-hosting) → P3 (quality/tests) in parallel with P4
+(contributor files) → P5 (polish, ongoing). P1 is near-free and removes the most
+embarrassing gaps; P2 is what actually lets people *use* it; P3/P4 are what let
+people *trust and join* it.
+
+## Open questions
+
+- [x] ~~Forgejo-primary vs Codeberg-primary?~~ **Decided:** stay Forgejo-primary,
+      Codeberg as public mirror; keep all public files host-agnostic.
+- [ ] Add GitHub as a *second* public mirror too, or Codeberg-only?
+- [ ] Publish prebuilt images to a public registry, or build-from-source only, for v1?
+- [ ] Is MIT final? Confirm before adding contributor docs that reference it.
