@@ -23,6 +23,21 @@ on the way to a 1.0.0 release.
 
 ### Changed
 
+- **Terminal aesthetic rework:** the web UI is now a pseudo-terminal — monospace
+  (JetBrains Mono), terminal-window chrome with traffic-light dots, prompt-style
+  section headers (`~/repos ❯`, `~/summary ❯`), command-style buttons
+  (`❯ generate`, `❯ add-repo`, `❯ ingest --all`), and a CLI command echo above
+  each generated summary.
+- **Multi-theme colorschemes:** replaced the light/dark toggle with six
+  colorschemes switched by a `data-theme` attribute: GitHub Dark (default),
+  Light, Nord, Catppuccin Mocha, Solarized Dark, and a classic green/amber
+  Terminal scheme. All components use semantic CSS tokens (`bg-surface`,
+  `text-fg`, `border-border`, etc.) — no more `dark:` variants.
+- **Personality:** log-line toasts (`[ ok ]` / `[fail]`), a vim/tmux-style
+  status bar (`[standup] scheme: nord │ v0.2.0`), braille spinners (`⣾⣽⣻…`)
+  for loading states, typewriter fade-in for AI summaries, a help overlay
+  (F1), and a Konami-code CRT scanline easter egg. All animations respect
+  `prefers-reduced-motion`.
 - AI summaries are now grouped into thematic Markdown sections (`## Theme` + bullets)
   instead of one flat "Accomplishments" list.
 - Accessibility and responsive polish: visible keyboard-focus rings on all controls,

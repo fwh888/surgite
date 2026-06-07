@@ -4,11 +4,13 @@
 	import RepoList from '$lib/components/RepoList.svelte';
 	import AddRepoForm from '$lib/components/AddRepoForm.svelte';
 	import SummaryPanel from '$lib/components/SummaryPanel.svelte';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import ThemePicker from '$lib/components/ThemePicker.svelte';
+	import HelpOverlay from '$lib/components/HelpOverlay.svelte';
 
 	let repos = $state<Repo[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let showHelp = $state(false);
 
 	async function loadRepos() {
 		loading = true;
@@ -23,6 +25,24 @@
 	}
 
 	onMount(loadRepos);
+
+	const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+	let konamiIdx = 0;
+
+	function handleKey(e: KeyboardEvent) {
+		if (showHelp && e.key === 'Escape') { showHelp = false; return; }
+		if (e.key === 'F1') { e.preventDefault(); showHelp = !showHelp; return; }
+
+		if (e.key === KONAMI[konamiIdx]) {
+			konamiIdx++;
+			if (konamiIdx === KONAMI.length) {
+				konamiIdx = 0;
+				document.documentElement.classList.toggle('crt');
+			}
+		} else {
+			konamiIdx = 0;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -30,35 +50,46 @@
 	<meta name="description" content="Generate standup summaries from your git commit history." />
 </svelte:head>
 
-<main class="mx-auto min-h-screen max-w-2xl px-4 py-10 sm:px-6 sm:py-12">
-	<div class="flex items-start justify-between gap-4">
-		<div class="flex items-center gap-3">
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				viewBox="0 0 32 32"
-				class="h-9 w-9 shrink-0"
-				aria-hidden="true"
-			>
-				<rect width="32" height="32" rx="7" fill="#4f46e5" />
-				<g fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round">
-					<path d="M10 12h12" />
-					<path d="M10 16h9" />
-					<path d="M10 20h6" />
-				</g>
-			</svg>
-			<div>
-				<h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">standup</h1>
-				<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Generate standup summaries from your git history.</p>
-			</div>
+<svelte:window onkeydown={handleKey} />
+
+<main class="mx-auto min-h-screen max-w-2xl px-4 py-6 sm:px-6 sm:py-10">
+	<div class="border border-border bg-surface">
+		<div class="flex items-center gap-2 border-b border-border px-3 py-2">
+			<span class="flex gap-1.5" aria-hidden="true">
+				<span class="inline-block h-3 w-3 rounded-full bg-[#ff5f57]"></span>
+				<span class="inline-block h-3 w-3 rounded-full bg-[#febc2e]"></span>
+				<span class="inline-block h-3 w-3 rounded-full bg-[#28c840]"></span>
+			</span>
+			<span class="flex-1 text-center text-xs text-fg-muted">
+				nick@standup: ~/standup
+			</span>
+			<ThemePicker />
 		</div>
-		<ThemeToggle />
+
+		<div class="px-4 py-6 sm:px-6">
+			<div class="flex items-center gap-2">
+				<span class="text-accent" aria-hidden="true">&gt;_</span>
+				<h1 class="text-lg font-semibold text-fg">standup</h1>
+				<span class="cursor" aria-hidden="true"></span>
+			</div>
+			<p class="mt-1 text-sm text-fg-muted">Generate standup summaries from your git history.</p>
+			<div class="mt-1 border-b border-border-subtle border-dashed"></div>
+		</div>
+
+		<section class="px-4 pb-2 sm:px-6">
+			<h2 class="text-sm text-fg-muted">
+				<span class="text-accent">~/repos</span> <span aria-hidden="true">❯</span>
+			</h2>
+			<AddRepoForm onAdded={loadRepos} />
+			<RepoList {repos} {loading} {error} onChanged={loadRepos} />
+		</section>
+
+		<section class="px-4 pb-6 sm:px-6">
+			<SummaryPanel {repos} />
+		</section>
 	</div>
-
-	<section class="mt-10">
-		<h2 class="text-sm font-medium tracking-wide text-slate-500 uppercase dark:text-slate-400">Repos</h2>
-		<AddRepoForm onAdded={loadRepos} />
-		<RepoList {repos} {loading} {error} onChanged={loadRepos} />
-	</section>
-
-	<SummaryPanel {repos} />
 </main>
+
+{#if showHelp}
+	<HelpOverlay onclose={() => (showHelp = false)} />
+{/if}

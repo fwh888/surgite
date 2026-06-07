@@ -10,8 +10,8 @@ function escapeHtml(s: string): string {
 
 function inline(s: string): string {
 	return s
-		.replace(/`([^`]+)`/g, '<code class="rounded bg-slate-100 px-1 py-0.5 text-[0.85em] dark:bg-slate-800">$1</code>')
-		.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-slate-900 dark:text-slate-100">$1</strong>')
+		.replace(/`([^`]+)`/g, '<code class="bg-surface-2 px-1 py-0.5 text-[0.85em]">$1</code>')
+		.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-fg">$1</strong>')
 		.replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>');
 }
 
@@ -34,14 +34,14 @@ export function renderMarkdown(src: string): string {
 
 		if (bullet) {
 			if (!inList) {
-				out.push('<ul class="list-disc space-y-1 pl-5 marker:text-slate-400">');
+				out.push('<ul class="list-disc space-y-1 pl-5 marker:text-fg-faint">');
 				inList = true;
 			}
 			out.push(`<li>${inline(bullet[1])}</li>`);
 		} else if (heading) {
 			closeList();
 			const size = heading[1].length === 1 ? 'text-base' : 'text-sm';
-			out.push(`<h4 class="${size} font-semibold text-slate-900 dark:text-slate-100">${inline(heading[2])}</h4>`);
+			out.push(`<h4 class="${size} font-semibold text-fg">${inline(heading[2])}</h4>`);
 		} else if (line.trim() === '') {
 			closeList();
 		} else {
