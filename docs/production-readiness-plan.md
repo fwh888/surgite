@@ -124,8 +124,10 @@ heavy*. Every item below should earn its place.
 - [x] `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1, contact filled in).
 - [x] `SECURITY.md` — private reporting + an explicit trust model (no auth; runs `git`
       against given paths/URLs; keys in env) so operators know it's a trusted-network tool.
-- [x] Issue & PR templates under `.forgejo/` (`ISSUE_TEMPLATE/bug_report.md`,
-      `feature_request.md`, `PULL_REQUEST_TEMPLATE.md`).
+- [x] Issue templates under `.forgejo/ISSUE_TEMPLATE/` (`bug_report.md`,
+      `feature_request.md`). A PR template was added then removed — Forgejo stacks it
+      on top of the commit message in the PR description, so we rely on clean commit
+      messages as the PR body instead.
 - [x] `CHANGELOG.md` (Keep a Changelog), seeded under `[Unreleased]` toward 1.0.0.
 - [x] Link contributor docs from the README; AGENTS.md stays the architecture source.
 - [ ] Label a few **good first issues** once the tracker is public. *(Post-merge, manual.)*
