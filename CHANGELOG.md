@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 In progress toward 0.2.0: UI/UX improvements, additional features, and visual polish
 on the way to a 1.0.0 release.
 
+### Added
+
+- Toast notifications for repo ingest / add / delete actions and clipboard errors,
+  so successful actions now give clear feedback instead of failing silently.
+- Empty-state hint and a "No commits in this period" state in the summary panel.
+
+### Changed
+
+- AI summaries are now grouped into thematic Markdown sections (`## Theme` + bullets)
+  instead of one flat "Accomplishments" list.
+
 ## [0.1.0] - 2026-06-07
 
 The initial foundation — a working CLI, REST API, and self-hostable web UI, with CI,

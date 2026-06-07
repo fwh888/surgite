@@ -102,31 +102,37 @@
 
 	{#if error}
 		<p class="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
-	{/if}
-
-	{#if result}
-		<div class="mt-4 space-y-3">
-			{#if result.ai_summaries}
-				{#each Object.entries(result.ai_summaries) as [repo, s] (repo)}
-					<SummaryCard
-						{repo}
-						commits={result.by_repo[repo]}
-						provider={s.provider}
-						model={s.model}
-						copyText={s.summary}
-					>
-						<div class="space-y-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-							{@html renderMarkdown(s.summary)}
-						</div>
-					</SummaryCard>
-				{/each}
-			{:else if result.log_by_repo}
-				{#each Object.entries(result.log_by_repo) as [repo, log] (repo)}
-					<SummaryCard {repo} commits={result.by_repo[repo]} copyText={log}>
-						<pre class="max-h-80 overflow-auto rounded-md bg-slate-50 p-3 font-mono text-xs leading-relaxed text-slate-700 dark:bg-slate-950 dark:text-slate-300">{log}</pre>
-					</SummaryCard>
-				{/each}
-			{/if}
-		</div>
+	{:else if result}
+		{#if result.total_commits === 0}
+			<p class="mt-4 text-sm text-slate-400 dark:text-slate-500">No commits in this period.</p>
+		{:else}
+			<div class="mt-4 space-y-3">
+				{#if result.ai_summaries}
+					{#each Object.entries(result.ai_summaries) as [repo, s] (repo)}
+						<SummaryCard
+							{repo}
+							commits={result.by_repo[repo]}
+							provider={s.provider}
+							model={s.model}
+							copyText={s.summary}
+						>
+							<div class="space-y-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+								{@html renderMarkdown(s.summary)}
+							</div>
+						</SummaryCard>
+					{/each}
+				{:else if result.log_by_repo}
+					{#each Object.entries(result.log_by_repo) as [repo, log] (repo)}
+						<SummaryCard {repo} commits={result.by_repo[repo]} copyText={log}>
+							<pre class="max-h-80 overflow-auto rounded-md bg-slate-50 p-3 font-mono text-xs leading-relaxed text-slate-700 dark:bg-slate-950 dark:text-slate-300">{log}</pre>
+						</SummaryCard>
+					{/each}
+				{/if}
+			</div>
+		{/if}
+	{:else if !generating}
+		<p class="mt-4 text-sm text-slate-400 dark:text-slate-500">
+			Pick a range and generate a summary to see it here.
+		</p>
 	{/if}
 </section>

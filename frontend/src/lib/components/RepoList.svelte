@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { deleteRepo, ingestAll, type Repo } from '$lib/api';
 	import { relativeTime } from '$lib/time';
+	import { toasts } from '$lib/toast.svelte';
 
 	let {
 		repos,
@@ -15,21 +16,27 @@
 	} = $props();
 
 	let ingesting = $state(false);
-	let ingestError = $state<string | null>(null);
 	let deletingId = $state<number | null>(null);
-	let actionError = $state<string | null>(null);
 
 	async function handleIngestAll() {
 		ingesting = true;
-		ingestError = null;
 		try {
 			const res = await ingestAll();
 			if (res.errors.length > 0) {
-				ingestError = res.errors.map((e) => `${e.repo}: ${e.error}`).join('; ');
+				toasts.error(
+					`Ingest errors — ${res.errors.map((e) => `${e.repo}: ${e.error}`).join('; ')}`
+				);
+			} else {
+				const added = res.results.reduce((n, r) => n + r.inserted, 0);
+				toasts.success(
+					added > 0
+						? `Ingested ${added} new commit${added === 1 ? '' : 's'}`
+						: 'All repos already up to date'
+				);
 			}
 			onChanged();
 		} catch (e) {
-			ingestError = e instanceof Error ? e.message : 'Ingest failed';
+			toasts.error(e instanceof Error ? e.message : 'Ingest failed');
 		} finally {
 			ingesting = false;
 		}
@@ -37,12 +44,13 @@
 
 	async function handleDelete(id: number) {
 		deletingId = id;
-		actionError = null;
+		const name = repos.find((r) => r.id === id)?.name ?? 'Repository';
 		try {
 			await deleteRepo(id);
+			toasts.success(`Removed ${name}`);
 			onChanged();
 		} catch (e) {
-			actionError = e instanceof Error ? e.message : 'Delete failed';
+			toasts.error(e instanceof Error ? e.message : 'Delete failed');
 		} finally {
 			deletingId = null;
 		}
@@ -95,10 +103,4 @@
 		</ul>
 	{/if}
 
-	{#if ingestError}
-		<p class="border-t border-slate-100 px-4 py-2 text-xs text-red-600 dark:border-slate-800 dark:text-red-400">{ingestError}</p>
-	{/if}
-	{#if actionError}
-		<p class="border-t border-slate-100 px-4 py-2 text-xs text-red-600 dark:border-slate-800 dark:text-red-400">{actionError}</p>
-	{/if}
 </div>
