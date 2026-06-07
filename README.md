@@ -113,6 +113,13 @@ needs a key.
 - `GET /providers` — list available summary providers and the default
 - `GET /repos`, `POST /repos`, `DELETE /repos/{id}`, `POST /repos/{id}/ingest` —
   manage registered repos
+- `GET /health` — liveness + database readiness; `{"status": "ok"}` or `503`
+
+Check it's up after `docker compose up`:
+
+```bash
+curl localhost:8000/health
+```
 
 ## Development
 

@@ -70,18 +70,21 @@ heavy*. Every item below should earn its place.
 
 *Goal: a stranger clones, runs one or two commands, and has it working — no private infra.*
 
-- [ ] **Portable `docker-compose.yml`**: bundle Postgres + backend + frontend so
-      `docker compose up` yields a working app. Strip any `*.lan` assumptions.
-- [ ] Pin/parameterize the published image (don't hardcode `forgejo.lan/...` for
-      end users; offer a build-from-source compose path).
-- [ ] **First-run experience**: migrations run automatically (or a one-liner),
-      sensible defaults, clear error if `DATABASE_URL` / provider key is missing.
-- [ ] Complete, accurate `.env.example` for both root and `frontend/` with comments.
-- [ ] Document running **without** an LLM key (CLI log + non-AI summary paths still
-      work) so the tool is useful before anyone signs up for a provider.
-- [ ] Health/readiness endpoint + a documented "is it up?" check.
+- [x] **Portable `docker-compose.yml`**: bundles Postgres + the app (which serves the
+      built frontend); `docker compose up --build` yields a working app, no `*.lan`.
+- [x] Pin/parameterize the published image — builds from source by default, optional
+      `APP_IMAGE` override for a registry image.
+- [x] **First-run experience**: migrations run automatically (Dockerfile CMD); empty
+      `.env` works; missing DB → 503, missing/unknown provider key → graceful (no AI,
+      not a crash). The old `.env.example` shipped a fake non-empty `ANTHROPIC_API_KEY`
+      placeholder that made first-run AI fail with an auth error — now keys default empty.
+- [x] Complete, accurate `.env.example` (root rewritten, compose-first; `frontend/`
+      already documented `VITE_API_BASE`).
+- [x] Document running **without** an LLM key (README quickstart + `.env.example` note).
+- [x] Health/readiness endpoint (`GET /health`, DB-checked) + documented `curl` check
+      + container healthcheck wired into compose. Covered by a test.
 - [ ] Optional: publish images to a public registry (Codeberg/ghcr) so users don't
-      have to build.
+      have to build. *(Deferred — depends on the "prebuilt images?" open question.)*
 
 ## Phase 3 — Code quality & tests
 
