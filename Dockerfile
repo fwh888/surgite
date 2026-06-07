@@ -13,4 +13,4 @@ RUN uv sync --frozen --no-dev
 COPY --from=frontend /build/frontend/build /app/frontend/build
 RUN mkdir -p /var/standup/repos
 EXPOSE 8000
-CMD uv run alembic upgrade head && uv run uvicorn backend.api:app --host 0.0.0.0 --port 8000
+CMD .venv/bin/alembic upgrade head && .venv/bin/uvicorn backend.api:app --host 0.0.0.0 --port 8000
