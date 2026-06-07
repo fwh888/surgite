@@ -1,10 +1,20 @@
 # Production Readiness & Open-Source Plan
 
-Status: **Draft** · Owner: @ncoleman · Target: first public-ready release (`v1.0.0`)
+Status: **Active** · Owner: @ncoleman · Current version: **0.2.0 (in development)**
 
 The core works: CLI, FastAPI + Postgres backend, and a SvelteKit web UI (with dark
 mode) are all functional. This document is the plan to take it from "works on my
 machine" to something a stranger can self-host, trust, and contribute to.
+
+## Milestones
+
+- **0.1.0 — Foundation (done).** Phases 1–4: accurate docs, one-command self-hosting,
+  ruff + tests in CI, and the contributor onramp. This is the recorded baseline.
+- **0.2.0 — Polish & features (active).** Phase 5 below plus new features: UI/UX
+  improvements, more useful capabilities, and a professional look. Scope TBD.
+- **1.0.0 — First stable release.** After 0.2.0 lands and the API/UX feel settled.
+  The release gate near the bottom still applies; we just hold the `1.0.0` tag until
+  the product polish is in.
 
 Hosting (**decided**): keep the self-hosted **Forgejo** instance (on the maintainer's
 LAN) as the canonical dev/CI/CD home, with **Codeberg** as the public mirror and the
