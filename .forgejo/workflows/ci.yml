@@ -91,5 +91,8 @@ jobs:
       - name: Type-check (svelte-check)
         run: cd frontend && npm run check
 
+      - name: Unit tests (vitest)
+        run: cd frontend && npm run test
+
       - name: Build SvelteKit SPA
         run: cd frontend && npm run build

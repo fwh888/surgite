@@ -44,8 +44,9 @@ uv run pytest
 uv run ruff check .          # lint (add --fix to auto-fix)
 uv run ruff format .         # format in place
 
-# Frontend type-check (CI runs this alongside the build)
+# Frontend type-check and unit tests (CI runs these alongside the build)
 cd frontend && npm run check
+cd frontend && npm run test    # vitest
 ```
 
 ## Architecture
