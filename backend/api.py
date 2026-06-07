@@ -186,6 +186,15 @@ def _query_commits(
         return total, [_row_to_dict(r) for r in rows]
 
 
+@app.get("/health")
+def health():
+    """Liveness + DB readiness, for monitoring and the container healthcheck.
+    A failed DB connection raises SQLAlchemyError, mapped to 503 above."""
+    with get_session() as session:
+        session.execute(select(1))
+    return {"status": "ok"}
+
+
 @app.get("/providers")
 def providers():
     """List summary providers, their default model, and whether each is
