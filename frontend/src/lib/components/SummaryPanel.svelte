@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { generateSummary, fetchProviders, type Repo, type Summary, type ProviderInfo } from '$lib/api';
+	import { renderMarkdown } from '$lib/markdown';
+	import SummaryCard from './SummaryCard.svelte';
 
 	let { repos }: { repos: Repo[] } = $props();
 
@@ -49,12 +51,12 @@
 </script>
 
 <section class="mt-12">
-	<h2 class="text-sm font-medium tracking-wide text-slate-500 uppercase">Generate summary</h2>
+	<h2 class="text-sm font-medium tracking-wide text-slate-500 uppercase dark:text-slate-400">Generate summary</h2>
 
 	<div class="mt-3 flex flex-wrap items-center gap-3">
 		<select
 			bind:value={repoName}
-			class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
+			class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
 		>
 			<option value="">All repos</option>
 			{#each repos as r (r.id)}
@@ -64,22 +66,22 @@
 
 		<select
 			bind:value={days}
-			class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
+			class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
 		>
 			<option value={7}>Last 7 days</option>
 			<option value={14}>Last 14 days</option>
 			<option value={30}>Last 30 days</option>
 		</select>
 
-		<label class="flex items-center gap-1.5 text-sm text-slate-600">
-			<input type="checkbox" bind:checked={useAi} class="rounded border-slate-300" />
+		<label class="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
+			<input type="checkbox" bind:checked={useAi} class="rounded border-slate-300 dark:border-slate-600" />
 			AI summary
 		</label>
 
 		{#if useAi && providers.length > 0}
 			<select
 				bind:value={selectedProvider}
-				class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
+				class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
 			>
 				{#each providers as p (p.name)}
 					<option value={p.name}>
@@ -92,48 +94,37 @@
 		<button
 			onclick={generate}
 			disabled={generating}
-			class="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+			class="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-indigo-600 dark:hover:bg-indigo-500"
 		>
 			{generating ? 'Generating…' : 'Generate'}
 		</button>
 	</div>
 
 	{#if error}
-		<p class="mt-3 text-sm text-red-600">{error}</p>
+		<p class="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
 	{/if}
 
 	{#if result}
-		<div class="mt-4">
+		<div class="mt-4 space-y-3">
 			{#if result.ai_summaries}
 				{#each Object.entries(result.ai_summaries) as [repo, s] (repo)}
-					<div class="mt-3 rounded-lg border border-slate-200 bg-white p-4">
-						<div class="flex items-center justify-between mb-2">
-							<h3 class="text-sm font-medium text-slate-900">{repo}</h3>
-							{#if s.provider}
-								<span class="text-xs text-slate-400">{s.provider} / {s.model}</span>
-							{/if}
+					<SummaryCard
+						{repo}
+						commits={result.by_repo[repo]}
+						provider={s.provider}
+						model={s.model}
+						copyText={s.summary}
+					>
+						<div class="space-y-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+							{@html renderMarkdown(s.summary)}
 						</div>
-						<textarea
-							readonly
-							rows="8"
-							value={s.summary}
-							class="w-full rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-sm text-slate-800 focus:outline-none"
-						></textarea>
-					</div>
+					</SummaryCard>
 				{/each}
 			{:else if result.log_by_repo}
 				{#each Object.entries(result.log_by_repo) as [repo, log] (repo)}
-					<details class="mt-3 rounded-lg border border-slate-200 bg-white" open>
-						<summary class="cursor-pointer px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-t-lg">
-							{repo} ({result.by_repo[repo] ?? 0} commits)
-						</summary>
-						<textarea
-							readonly
-							rows="10"
-							value={log}
-							class="w-full rounded-b-lg border-t border-slate-200 bg-slate-50 p-4 font-mono text-sm text-slate-800 focus:outline-none"
-						></textarea>
-					</details>
+					<SummaryCard {repo} commits={result.by_repo[repo]} copyText={log}>
+						<pre class="max-h-80 overflow-auto rounded-md bg-slate-50 p-3 font-mono text-xs leading-relaxed text-slate-700 dark:bg-slate-950 dark:text-slate-300">{log}</pre>
+					</SummaryCard>
 				{/each}
 			{/if}
 		</div>
