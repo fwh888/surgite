@@ -104,11 +104,11 @@ def test_summary_ai_uses_selected_provider(client, add_commit, monkeypatch):
     from backend import summarizer
 
     def fake_generate(commit_log, provider=None, model=None):
-        return {"summary": "Accomplishments:\n- shipped it", "provider": "groq", "model": "x"}
+        return {"summary": "## Features\n- shipped it", "provider": "groq", "model": "x"}
 
     monkeypatch.setattr(summarizer, "generate_summary", fake_generate)
     body = client.get("/summary?ai=true&provider=groq").json()
-    assert body["ai_summary"].startswith("Accomplishments:")
+    assert body["ai_summary"].startswith("## Features")
     assert body["ai_provider"] == "groq"
     assert body["ai_model"] == "x"
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { toasts } from '$lib/toast.svelte';
 
 	let {
 		repo,
@@ -26,7 +27,8 @@
 			copied = true;
 			setTimeout(() => (copied = false), 1500);
 		} catch {
-			// Clipboard unavailable (e.g. insecure context) — silently no-op.
+			// Clipboard unavailable (e.g. an insecure, non-localhost HTTP origin).
+			toasts.error('Could not copy — clipboard needs a secure (HTTPS) context');
 		}
 	}
 </script>

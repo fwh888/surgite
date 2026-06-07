@@ -98,6 +98,12 @@ def test_system_prompt_without_identity_has_no_attribution(monkeypatch):
     assert "authored by" not in summarizer._build_system_prompt()
 
 
+def test_system_prompt_instructs_theme_grouping():
+    prompt = summarizer._build_system_prompt()
+    assert "## " in prompt
+    assert "group" in prompt.lower()
+
+
 # --- generate_summary ---
 
 
@@ -176,8 +182,8 @@ def test_per_repo_success(monkeypatch):
     monkeypatch.setattr(
         summarizer.requests,
         "post",
-        lambda *a, **k: FakeResp(_openai_payload("Accomplishments:\n- x")),
+        lambda *a, **k: FakeResp(_openai_payload("## Features\n- x")),
     )
     out = generate_summary_per_repo({"repo-a": "log"}, provider="groq")
-    assert out["repo-a"]["summary"].startswith("Accomplishments:")
+    assert out["repo-a"]["summary"].startswith("## Features")
     assert out["repo-a"]["provider"] == "groq"

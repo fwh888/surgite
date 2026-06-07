@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { addRepo, ingestRepo } from '$lib/api';
+	import { toasts } from '$lib/toast.svelte';
 
 	let { onAdded }: { onAdded: () => void } = $props();
 
@@ -26,6 +27,7 @@
 				await ingestRepo(repo.id);
 				ingestState = 'idle';
 				open = false;
+				toasts.success(`Added ${repo.name}`);
 				onAdded();
 			} catch (e2) {
 				ingestState = 'error';
