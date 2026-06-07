@@ -7,7 +7,10 @@
 	let { repos }: { repos: Repo[] } = $props();
 
 	let repoName = $state(''); // '' = all repos
-	let days = $state(7);
+	let range = $state('7'); // '7' | '14' | '30' | 'custom'
+	let customSince = $state('');
+	let customUntil = $state('');
+	let author = $state('');
 	let useAi = $state(true);
 	let selectedProvider = $state('');
 	let providers = $state<ProviderInfo[]>([]);
@@ -36,9 +39,12 @@
 		error = null;
 		result = null;
 		try {
+			const custom = range === 'custom';
 			result = await generateSummary({
 				repo: repoName || undefined,
-				since: sinceDate(days),
+				since: custom ? customSince || undefined : sinceDate(Number(range)),
+				until: custom ? customUntil || undefined : undefined,
+				author: author.trim() || undefined,
 				ai: useAi,
 				provider: useAi ? selectedProvider || undefined : undefined
 			});
@@ -65,13 +71,38 @@
 		</select>
 
 		<select
-			bind:value={days}
+			bind:value={range}
 			class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
 		>
-			<option value={7}>Last 7 days</option>
-			<option value={14}>Last 14 days</option>
-			<option value={30}>Last 30 days</option>
+			<option value="7">Last 7 days</option>
+			<option value="14">Last 14 days</option>
+			<option value="30">Last 30 days</option>
+			<option value="custom">Custom range</option>
 		</select>
+
+		{#if range === 'custom'}
+			<input
+				type="date"
+				bind:value={customSince}
+				aria-label="From date"
+				class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+			/>
+			<span class="text-sm text-slate-400 dark:text-slate-500">to</span>
+			<input
+				type="date"
+				bind:value={customUntil}
+				aria-label="To date"
+				class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+			/>
+		{/if}
+
+		<input
+			type="text"
+			bind:value={author}
+			placeholder="Author (optional)"
+			aria-label="Filter by author"
+			class="w-44 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500"
+		/>
 
 		<label class="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
 			<input type="checkbox" bind:checked={useAi} class="rounded border-slate-300 dark:border-slate-600" />

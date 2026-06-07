@@ -84,6 +84,7 @@ export interface SummaryParams {
 	repo?: string;
 	since?: string;
 	until?: string;
+	author?: string;
 	ai?: boolean;
 	provider?: string;
 }
@@ -105,6 +106,7 @@ export function generateSummary(params: SummaryParams = {}) {
 	if (params.repo) q.set('repo', params.repo);
 	if (params.since) q.set('since', params.since);
 	if (params.until) q.set('until', params.until);
+	if (params.author) q.set('author', params.author);
 	if (params.ai) q.set('ai', 'true');
 	if (params.provider) q.set('provider', params.provider);
 	const qs = q.toString();
