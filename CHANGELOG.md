@@ -18,11 +18,16 @@ on the way to a 1.0.0 release.
 - Summary controls: a custom date range (in addition to the 7/14/30-day presets)
   and an optional author filter.
 - Export a repo's summary to a file — Markdown for AI summaries, text for raw logs.
+- An app icon / logo mark and a descriptive page title, replacing the default
+  SvelteKit scaffolding favicon.
 
 ### Changed
 
 - AI summaries are now grouped into thematic Markdown sections (`## Theme` + bullets)
   instead of one flat "Accomplishments" list.
+- Accessibility and responsive polish: visible keyboard-focus rings on all controls,
+  a focus action in place of the `autofocus` attribute, a labelled icon instead of
+  the decorative globe emoji, and small-screen layout tweaks.
 
 ## [0.1.0] - 2026-06-07
 

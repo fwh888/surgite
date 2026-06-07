@@ -25,11 +25,31 @@
 	onMount(loadRepos);
 </script>
 
-<main class="mx-auto min-h-screen max-w-2xl px-6 py-12">
+<svelte:head>
+	<title>standup — git standup summaries</title>
+	<meta name="description" content="Generate standup summaries from your git commit history." />
+</svelte:head>
+
+<main class="mx-auto min-h-screen max-w-2xl px-4 py-10 sm:px-6 sm:py-12">
 	<div class="flex items-start justify-between gap-4">
-		<div>
-			<h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">standup</h1>
-			<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Generate standup summaries from your git history.</p>
+		<div class="flex items-center gap-3">
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				viewBox="0 0 32 32"
+				class="h-9 w-9 shrink-0"
+				aria-hidden="true"
+			>
+				<rect width="32" height="32" rx="7" fill="#4f46e5" />
+				<g fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round">
+					<path d="M10 12h12" />
+					<path d="M10 16h9" />
+					<path d="M10 20h6" />
+				</g>
+			</svg>
+			<div>
+				<h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">standup</h1>
+				<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Generate standup summaries from your git history.</p>
+			</div>
 		</div>
 		<ThemeToggle />
 	</div>

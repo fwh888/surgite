@@ -4,7 +4,7 @@
 </script>
 
 <div
-	class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-full max-w-sm flex-col gap-2"
+	class="pointer-events-none fixed right-4 bottom-4 left-4 z-50 flex w-full max-w-sm flex-col gap-2 sm:left-auto"
 	aria-live="polite"
 >
 	{#each toasts.items as t (t.id)}

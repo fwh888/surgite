@@ -4,6 +4,12 @@
 
 	let { onAdded }: { onAdded: () => void } = $props();
 
+	// Focus the field when the form opens, without the `autofocus` attribute
+	// (which is an accessibility anti-pattern svelte-check flags).
+	function focusOnMount(node: HTMLInputElement) {
+		node.focus();
+	}
+
 	let open = $state(false);
 	let input = $state('');
 	let submitting = $state(false);
@@ -56,7 +62,7 @@
 			<div class="flex items-center gap-2">
 				<input
 					bind:value={input}
-					autofocus
+					use:focusOnMount
 					placeholder="https://github.com/user/repo.git"
 					class="flex-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500"
 				/>

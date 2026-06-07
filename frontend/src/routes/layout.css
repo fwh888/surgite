@@ -14,3 +14,11 @@
 body {
 	@apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
 }
+
+/* Consistent, visible keyboard-focus ring on interactive elements. Uses box-shadow
+   so it isn't suppressed by the per-element `focus:outline-none` utilities, and only
+   shows for keyboard/non-pointer focus via :focus-visible. */
+:where(a, button, input, select, textarea):focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 2px var(--color-indigo-500);
+}
