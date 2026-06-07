@@ -21,7 +21,7 @@ jobs:
 
       - name: Trigger Komodo deploy
         run: |
-          curl -sf -X POST https://komodo.lan/api/execute/DeployStack \
+          curl -sf -X POST https://komodo.lan/execute/DeployStack \
             -H "Content-Type: application/json" \
             -H "x-api-key: ${{ secrets.KOMODO_API_KEY }}" \
             -H "x-api-secret: ${{ secrets.KOMODO_API_SECRET }}" \
