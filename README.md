@@ -139,8 +139,9 @@ to a polished public release.
 ## Contributing
 
 Contributions are welcome. The project is deliberately minimalist — see the principles
-in [AGENTS.md](AGENTS.md). (Contributor guide, issue templates, and a code of conduct
-are on the way; see the roadmap.)
+in [AGENTS.md](AGENTS.md). Start with [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup
+and the PR workflow; please also read the [Code of Conduct](CODE_OF_CONDUCT.md). For
+anything security-sensitive, see [SECURITY.md](SECURITY.md).
 
 The canonical repository is on Codeberg: <https://codeberg.org/ncoleman/standup-gen>.
 

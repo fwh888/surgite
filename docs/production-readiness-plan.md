@@ -109,15 +109,16 @@ heavy*. Every item below should earn its place.
 
 *Goal: a motivated stranger can figure out how to help in one sitting.*
 
-- [ ] `CONTRIBUTING.md` — dev setup (`uv sync`, `docker compose`, run tests),
-      branch/PR conventions, the minimalist principles, how to run CI locally.
-- [ ] `CODE_OF_CONDUCT.md` (Contributor Covenant).
-- [ ] `SECURITY.md` — how to report a vulnerability privately (note: this app runs
-      `git log` via subprocess and takes repo paths/URLs — call out the trust model).
-- [ ] Issue & PR templates under `.forgejo/` (Forgejo/Codeberg `ISSUE_TEMPLATE`).
-- [ ] `CHANGELOG.md` (Keep a Changelog format) starting at the first tagged release.
-- [ ] Label a few **good first issues** once the tracker is public.
-- [ ] Keep `AGENTS.md` as the architecture source of truth; link it from CONTRIBUTING.
+- [x] `CONTRIBUTING.md` — dev setup, the lint/format/type/test commands, PR + commit
+      conventions, the minimalist principles; links AGENTS.md and SECURITY.md.
+- [x] `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1, contact filled in).
+- [x] `SECURITY.md` — private reporting + an explicit trust model (no auth; runs `git`
+      against given paths/URLs; keys in env) so operators know it's a trusted-network tool.
+- [x] Issue & PR templates under `.forgejo/` (`ISSUE_TEMPLATE/bug_report.md`,
+      `feature_request.md`, `PULL_REQUEST_TEMPLATE.md`).
+- [x] `CHANGELOG.md` (Keep a Changelog), seeded under `[Unreleased]` toward 1.0.0.
+- [x] Link contributor docs from the README; AGENTS.md stays the architecture source.
+- [ ] Label a few **good first issues** once the tracker is public. *(Post-merge, manual.)*
 
 ## Phase 5 — Product polish
 
