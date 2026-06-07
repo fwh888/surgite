@@ -5,11 +5,13 @@ from pathlib import Path
 
 from backend.models import Commit
 
-REMOTE_PATTERNS = re.compile(r'^(https?://|git@|git://|ssh://)')
+REMOTE_PATTERNS = re.compile(r"^(https?://|git@|git://|ssh://)")
+
 
 def is_remote_url(path: str) -> bool:
     """Detect if a path looks like a remote git URL."""
     return bool(REMOTE_PATTERNS.match(path))
+
 
 def _repo_name_from_url(url: str) -> str:
     """Extract a human-friendly repo name from a remote URL.
@@ -25,6 +27,7 @@ def _repo_name_from_url(url: str) -> str:
         name = name.split(":")[-1]
     name = name.rstrip("/").split("/")[-1]
     return name
+
 
 def ensure_repo(name: str, url: str, cache_dir: str) -> str:
     """Ensure a remote repo is cloned (shallow). Returns the local path.
@@ -58,23 +61,27 @@ def ensure_repo(name: str, url: str, cache_dir: str) -> str:
         )
     return dest
 
+
 def _is_git_ref(repo_path: str, value: str) -> bool:
     result = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", value],
-        capture_output=True,
-        cwd=repo_path
+        ["git", "rev-parse", "--verify", "--quiet", value], capture_output=True, cwd=repo_path
     )
     return result.returncode == 0
 
-def get_raw_log(repo_path: str, since: str, until: str, author: str | None = None, since_commit: str | None = None) -> str:
+
+def get_raw_log(
+    repo_path: str,
+    since: str,
+    until: str,
+    author: str | None = None,
+    since_commit: str | None = None,
+) -> str:
     """
     args: repo_path, since, until, author, since_commit
 
     Fetches the specified raw git logs.
     """
-    cmd = ["git", "log",
-        "--pretty=format:%H\x1f%ad\x1f%an\x1f%s",
-        "--date=short"]
+    cmd = ["git", "log", "--pretty=format:%H\x1f%ad\x1f%an\x1f%s", "--date=short"]
 
     until_is_ref = _is_git_ref(repo_path, until)
 
@@ -97,18 +104,19 @@ def get_raw_log(repo_path: str, since: str, until: str, author: str | None = Non
 
     result = subprocess.run(
         cmd,
-        text=True, # necessary to get a usable output 
+        text=True,  # necessary to get a usable output
         capture_output=True,
-        cwd=repo_path # Without this, git log runs in whatever directory you're in
+        cwd=repo_path,  # Without this, git log runs in whatever directory you're in
     )
-    if result.returncode !=0:
+    if result.returncode != 0:
         raise RuntimeError(result.stderr)
     return result.stdout
+
 
 def parse_log(raw_log: str) -> list[Commit]:
     """
     args: raw_log
-    
+
     Parses the raw git log into a list of Commit objects.
     """
     lines = raw_log.splitlines()

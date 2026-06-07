@@ -39,6 +39,13 @@ uv run uvicorn backend.api:app --reload --host "${API_HOST:-127.0.0.1}" --port "
 
 # Run tests
 uv run pytest
+
+# Lint and format (ruff). CI runs `ruff check .` and `ruff format --check .`
+uv run ruff check .          # lint (add --fix to auto-fix)
+uv run ruff format .         # format in place
+
+# Frontend type-check (CI runs this alongside the build)
+cd frontend && npm run check
 ```
 
 ## Architecture

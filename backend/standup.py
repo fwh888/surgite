@@ -1,10 +1,13 @@
 import argparse
 import sys
-from backend.git import get_raw_log, parse_log
-from backend.formatter import format_log
-from backend.summarizer import summarize_commits
-from dotenv import load_dotenv
+
 import requests
+from dotenv import load_dotenv
+
+from backend.formatter import format_log
+from backend.git import get_raw_log, parse_log
+from backend.summarizer import summarize_commits
+
 
 def main():
     load_dotenv()
@@ -18,13 +21,14 @@ def main():
     parser.add_argument("--author", help="Filter commits by author (optional)")
     parser.add_argument("--output", help="Output file for the summary (optional)")
     # action="store_true" means args.summarize is True if the flag is passed, False otherwise.
-    parser.add_argument("--summarize", action="store_true", help="Summarize the commit messages with AI. (optional)")
+    parser.add_argument(
+        "--summarize", action="store_true", help="Summarize the commit messages with AI. (optional)"
+    )
     parser.add_argument(
         "--ingest",
         metavar="URL",
-        help="POST commits to the API at this URL instead of printing (e.g. http://localhost:8000) (optional)"
+        help="POST commits to the API at this URL instead of printing (e.g. http://localhost:8000) (optional)",
     )
-
 
     args = parser.parse_args()
 
@@ -42,7 +46,9 @@ def main():
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
         result = response.json()
-        print(f"Ingested into {result['repo']}: {result['inserted']} inserted, {result['updated']} updated, {result['unchanged']} unchanged")
+        print(
+            f"Ingested into {result['repo']}: {result['inserted']} inserted, {result['updated']} updated, {result['unchanged']} unchanged"
+        )
         return
 
     raw_log = get_raw_log(
@@ -62,6 +68,7 @@ def main():
             f.write(summary)
     else:
         print(summary)
+
 
 if __name__ == "__main__":
     main()

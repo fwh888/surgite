@@ -75,9 +75,7 @@ def resolve_provider(name: str | None) -> Provider:
     name = (name or default_provider()).lower()
     provider = PROVIDERS.get(name)
     if provider is None:
-        raise ProviderError(
-            f"Unknown provider {name!r}; choose from {', '.join(PROVIDERS)}"
-        )
+        raise ProviderError(f"Unknown provider {name!r}; choose from {', '.join(PROVIDERS)}")
     return provider
 
 
@@ -187,7 +185,11 @@ def generate_summary_per_repo(
     results = {}
     for repo_name, log_text in log_by_repo.items():
         if not log_text.strip():
-            results[repo_name] = {"summary": "No commits in this period.", "provider": "", "model": ""}
+            results[repo_name] = {
+                "summary": "No commits in this period.",
+                "provider": "",
+                "model": "",
+            }
             continue
         try:
             result = generate_summary(log_text, provider=provider)
@@ -195,7 +197,11 @@ def generate_summary_per_repo(
         except ProviderError as e:
             results[repo_name] = {"summary": f"Error: {e}", "provider": "", "model": ""}
         except requests.RequestException as e:
-            results[repo_name] = {"summary": f"Provider request failed: {e}", "provider": "", "model": ""}
+            results[repo_name] = {
+                "summary": f"Provider request failed: {e}",
+                "provider": "",
+                "model": "",
+            }
     return results
 
 

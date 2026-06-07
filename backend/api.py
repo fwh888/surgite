@@ -4,25 +4,24 @@ import os
 import subprocess
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-import requests
-
+from backend import summarizer
 from backend.config import INGEST_INTERVAL
-from backend.db import get_session, CommitRow, RepoRow
+from backend.db import CommitRow, RepoRow, get_session
 from backend.formatter import format_log
 from backend.git import get_raw_log, parse_log
 from backend.models import Commit
 from backend.schemas import IngestRequest, RepoCreate
-from backend import summarizer
 from backend.summarizer import ProviderError
 
 log = logging.getLogger(__name__)
@@ -57,8 +56,8 @@ def _ingest_repo(
     until: date | None = None,
 ) -> dict:
     """Ingest commits for a single repo. Returns a result dict."""
-    from backend.git import ensure_repo
     from backend.config import REPO_CACHE_DIR
+    from backend.git import ensure_repo
 
     actual_path = ensure_repo(repo_name, clone_url, REPO_CACHE_DIR)
 
@@ -73,26 +72,28 @@ def _ingest_repo(
         for c in commits:
             existing = session.get(CommitRow, c.hash)
             if existing is None:
-                session.add(CommitRow(
-                    hash=c.hash,
-                    short_hash=c.hash[:7],
-                    date=c.date,
-                    author=c.author,
-                    message=c.message,
-                    repo=repo_name,
-                    ingested_at=datetime.now(timezone.utc),
-                ))
+                session.add(
+                    CommitRow(
+                        hash=c.hash,
+                        short_hash=c.hash[:7],
+                        date=c.date,
+                        author=c.author,
+                        message=c.message,
+                        repo=repo_name,
+                        ingested_at=datetime.now(UTC),
+                    )
+                )
                 inserted += 1
             elif existing.repo != repo_name:
                 existing.repo = repo_name
-                existing.ingested_at = datetime.now(timezone.utc)
+                existing.ingested_at = datetime.now(UTC)
                 updated += 1
             else:
                 unchanged += 1
 
         repo_row = session.get(RepoRow, repo_id)
         if repo_row:
-            repo_row.last_ingested_at = datetime.now(timezone.utc)
+            repo_row.last_ingested_at = datetime.now(UTC)
         session.commit()
 
     return {"repo": repo_name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
@@ -285,13 +286,16 @@ def summary(
             )
         ai_summaries = summarizer.generate_summary_per_repo(log_by_repo, provider=provider)
         # Backward-compat combined summary (first available repo, or all joined)
-        all_commit_objs = [Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"]) for c in commits]
+        all_commit_objs = [
+            Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"])
+            for c in commits
+        ]
         try:
             result = summarizer.generate_summary(format_log(all_commit_objs), provider=provider)
         except ProviderError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
         except requests.RequestException as e:
-            raise HTTPException(status_code=502, detail=f"Provider request failed: {e}")
+            raise HTTPException(status_code=502, detail=f"Provider request failed: {e}") from e
         ai_summary = result["summary"]
         ai_provider = result["provider"]
         ai_model = result["model"]
@@ -322,7 +326,7 @@ def list_repos():
 
 @app.post("/repos", status_code=201)
 def create_repo(req: RepoCreate):
-    from backend.git import is_remote_url, _repo_name_from_url
+    from backend.git import _repo_name_from_url, is_remote_url
 
     if not is_remote_url(req.url):
         raise HTTPException(
@@ -338,7 +342,7 @@ def create_repo(req: RepoCreate):
         repo = RepoRow(
             name=name,
             clone_url=req.url,
-            added_at=datetime.now(timezone.utc),
+            added_at=datetime.now(UTC),
         )
         session.add(repo)
         session.commit()
@@ -381,12 +385,11 @@ def ingest_repo_endpoint(
     try:
         result = _ingest_repo(repo_id, repo_name, clone_url, since, until)
     except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=f"Git error: {e}")
+        raise HTTPException(status_code=400, detail=f"Git error: {e}") from e
     except subprocess.CalledProcessError as e:
         raise HTTPException(
-            status_code=400,
-            detail=f"Failed to clone/fetch remote repo: {e.stderr.strip()}"
-        )
+            status_code=400, detail=f"Failed to clone/fetch remote repo: {e.stderr.strip()}"
+        ) from e
 
     return result
 
@@ -403,7 +406,7 @@ def ingest(req: IngestRequest):
     try:
         raw = get_raw_log(req.repo_path, since, until)
     except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=f"Not a git repo or git error: {e}")
+        raise HTTPException(status_code=400, detail=f"Not a git repo or git error: {e}") from e
 
     commits = parse_log(raw)
     inserted = updated = unchanged = 0
@@ -412,19 +415,21 @@ def ingest(req: IngestRequest):
         for c in commits:
             existing = session.get(CommitRow, c.hash)
             if existing is None:
-                session.add(CommitRow(
-                    hash=c.hash,
-                    short_hash=c.hash[:7],
-                    date=c.date,
-                    author=c.author,
-                    message=c.message,
-                    repo=repo_name,
-                    ingested_at=datetime.now(timezone.utc),
-                ))
+                session.add(
+                    CommitRow(
+                        hash=c.hash,
+                        short_hash=c.hash[:7],
+                        date=c.date,
+                        author=c.author,
+                        message=c.message,
+                        repo=repo_name,
+                        ingested_at=datetime.now(UTC),
+                    )
+                )
                 inserted += 1
             elif existing.repo != repo_name:
                 existing.repo = repo_name
-                existing.ingested_at = datetime.now(timezone.utc)
+                existing.ingested_at = datetime.now(UTC)
                 updated += 1
             else:
                 unchanged += 1
