@@ -80,9 +80,9 @@
 				<li class="flex items-center justify-between gap-4 px-4 py-3">
 					<div class="min-w-0">
 						<p class="truncate font-medium text-slate-900 dark:text-slate-100">{repo.name}</p>
-						<p class="truncate text-xs text-slate-400 dark:text-slate-500">
-							<span class="inline-block mr-1">🌐</span>
-							{repo.clone_url}
+						<p class="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3 w-3 shrink-0" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+							<span class="truncate">{repo.clone_url}</span>
 						</p>
 					</div>
 					<div class="flex shrink-0 items-center gap-3">
