@@ -179,6 +179,26 @@ def generate_summary(
     return {"summary": summary, "provider": resolved.name, "model": chosen_model}
 
 
+def generate_summary_per_repo(
+    log_by_repo: dict[str, str],
+    provider: str | None = None,
+) -> dict[str, dict[str, str]]:
+    """Generate one AI summary per repo. Returns {repo_name: {summary, provider, model}}."""
+    results = {}
+    for repo_name, log_text in log_by_repo.items():
+        if not log_text.strip():
+            results[repo_name] = {"summary": "No commits in this period.", "provider": "", "model": ""}
+            continue
+        try:
+            result = generate_summary(log_text, provider=provider)
+            results[repo_name] = result
+        except ProviderError as e:
+            results[repo_name] = {"summary": f"Error: {e}", "provider": "", "model": ""}
+        except requests.RequestException as e:
+            results[repo_name] = {"summary": f"Provider request failed: {e}", "provider": "", "model": ""}
+    return results
+
+
 def summarize_commits(summary: str, provider: str | None = None) -> str:
     """Backward-compatible helper (used by the CLI): returns just the text."""
     return generate_summary(summary, provider=provider)["summary"]

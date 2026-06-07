@@ -12,7 +12,6 @@
 	let generating = $state(false);
 	let error = $state<string | null>(null);
 	let result = $state<Summary | null>(null);
-	let copied = $state(false);
 
 	onMount(async () => {
 		try {
@@ -34,7 +33,6 @@
 		generating = true;
 		error = null;
 		result = null;
-		copied = false;
 		try {
 			result = await generateSummary({
 				repo: repoName || undefined,
@@ -47,13 +45,6 @@
 		} finally {
 			generating = false;
 		}
-	}
-
-	async function copy() {
-		if (!result?.ai_summary) return;
-		await navigator.clipboard.writeText(result.ai_summary);
-		copied = true;
-		setTimeout(() => (copied = false), 1500);
 	}
 </script>
 
@@ -113,32 +104,37 @@
 
 	{#if result}
 		<div class="mt-4">
-			{#if result.ai_summary}
-				<div class="relative">
-					<textarea
-						readonly
-						rows="10"
-						value={result.ai_summary}
-						class="w-full rounded-lg border border-slate-200 bg-slate-50 p-4 font-mono text-sm text-slate-800 focus:outline-none"
-					></textarea>
-					<button
-						onclick={copy}
-						class="absolute top-2 right-2 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-					>
-						{copied ? 'Copied!' : 'Copy'}
-					</button>
-				</div>
-			{:else}
-				<div class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
-					<p class="font-medium">{result.total_commits} commits</p>
-					{#if Object.keys(result.by_day).length > 0}
-						<ul class="mt-2 space-y-0.5 text-slate-500">
-							{#each Object.entries(result.by_day) as [day, n] (day)}
-								<li>{day} — {n}</li>
-							{/each}
-						</ul>
-					{/if}
-				</div>
+			{#if result.ai_summaries}
+				{#each Object.entries(result.ai_summaries) as [repo, s] (repo)}
+					<div class="mt-3 rounded-lg border border-slate-200 bg-white p-4">
+						<div class="flex items-center justify-between mb-2">
+							<h3 class="text-sm font-medium text-slate-900">{repo}</h3>
+							{#if s.provider}
+								<span class="text-xs text-slate-400">{s.provider} / {s.model}</span>
+							{/if}
+						</div>
+						<textarea
+							readonly
+							rows="8"
+							value={s.summary}
+							class="w-full rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-sm text-slate-800 focus:outline-none"
+						></textarea>
+					</div>
+				{/each}
+			{:else if result.log_by_repo}
+				{#each Object.entries(result.log_by_repo) as [repo, log] (repo)}
+					<details class="mt-3 rounded-lg border border-slate-200 bg-white" open>
+						<summary class="cursor-pointer px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-t-lg">
+							{repo} ({result.by_repo[repo] ?? 0} commits)
+						</summary>
+						<textarea
+							readonly
+							rows="10"
+							value={log}
+							class="w-full rounded-b-lg border-t border-slate-200 bg-slate-50 p-4 font-mono text-sm text-slate-800 focus:outline-none"
+						></textarea>
+					</details>
+				{/each}
 			{/if}
 		</div>
 	{/if}
