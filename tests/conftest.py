@@ -3,9 +3,10 @@ Test config. DATABASE_URL and the provider API keys must be set BEFORE any
 `standup.*` import, because `backend.config` reads them at module-load time and
 `backend.db` creates the engine at module-load time.
 """
+
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 _db_file = Path(tempfile.gettempdir()) / "standup_test.db"
@@ -57,7 +58,7 @@ def add_commit():
             "author": "Alice",
             "message": "init",
             "repo": "demo",
-            "ingested_at": datetime.now(timezone.utc),
+            "ingested_at": datetime.now(UTC),
         }
         defaults.update(overrides)
         with get_session() as s:
@@ -73,7 +74,7 @@ def add_repo():
         defaults = {
             "name": "demo",
             "clone_url": "https://example.com/demo.git",
-            "added_at": datetime.now(timezone.utc),
+            "added_at": datetime.now(UTC),
             "last_ingested_at": None,
         }
         defaults.update(overrides)

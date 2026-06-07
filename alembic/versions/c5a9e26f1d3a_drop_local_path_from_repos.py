@@ -9,30 +9,31 @@ Revises: b4f7d13e8a2c
 Create Date: 2026-06-07
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 
+from alembic import op
 
-revision: str = 'c5a9e26f1d3a'
-down_revision: Union[str, Sequence[str], None] = 'b4f7d13e8a2c'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "c5a9e26f1d3a"
+down_revision: str | Sequence[str] | None = "b4f7d13e8a2c"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     # Local-path repos (no clone_url) can no longer be ingested; drop them
     # before tightening the column to NOT NULL.
     op.execute("DELETE FROM repos WHERE clone_url IS NULL")
-    op.drop_column('repos', 'path')
-    op.alter_column('repos', 'clone_url', existing_type=sa.String(), nullable=False)
-    op.create_unique_constraint('uq_repos_clone_url', 'repos', ['clone_url'])
+    op.drop_column("repos", "path")
+    op.alter_column("repos", "clone_url", existing_type=sa.String(), nullable=False)
+    op.create_unique_constraint("uq_repos_clone_url", "repos", ["clone_url"])
 
 
 def downgrade() -> None:
-    op.drop_constraint('uq_repos_clone_url', 'repos', type_='unique')
-    op.alter_column('repos', 'clone_url', existing_type=sa.String(), nullable=True)
+    op.drop_constraint("uq_repos_clone_url", "repos", type_="unique")
+    op.alter_column("repos", "clone_url", existing_type=sa.String(), nullable=True)
     # `path` was originally NOT NULL/unique, but we have no values to backfill,
     # so restore it as nullable.
-    op.add_column('repos', sa.Column('path', sa.String(), nullable=True))
+    op.add_column("repos", sa.Column("path", sa.String(), nullable=True))

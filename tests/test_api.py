@@ -1,3 +1,12 @@
+import io
+from unittest.mock import MagicMock
+
+import pytest
+import requests as requests_lib
+
+from backend.standup import main
+
+
 def test_health_ok(client):
     r = client.get("/health")
     assert r.status_code == 200
@@ -158,6 +167,7 @@ def test_ingest_repo_not_found_returns_404(client):
 
 def test_ingest_repo_clone_failure_returns_400(client, add_repo, monkeypatch):
     import subprocess
+
     from backend import git as git_module
 
     def fail_clone(*a, **kw):
@@ -185,18 +195,6 @@ def test_ingest_repo_updates_last_ingested_at(client, add_repo, tmp_path, monkey
 
     repo = client.get("/repos").json()["repos"][0]
     assert repo["last_ingested_at"] is not None
-
-
-# --- /ingest ---
-
-
-import io
-from unittest.mock import MagicMock
-
-import requests as requests_lib
-import pytest
-
-from backend.standup import main
 
 
 # --- CLI --ingest ---
@@ -236,7 +234,19 @@ def test_cli_ingest_passes_since_and_until(monkeypatch):
         return mock_resp
 
     monkeypatch.setattr("backend.standup.requests.post", fake_post)
-    monkeypatch.setattr("sys.argv", ["standup", "/p", "--ingest", "http://localhost:8000", "--since", "2026-05-01", "--until", "2026-05-10"])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "standup",
+            "/p",
+            "--ingest",
+            "http://localhost:8000",
+            "--since",
+            "2026-05-01",
+            "--until",
+            "2026-05-10",
+        ],
+    )
     stdout = io.StringIO()
     monkeypatch.setattr("sys.stdout", stdout)
 
@@ -298,7 +308,9 @@ def test_cli_ingest_http_error_exits_nonzero(monkeypatch):
 
 
 def test_cli_without_ingest_prints_formatted_log(monkeypatch):
-    monkeypatch.setattr("backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug")
+    monkeypatch.setattr(
+        "backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
+    )
     monkeypatch.setattr("sys.argv", ["standup", "/r"])
     stdout = io.StringIO()
     monkeypatch.setattr("sys.stdout", stdout)

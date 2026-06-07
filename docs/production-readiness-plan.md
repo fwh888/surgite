@@ -90,10 +90,11 @@ heavy*. Every item below should earn its place.
 
 *Goal: contributions can be reviewed and merged with confidence; CI catches regressions.*
 
-- [ ] Add **ruff** (lint + format) for Python; wire into CI and document
-      `uv run ruff check` / `format` in `AGENTS.md`.
-- [ ] Add a frontend **lint + typecheck** step (`svelte-check` already present —
-      add it to CI; consider prettier/eslint).
+- [x] Add **ruff** (lint + format) for Python; wired into CI (`ruff check` +
+      `ruff format --check`) and documented in `AGENTS.md`. Config selects E/F/I/UP/B;
+      `conftest.py` gets an E402 per-file ignore for its deliberate env-before-import.
+- [x] Add a frontend **typecheck** step — `npm run check` (svelte-check) now runs in
+      the CI `frontend` job before the build.
 - [ ] Expand tests beyond the API:
   - [ ] CLI argument parsing + output (`backend/standup.py`).
   - [ ] `summarizer.py` provider selection / error paths (mock HTTP).
