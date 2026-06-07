@@ -61,8 +61,8 @@ heavy*. Every item below should earn its place.
 - [x] Document the data model / config / LLM-provider story in a user-facing form
       (Configuration table + API endpoints in `README.md`).
 - [x] Replace the default `sv` scaffolding boilerplate in `frontend/README.md`.
-- [ ] Add a **screenshot or short GIF** of the web UI (light + dark). *Placeholder
-      TODO left in `README.md`; needs the app running with seeded data to look good.*
+- [x] Add a **screenshot** of the web UI (light + dark) to the README — both show a
+      generated summary and a public (`codeberg.org`) repo URL, no LAN hostnames.
 - [ ] `LICENSE` — confirm MIT is the intended license and the year/holder is right
       (currently `2026 Nick Coleman`). *Open question for the maintainer.*
 
