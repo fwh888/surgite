@@ -8,9 +8,7 @@ const BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? 'http://loc
 export interface Repo {
 	id: number;
 	name: string;
-	path: string;
-	clone_url: string | null;
-	remote: boolean;
+	clone_url: string;
 	added_at: string | null;
 	last_ingested_at: string | null;
 }
@@ -66,8 +64,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const listRepos = () => request<{ repos: Repo[] }>('/repos').then((r) => r.repos);
 
-export const addRepo = (path: string) =>
-	request<Repo>('/repos', { method: 'POST', body: JSON.stringify({ path }) });
+export const addRepo = (url: string) =>
+	request<Repo>('/repos', { method: 'POST', body: JSON.stringify({ url }) });
 
 export const deleteRepo = (id: number) => request<void>(`/repos/${id}`, { method: 'DELETE' });
 

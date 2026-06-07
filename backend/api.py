@@ -33,17 +33,14 @@ AI_SUMMARY_MAX_COMMITS = 500
 
 def _ingest_all_repos() -> list[dict]:
     """Ingest every registered repo. Returns list of per-repo result/error dicts."""
-    from backend.git import is_remote_url, ensure_repo
-    from backend.config import REPO_CACHE_DIR
-
     results: list[dict] = []
     with get_session() as session:
         repos = session.scalars(select(RepoRow)).all()
-        repo_data = [(r.id, r.name, r.path, r.clone_url) for r in repos]
+        repo_data = [(r.id, r.name, r.clone_url) for r in repos]
 
-    for repo_id, repo_name, repo_path, clone_url in repo_data:
+    for repo_id, repo_name, clone_url in repo_data:
         try:
-            result = _ingest_repo(repo_id, repo_name, repo_path, clone_url)
+            result = _ingest_repo(repo_id, repo_name, clone_url)
             results.append(result)
         except Exception as exc:
             log.warning("Ingest failed for repo %s: %s", repo_name, exc)
@@ -55,21 +52,15 @@ def _ingest_all_repos() -> list[dict]:
 def _ingest_repo(
     repo_id: int,
     repo_name: str,
-    repo_path: str,
-    clone_url: str | None,
+    clone_url: str,
     since: date | None = None,
     until: date | None = None,
 ) -> dict:
     """Ingest commits for a single repo. Returns a result dict."""
-    from backend.git import is_remote_url, ensure_repo
+    from backend.git import ensure_repo
     from backend.config import REPO_CACHE_DIR
 
-    if clone_url:
-        actual_path = ensure_repo(repo_name, clone_url, REPO_CACHE_DIR)
-    else:
-        if not os.path.isdir(repo_path):
-            raise RuntimeError(f"Repo path no longer exists on disk: {repo_path}")
-        actual_path = repo_path
+    actual_path = ensure_repo(repo_name, clone_url, REPO_CACHE_DIR)
 
     since_str = (since or date.today() - timedelta(days=7)).isoformat()
     until_str = (until or date.today()).isoformat()
@@ -148,9 +139,7 @@ def _repo_to_dict(row: RepoRow) -> dict:
     return {
         "id": row.id,
         "name": row.name,
-        "path": row.path,
         "clone_url": row.clone_url,
-        "remote": row.clone_url is not None,
         "added_at": row.added_at.isoformat() if row.added_at else None,
         "last_ingested_at": row.last_ingested_at.isoformat() if row.last_ingested_at else None,
     }
@@ -326,23 +315,20 @@ def list_repos():
 def create_repo(req: RepoCreate):
     from backend.git import is_remote_url, _repo_name_from_url
 
-    if is_remote_url(req.path):
-        clone_url = req.path
-        name = _repo_name_from_url(clone_url)
-    else:
-        if not os.path.isdir(req.path):
-            raise HTTPException(status_code=400, detail="path does not exist")
-        clone_url = None
-        name = os.path.basename(os.path.abspath(req.path))
+    if not is_remote_url(req.url):
+        raise HTTPException(
+            status_code=400,
+            detail="Must be a remote git URL (https://, git@, git:// or ssh://)",
+        )
+    name = _repo_name_from_url(req.url)
 
     with get_session() as session:
-        existing = session.scalar(select(RepoRow).where(RepoRow.path == req.path))
+        existing = session.scalar(select(RepoRow).where(RepoRow.clone_url == req.url))
         if existing:
             raise HTTPException(status_code=409, detail="Repo already registered")
         repo = RepoRow(
             name=name,
-            path=req.path,
-            clone_url=clone_url,
+            clone_url=req.url,
             added_at=datetime.now(timezone.utc),
         )
         session.add(repo)
@@ -381,11 +367,10 @@ def ingest_repo_endpoint(
             raise HTTPException(status_code=404, detail="Repo not found")
         repo_id = repo.id
         repo_name = repo.name
-        repo_path = repo.path
         clone_url = repo.clone_url
 
     try:
-        result = _ingest_repo(repo_id, repo_name, repo_path, clone_url, since, until)
+        result = _ingest_repo(repo_id, repo_name, clone_url, since, until)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=f"Git error: {e}")
     except subprocess.CalledProcessError as e:

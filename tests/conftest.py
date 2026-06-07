@@ -72,7 +72,7 @@ def add_repo():
     def _add(**overrides):
         defaults = {
             "name": "demo",
-            "path": "/tmp/demo",
+            "clone_url": "https://example.com/demo.git",
             "added_at": datetime.now(timezone.utc),
             "last_ingested_at": None,
         }
