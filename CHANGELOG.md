@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Work toward the first tagged release (1.0.0). Highlights so far:
+In progress toward 0.2.0: UI/UX improvements, additional features, and visual polish
+on the way to a 1.0.0 release.
+
+## [0.1.0] - 2026-06-07
+
+The initial foundation — a working CLI, REST API, and self-hostable web UI, with CI,
+tests, and contributor docs in place.
 
 ### Added
 
