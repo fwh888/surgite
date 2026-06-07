@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { deleteRepo, ingestRepo, type Repo } from '$lib/api';
+	import { deleteRepo, ingestAll, type Repo } from '$lib/api';
 	import { relativeTime } from '$lib/time';
 
 	let {
@@ -14,20 +14,37 @@
 		onChanged: () => void;
 	} = $props();
 
-	// id of the repo currently being ingested/deleted, so we can disable just that row.
-	let busyId = $state<number | null>(null);
+	let ingesting = $state(false);
+	let ingestError = $state<string | null>(null);
+	let deletingId = $state<number | null>(null);
 	let actionError = $state<string | null>(null);
 
-	async function run(id: number, fn: (id: number) => Promise<unknown>, label: string) {
-		busyId = id;
-		actionError = null;
+	async function handleIngestAll() {
+		ingesting = true;
+		ingestError = null;
 		try {
-			await fn(id);
+			const res = await ingestAll();
+			if (res.errors.length > 0) {
+				ingestError = res.errors.map((e) => `${e.repo}: ${e.error}`).join('; ');
+			}
 			onChanged();
 		} catch (e) {
-			actionError = e instanceof Error ? e.message : `${label} failed`;
+			ingestError = e instanceof Error ? e.message : 'Ingest failed';
 		} finally {
-			busyId = null;
+			ingesting = false;
+		}
+	}
+
+	async function handleDelete(id: number) {
+		deletingId = id;
+		actionError = null;
+		try {
+			await deleteRepo(id);
+			onChanged();
+		} catch (e) {
+			actionError = e instanceof Error ? e.message : 'Delete failed';
+		} finally {
+			deletingId = null;
 		}
 	}
 </script>
@@ -40,6 +57,16 @@
 	{:else if repos.length === 0}
 		<p class="px-4 py-6 text-sm text-slate-400">No repos registered yet.</p>
 	{:else}
+		<div class="flex items-center justify-between px-4 py-2 border-b border-slate-100">
+			<span class="text-xs text-slate-500">{repos.length} repo{repos.length !== 1 ? 's' : ''}</span>
+			<button
+				onclick={handleIngestAll}
+				disabled={ingesting}
+				class="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+			>
+				{ingesting ? 'Ingesting…' : 'Ingest all'}
+			</button>
+		</div>
 		<ul class="divide-y divide-slate-100">
 			{#each repos as repo (repo.id)}
 				<li class="flex items-center justify-between gap-4 px-4 py-3">
@@ -59,15 +86,8 @@
 							ingested {relativeTime(repo.last_ingested_at)}
 						</span>
 						<button
-							onclick={() => run(repo.id, ingestRepo, 'Ingest')}
-							disabled={busyId === repo.id}
-							class="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-						>
-							{busyId === repo.id ? '…' : 'Ingest now'}
-						</button>
-						<button
-							onclick={() => run(repo.id, deleteRepo, 'Delete')}
-							disabled={busyId === repo.id}
+							onclick={() => handleDelete(repo.id)}
+							disabled={deletingId === repo.id}
 							class="text-sm text-slate-400 hover:text-red-600 disabled:opacity-50"
 							aria-label="Delete {repo.name}"
 						>
@@ -79,6 +99,9 @@
 		</ul>
 	{/if}
 
+	{#if ingestError}
+		<p class="border-t border-slate-100 px-4 py-2 text-xs text-red-600">{ingestError}</p>
+	{/if}
 	{#if actionError}
 		<p class="border-t border-slate-100 px-4 py-2 text-xs text-red-600">{actionError}</p>
 	{/if}

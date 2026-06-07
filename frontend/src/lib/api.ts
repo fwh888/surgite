@@ -74,6 +74,14 @@ export const deleteRepo = (id: number) => request<void>(`/repos/${id}`, { method
 export const ingestRepo = (id: number) =>
 	request<IngestResult>(`/repos/${id}/ingest`, { method: 'POST' });
 
+export interface IngestAllResult {
+	results: IngestResult[];
+	errors: { repo: string; error: string }[];
+}
+
+export const ingestAll = () =>
+	request<IngestAllResult>('/repos/ingest-all', { method: 'POST' });
+
 export interface SummaryParams {
 	repo?: string;
 	since?: string;

@@ -1,6 +1,9 @@
+import asyncio
+import logging
 import os
 import subprocess
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
@@ -13,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import requests
 
+from backend.config import INGEST_INTERVAL
 from backend.db import get_session, CommitRow, RepoRow
 from backend.formatter import format_log
 from backend.git import get_raw_log, parse_log
@@ -21,10 +25,108 @@ from backend.schemas import IngestRequest, RepoCreate
 from backend import summarizer
 from backend.summarizer import ProviderError
 
+log = logging.getLogger(__name__)
+
 # Cap on commits sent to the LLM in /summary?ai=true to bound token cost.
 AI_SUMMARY_MAX_COMMITS = 500
 
-app = FastAPI()
+
+def _ingest_all_repos() -> list[dict]:
+    """Ingest every registered repo. Returns list of per-repo result/error dicts."""
+    from backend.git import is_remote_url, ensure_repo
+    from backend.config import REPO_CACHE_DIR
+
+    results: list[dict] = []
+    with get_session() as session:
+        repos = session.scalars(select(RepoRow)).all()
+        repo_data = [(r.id, r.name, r.path, r.clone_url) for r in repos]
+
+    for repo_id, repo_name, repo_path, clone_url in repo_data:
+        try:
+            result = _ingest_repo(repo_id, repo_name, repo_path, clone_url)
+            results.append(result)
+        except Exception as exc:
+            log.warning("Ingest failed for repo %s: %s", repo_name, exc)
+            results.append({"repo": repo_name, "error": str(exc)})
+
+    return results
+
+
+def _ingest_repo(
+    repo_id: int,
+    repo_name: str,
+    repo_path: str,
+    clone_url: str | None,
+    since: date | None = None,
+    until: date | None = None,
+) -> dict:
+    """Ingest commits for a single repo. Returns a result dict."""
+    from backend.git import is_remote_url, ensure_repo
+    from backend.config import REPO_CACHE_DIR
+
+    if clone_url:
+        actual_path = ensure_repo(repo_name, clone_url, REPO_CACHE_DIR)
+    else:
+        if not os.path.isdir(repo_path):
+            raise RuntimeError(f"Repo path no longer exists on disk: {repo_path}")
+        actual_path = repo_path
+
+    since_str = (since or date.today() - timedelta(days=7)).isoformat()
+    until_str = (until or date.today()).isoformat()
+
+    raw = get_raw_log(actual_path, since_str, until_str)
+    commits = parse_log(raw)
+    inserted = updated = unchanged = 0
+
+    with get_session() as session:
+        for c in commits:
+            existing = session.get(CommitRow, c.hash)
+            if existing is None:
+                session.add(CommitRow(
+                    hash=c.hash,
+                    short_hash=c.hash[:7],
+                    date=c.date,
+                    author=c.author,
+                    message=c.message,
+                    repo=repo_name,
+                    ingested_at=datetime.now(timezone.utc),
+                ))
+                inserted += 1
+            elif existing.repo != repo_name:
+                existing.repo = repo_name
+                existing.ingested_at = datetime.now(timezone.utc)
+                updated += 1
+            else:
+                unchanged += 1
+
+        repo_row = session.get(RepoRow, repo_id)
+        if repo_row:
+            repo_row.last_ingested_at = datetime.now(timezone.utc)
+        session.commit()
+
+    return {"repo": repo_name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
+
+
+async def _auto_ingest_loop():
+    """Background task that periodically ingests all repos."""
+    while True:
+        await asyncio.sleep(INGEST_INTERVAL)
+        try:
+            log.info("Auto-ingest: starting")
+            await asyncio.to_thread(_ingest_all_repos)
+            log.info("Auto-ingest: complete")
+        except Exception:
+            log.exception("Auto-ingest failed")
+
+
+@asynccontextmanager
+async def lifespan(app):
+    task = asyncio.create_task(_auto_ingest_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Allow the Vite dev server (separate origin) to call the API during development.
 # In production the frontend is served same-origin from the static mount below, so
@@ -259,70 +361,40 @@ def delete_repo(repo_id: int):
         session.commit()
 
 
+@app.post("/repos/ingest-all")
+def ingest_all():
+    results = _ingest_all_repos()
+    succeeded = [r for r in results if "error" not in r]
+    failed = [r for r in results if "error" in r]
+    return {"results": succeeded, "errors": failed}
+
+
 @app.post("/repos/{repo_id}/ingest")
-def ingest_repo(
+def ingest_repo_endpoint(
     repo_id: int,
     since: date | None = None,
     until: date | None = None,
 ):
-    from backend.git import is_remote_url, ensure_repo
-    from backend.config import REPO_CACHE_DIR
-
     with get_session() as session:
         repo = session.get(RepoRow, repo_id)
         if not repo:
             raise HTTPException(status_code=404, detail="Repo not found")
-
-        # Determine the actual path to run git log against
-        if repo.clone_url:
-            try:
-                actual_path = ensure_repo(repo.name, repo.clone_url, REPO_CACHE_DIR)
-            except subprocess.CalledProcessError as e:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Failed to clone/fetch remote repo: {e.stderr.strip()}"
-                )
-        else:
-            if not os.path.isdir(repo.path):
-                raise HTTPException(status_code=400, detail="Repo path no longer exists on disk")
-            actual_path = repo.path
-
-        since_str = (since or date.today() - timedelta(days=7)).isoformat()
-        until_str = (until or date.today()).isoformat()
-
-        try:
-            raw = get_raw_log(actual_path, since_str, until_str)
-        except RuntimeError as e:
-            raise HTTPException(status_code=400, detail=f"Git error: {e}")
-
-        commits = parse_log(raw)
+        repo_id = repo.id
         repo_name = repo.name
-        inserted = updated = unchanged = 0
+        repo_path = repo.path
+        clone_url = repo.clone_url
 
-        for c in commits:
-            existing = session.get(CommitRow, c.hash)
-            if existing is None:
-                session.add(CommitRow(
-                    hash=c.hash,
-                    short_hash=c.hash[:7],
-                    date=c.date,
-                    author=c.author,
-                    message=c.message,
-                    repo=repo.name,
-                    ingested_at=datetime.now(timezone.utc),
-                ))
-                inserted += 1
-            elif existing.repo != repo.name:
-                existing.repo = repo.name
-                existing.ingested_at = datetime.now(timezone.utc)
-                updated += 1
-            else:
-                unchanged += 1
+    try:
+        result = _ingest_repo(repo_id, repo_name, repo_path, clone_url, since, until)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=f"Git error: {e}")
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to clone/fetch remote repo: {e.stderr.strip()}"
+        )
 
-        repo.last_ingested_at = datetime.now(timezone.utc)
-        session.commit()
-
-    return {"repo": repo_name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
+    return result
 
 
 @app.post("/ingest")
