@@ -1,4 +1,4 @@
-FROM node:23-slim AS frontend
+FROM node:22-slim AS frontend
 WORKDIR /build
 COPY frontend/ ./frontend/
 WORKDIR /build/frontend
