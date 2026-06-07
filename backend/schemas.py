@@ -7,4 +7,4 @@ class IngestRequest(BaseModel):
     until: date | None = None
 
 class RepoCreate(BaseModel):
-    path: str
+    url: str

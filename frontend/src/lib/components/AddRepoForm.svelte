@@ -4,20 +4,11 @@
 	let { onAdded }: { onAdded: () => void } = $props();
 
 	let open = $state(false);
-	let mode = $state<'local' | 'remote'>('local');
 	let input = $state('');
-	let remoteName = $state('');
 	let submitting = $state(false);
 	let ingestState = $state<'idle' | 'ingesting' | 'error'>('idle');
 	let ingestError = $state<string | null>(null);
 	let error = $state<string | null>(null);
-
-	function repoNameFromUrl(url: string): string {
-		// Strip trailing .git and get last path segment
-		let name = url.replace(/\.git$/, '').replace(/\/$/, '');
-		if (name.includes(':')) name = name.split(':').pop() || name;
-		return name.split('/').pop() || '';
-	}
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -31,7 +22,6 @@
 			submitting = false;
 			ingestState = 'ingesting';
 			input = '';
-			remoteName = '';
 			try {
 				await ingestRepo(repo.id);
 				ingestState = 'idle';
@@ -53,42 +43,19 @@
 		error = null;
 		ingestError = null;
 		input = '';
-		remoteName = '';
 		submitting = false;
 		ingestState = 'idle';
-	}
-
-	function handleInput(value: string) {
-		input = value;
-		// Detect remote URLs and auto-switch
-		if (/^(https?:\/\/|git@|git:\/\/|ssh:\/\/)/.test(value)) {
-			mode = 'remote';
-			if (!remoteName) remoteName = repoNameFromUrl(value);
-		}
 	}
 </script>
 
 <div class="mt-3">
 	{#if open}
 		<form onsubmit={submit} class="flex flex-col gap-2">
-			<!-- Mode toggle -->
-			<div class="flex gap-1 text-xs">
-				<button type="button"
-					onclick={() => { mode = 'local'; input = ''; remoteName = ''; error = null; }}
-					class="rounded px-2 py-0.5 {mode === 'local' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-800'}"
-				>Local path</button>
-				<button type="button"
-					onclick={() => { mode = 'remote'; input = ''; remoteName = ''; error = null; }}
-					class="rounded px-2 py-0.5 {mode === 'remote' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-800'}"
-				>Remote URL</button>
-			</div>
-
 			<div class="flex items-center gap-2">
 				<input
 					bind:value={input}
-					oninput={(e) => handleInput((e.target as HTMLInputElement).value)}
 					autofocus
-					placeholder={mode === 'remote' ? 'https://github.com/user/repo.git' : '/path/to/local/repo'}
+					placeholder="https://github.com/user/repo.git"
 					class="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
 				/>
 				<button

@@ -107,31 +107,31 @@ def test_list_repos_empty(client):
     assert r.json() == {"repos": []}
 
 
-def test_create_repo_returns_201(client, tmp_path):
-    r = client.post("/repos", json={"path": str(tmp_path)})
+def test_create_repo_returns_201(client):
+    r = client.post("/repos", json={"url": "https://github.com/user/repo.git"})
     assert r.status_code == 201
     body = r.json()
-    assert body["name"] == tmp_path.name
-    assert body["path"] == str(tmp_path)
+    assert body["name"] == "repo"
+    assert body["clone_url"] == "https://github.com/user/repo.git"
     assert body["last_ingested_at"] is None
     assert body["id"] is not None
 
 
-def test_create_repo_appears_in_list(client, tmp_path):
-    client.post("/repos", json={"path": str(tmp_path)})
+def test_create_repo_appears_in_list(client):
+    client.post("/repos", json={"url": "https://github.com/user/repo.git"})
     repos = client.get("/repos").json()["repos"]
     assert len(repos) == 1
-    assert repos[0]["path"] == str(tmp_path)
+    assert repos[0]["clone_url"] == "https://github.com/user/repo.git"
 
 
-def test_create_repo_duplicate_path_returns_409(client, tmp_path):
-    client.post("/repos", json={"path": str(tmp_path)})
-    r = client.post("/repos", json={"path": str(tmp_path)})
+def test_create_repo_duplicate_url_returns_409(client):
+    client.post("/repos", json={"url": "https://github.com/user/repo.git"})
+    r = client.post("/repos", json={"url": "https://github.com/user/repo.git"})
     assert r.status_code == 409
 
 
-def test_create_repo_nonexistent_path_returns_400(client):
-    r = client.post("/repos", json={"path": "/nonexistent/path/xyz"})
+def test_create_repo_non_remote_url_returns_400(client):
+    r = client.post("/repos", json={"url": "/some/local/path"})
     assert r.status_code == 400
 
 
@@ -150,25 +150,29 @@ def test_ingest_repo_not_found_returns_404(client):
     assert client.post("/repos/999/ingest").status_code == 404
 
 
-def test_ingest_repo_path_gone_returns_400(client, add_repo):
-    repo_id = add_repo(path="/nonexistent/path/xyz")
-    assert client.post(f"/repos/{repo_id}/ingest").status_code == 400
+def test_ingest_repo_clone_failure_returns_400(client, add_repo, monkeypatch):
+    import subprocess
+    from backend import git as git_module
 
+    def fail_clone(*a, **kw):
+        raise subprocess.CalledProcessError(128, ["git", "clone"], stderr="boom")
 
-def test_ingest_repo_not_a_git_repo_returns_400(client, add_repo, tmp_path):
-    repo_id = add_repo(path=str(tmp_path))
+    monkeypatch.setattr(git_module, "ensure_repo", fail_clone)
+    repo_id = add_repo()
     r = client.post(f"/repos/{repo_id}/ingest")
     assert r.status_code == 400
-    assert "Git error" in r.json()["detail"]
+    assert "clone/fetch" in r.json()["detail"]
 
 
 def test_ingest_repo_updates_last_ingested_at(client, add_repo, tmp_path, monkeypatch):
     from backend import api as api_module
+    from backend import git as git_module
 
+    monkeypatch.setattr(git_module, "ensure_repo", lambda *a, **kw: str(tmp_path))
     monkeypatch.setattr(api_module, "get_raw_log", lambda *a, **kw: "")
     monkeypatch.setattr(api_module, "parse_log", lambda raw: [])
 
-    repo_id = add_repo(path=str(tmp_path))
+    repo_id = add_repo()
     r = client.post(f"/repos/{repo_id}/ingest")
     assert r.status_code == 200
     assert r.json() == {"repo": "demo", "inserted": 0, "updated": 0, "unchanged": 0}
