@@ -13,8 +13,8 @@ or weekly summary from the browser.
 ![uv](https://img.shields.io/badge/packaged%20with-uv-DE5FE9?logo=uv&logoColor=white)
 
 <p align="center">
-  <img src="docs/light.png" alt="standup-gen web UI — light theme" width="49%">
-  <img src="docs/dark.png" alt="standup-gen web UI — dark theme" width="49%">
+  <img src="docs/light-standup.png" alt="standup-gen web UI — light theme" width="49%">
+  <img src="docs/dark-standup.png" alt="standup-gen web UI — dark theme" width="49%">
 </p>
 
 ## What it is
