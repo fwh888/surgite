@@ -1,7 +1,5 @@
 import argparse
-import sys
 
-import requests
 from dotenv import load_dotenv
 
 from backend.formatter import format_log
@@ -20,36 +18,11 @@ def main():
     parser.add_argument("--until", help="End date or commit ref for git log (default: now)")
     parser.add_argument("--author", help="Filter commits by author (optional)")
     parser.add_argument("--output", help="Output file for the summary (optional)")
-    # action="store_true" means args.summarize is True if the flag is passed, False otherwise.
     parser.add_argument(
         "--summarize", action="store_true", help="Summarize the commit messages with AI. (optional)"
     )
-    parser.add_argument(
-        "--ingest",
-        metavar="URL",
-        help="POST commits to the API at this URL instead of printing (e.g. http://localhost:8000) (optional)",
-    )
 
     args = parser.parse_args()
-
-    if args.ingest:
-        payload = {"repo_path": args.repo_path}
-        if args.since:
-            payload["since"] = args.since
-        if args.until:
-            payload["until"] = args.until
-        url = args.ingest.rstrip("/") + "/ingest"
-        try:
-            response = requests.post(url, json=payload)
-            response.raise_for_status()
-        except requests.RequestException as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
-        result = response.json()
-        print(
-            f"Ingested into {result['repo']}: {result['inserted']} inserted, {result['updated']} updated, {result['unchanged']} unchanged"
-        )
-        return
 
     raw_log = get_raw_log(
         args.repo_path,

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { deleteRepo, ingestAll, type Repo } from '$lib/api';
+	import { deleteRepo, type Repo } from '$lib/api';
 	import { relativeTime } from '$lib/time';
 	import { toasts } from '$lib/toast.svelte';
 
@@ -15,32 +15,7 @@
 		onChanged: () => void;
 	} = $props();
 
-	let ingesting = $state(false);
 	let deletingId = $state<number | null>(null);
-
-	async function handleIngestAll() {
-		ingesting = true;
-		try {
-			const res = await ingestAll();
-			if (res.errors.length > 0) {
-				toasts.error(
-					`ingest errors — ${res.errors.map((e) => `${e.repo}: ${e.error}`).join('; ')}`
-				);
-			} else {
-				const added = res.results.reduce((n, r) => n + r.inserted, 0);
-				toasts.success(
-					added > 0
-						? `ingested ${added} new commit${added === 1 ? '' : 's'}`
-						: 'all repos already up to date'
-				);
-			}
-			onChanged();
-		} catch (e) {
-			toasts.error(e instanceof Error ? e.message : 'ingest failed');
-		} finally {
-			ingesting = false;
-		}
-	}
 
 	async function handleDelete(id: number) {
 		deletingId = id;
@@ -67,17 +42,6 @@
 	{:else}
 		<div class="flex items-center justify-between border-b border-border-subtle px-4 py-2">
 			<span class="text-xs text-fg-muted">{repos.length} repo{repos.length !== 1 ? 's' : ''}</span>
-			<button
-				onclick={handleIngestAll}
-				disabled={ingesting}
-				class="border border-border bg-surface px-3 py-1 text-xs text-fg transition hover:bg-surface-2 disabled:opacity-50"
-			>
-				{#if ingesting}
-					<span class="text-fg-muted">⣾ ingesting…</span>
-				{:else}
-					<span class="text-accent">❯</span> ingest --all
-				{/if}
-			</button>
 		</div>
 		<ul class="divide-y divide-border-subtle">
 			{#each repos as repo (repo.id)}

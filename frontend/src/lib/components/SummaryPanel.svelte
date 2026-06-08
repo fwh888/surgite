@@ -76,10 +76,12 @@
 		result = null;
 		try {
 			const custom = range === 'custom';
+			const since = custom ? customSince || undefined : sinceDate(Number(range));
+			const until = custom ? customUntil || undefined : undefined;
 			result = await generateSummary({
 				repo: repoName || undefined,
-				since: custom ? customSince || undefined : sinceDate(Number(range)),
-				until: custom ? customUntil || undefined : undefined,
+				since,
+				until,
 				author: author.trim() || undefined,
 				ai: useAi,
 				provider: useAi ? selectedProvider || undefined : undefined
