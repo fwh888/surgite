@@ -24,7 +24,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api import app
-from backend.db import Base, CommitRow, RepoRow, engine, get_session
+from backend.db import Base, CommitRow, PromptSettingsRow, RepoRow, engine, get_session
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -40,6 +40,7 @@ def _clean_tables():
     with get_session() as s:
         s.query(CommitRow).delete()
         s.query(RepoRow).delete()
+        s.query(PromptSettingsRow).delete()
         s.commit()
 
 

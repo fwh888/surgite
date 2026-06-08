@@ -104,6 +104,48 @@ def test_system_prompt_instructs_theme_grouping():
     assert "group" in prompt.lower()
 
 
+def test_system_prompt_with_settings_identity():
+    prompt = summarizer._build_system_prompt(
+        {"user_name": "Alice", "user_role": "backend engineer"}
+    )
+    assert "Alice (backend engineer)" in prompt
+
+
+def test_system_prompt_with_settings_first_person():
+    prompt = summarizer._build_system_prompt({"tone": "first-person"})
+    assert "first person" in prompt.lower()
+
+
+def test_system_prompt_with_settings_plain_format():
+    prompt = summarizer._build_system_prompt({"output_format": "plain"})
+    assert "plain text" in prompt.lower()
+    assert "## " not in prompt
+
+
+def test_system_prompt_with_settings_custom_group_count():
+    prompt = summarizer._build_system_prompt({"group_count": "1-3"})
+    assert "1-3" in prompt
+
+
+def test_system_prompt_with_custom_instructions():
+    prompt = summarizer._build_system_prompt({"custom_instructions": "Focus on bug fixes."})
+    assert "Focus on bug fixes." in prompt
+
+
+def test_system_prompt_settings_override_env(monkeypatch):
+    monkeypatch.setenv("STANDUP_USER", "EnvUser")
+    prompt = summarizer._build_system_prompt({"user_name": "SettingsUser"})
+    assert "SettingsUser" in prompt
+    assert "EnvUser" not in prompt
+
+
+def test_system_prompt_settings_fallback_to_env(monkeypatch):
+    monkeypatch.setenv("STANDUP_USER", "EnvUser")
+    monkeypatch.setenv("STANDUP_ROLE", "dev")
+    prompt = summarizer._build_system_prompt({})
+    assert "EnvUser (dev)" in prompt
+
+
 # --- generate_summary ---
 
 

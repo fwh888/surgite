@@ -97,3 +97,23 @@ export function generateSummary(params: SummaryParams = {}) {
 
 export const fetchProviders = () =>
 	request<ProvidersResponse>('/providers');
+
+export interface PromptSettings {
+	user_name: string;
+	user_role: string;
+	tone: string;
+	group_count: string;
+	output_format: string;
+	custom_instructions: string;
+	updated_at: string | null;
+}
+
+export type PromptSettingsUpdate = Partial<Omit<PromptSettings, 'updated_at'>>;
+
+export const fetchPromptSettings = () => request<PromptSettings>('/settings/prompt');
+
+export const updatePromptSettings = (update: PromptSettingsUpdate) =>
+	request<PromptSettings>('/settings/prompt', {
+		method: 'PUT',
+		body: JSON.stringify(update)
+	});
