@@ -54,13 +54,8 @@
 
 <main class="mx-auto min-h-screen max-w-2xl px-4 py-6 sm:px-6 sm:py-10">
 	<div class="border border-border bg-surface">
-		<div class="flex items-center gap-2 border-b border-border px-3 py-2">
-			<span class="flex gap-1.5" aria-hidden="true">
-				<span class="inline-block h-3 w-3 rounded-full bg-[#ff5f57]"></span>
-				<span class="inline-block h-3 w-3 rounded-full bg-[#febc2e]"></span>
-				<span class="inline-block h-3 w-3 rounded-full bg-[#28c840]"></span>
-			</span>
-			<span class="flex-1 text-center text-xs text-fg-muted">
+		<div class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+			<span class="flex-1 text-xs text-fg-muted">
 				nick@standup: ~/standup
 			</span>
 			<ThemePicker />
