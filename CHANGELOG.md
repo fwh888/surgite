@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A summary stats block above the generated cards: total commits, repos touched,
+  and active days, a per-repo commit-count bar chart, and a daily-activity
+  sparkline (with quiet days filled in) over the selected period.
+
 ## [0.2.0] - 2026-06-08
 
 UI/UX improvements, additional summary controls, and a terminal-inspired visual

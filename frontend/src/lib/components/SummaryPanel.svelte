@@ -3,6 +3,7 @@
 	import { generateSummary, fetchProviders, type Repo, type Summary, type ProviderInfo } from '$lib/api';
 	import { renderMarkdown } from '$lib/markdown';
 	import SummaryCard from './SummaryCard.svelte';
+	import SummaryStats from './SummaryStats.svelte';
 
 	let { repos }: { repos: Repo[] } = $props();
 
@@ -165,6 +166,11 @@
 			<p class="mt-4 text-sm text-fg-muted">No commits in this period.</p>
 		{:else}
 			<div class="mt-2 text-xs text-fg-faint">{buildCliEcho()}</div>
+			<SummaryStats
+				totalCommits={result.total_commits}
+				byRepo={result.by_repo}
+				byDay={result.by_day}
+			/>
 			<div class="mt-3 space-y-3">
 				{#if result.ai_summaries}
 					{#each Object.entries(result.ai_summaries) as [repo, s] (repo)}
