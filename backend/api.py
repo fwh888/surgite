@@ -1,9 +1,6 @@
-import asyncio
 import logging
 import os
-import subprocess
 from collections import defaultdict
-from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -16,7 +13,6 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import summarizer
-from backend.config import INGEST_INTERVAL
 from backend.db import CommitRow, RepoRow, get_session
 from backend.formatter import format_log
 from backend.git import get_raw_log, parse_log
@@ -30,7 +26,7 @@ log = logging.getLogger(__name__)
 AI_SUMMARY_MAX_COMMITS = 500
 
 
-def _ingest_all_repos() -> list[dict]:
+def _ingest_all_repos(since: date | None = None, until: date | None = None) -> list[dict]:
     """Ingest every registered repo. Returns list of per-repo result/error dicts."""
     results: list[dict] = []
     with get_session() as session:
@@ -39,7 +35,7 @@ def _ingest_all_repos() -> list[dict]:
 
     for repo_id, repo_name, clone_url in repo_data:
         try:
-            result = _ingest_repo(repo_id, repo_name, clone_url)
+            result = _ingest_repo(repo_id, repo_name, clone_url, since, until)
             results.append(result)
         except Exception as exc:
             log.warning("Ingest failed for repo %s: %s", repo_name, exc)
@@ -99,26 +95,7 @@ def _ingest_repo(
     return {"repo": repo_name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
 
 
-async def _auto_ingest_loop():
-    """Background task that periodically ingests all repos."""
-    while True:
-        await asyncio.sleep(INGEST_INTERVAL)
-        try:
-            log.info("Auto-ingest: starting")
-            await asyncio.to_thread(_ingest_all_repos)
-            log.info("Auto-ingest: complete")
-        except Exception:
-            log.exception("Auto-ingest failed")
-
-
-@asynccontextmanager
-async def lifespan(app):
-    task = asyncio.create_task(_auto_ingest_loop())
-    yield
-    task.cancel()
-
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 # Allow the Vite dev server (separate origin) to call the API during development.
 # In production the frontend is served same-origin from the static mount below, so
@@ -361,8 +338,11 @@ def delete_repo(repo_id: int):
 
 
 @app.post("/repos/ingest-all")
-def ingest_all():
-    results = _ingest_all_repos()
+def ingest_all(
+    since: date | None = None,
+    until: date | None = None,
+):
+    results = _ingest_all_repos(since, until)
     succeeded = [r for r in results if "error" not in r]
     failed = [r for r in results if "error" in r]
     return {"results": succeeded, "errors": failed}

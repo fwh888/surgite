@@ -77,8 +77,13 @@ export interface IngestAllResult {
 	errors: { repo: string; error: string }[];
 }
 
-export const ingestAll = () =>
-	request<IngestAllResult>('/repos/ingest-all', { method: 'POST' });
+export const ingestAll = (since?: string, until?: string) => {
+	const q = new URLSearchParams();
+	if (since) q.set('since', since);
+	if (until) q.set('until', until);
+	const qs = q.toString();
+	return request<IngestAllResult>(`/repos/ingest-all${qs ? `?${qs}` : ''}`, { method: 'POST' });
+};
 
 export interface SummaryParams {
 	repo?: string;
