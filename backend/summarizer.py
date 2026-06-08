@@ -15,6 +15,13 @@ _TIMEOUT = 120
 _MAX_TOKENS = 1024
 DEFAULT_PROVIDER = "anthropic"
 
+_TONE_INSTRUCTIONS: dict[str, str] = {
+    "neutral": "Write in plain, neutral language. Do not use first person.",
+    "first-person": "Write in first person (I/we).",
+    "formal": "Write in formal, professional language. Do not use first person.",
+    "casual": "Write in a casual, conversational tone.",
+}
+
 
 class ProviderError(Exception):
     """Provider is unknown or its API key is not configured."""
@@ -94,23 +101,47 @@ def provider_status() -> list[dict]:
     ]
 
 
-def _build_system_prompt() -> str:
-    user = os.environ.get("STANDUP_USER", "")
-    role = os.environ.get("STANDUP_ROLE", "")
+def _build_system_prompt(settings: dict | None = None) -> str:
+    s = settings or {}
+    user = s.get("user_name") or os.environ.get("STANDUP_USER", "")
+    role = s.get("user_role") or os.environ.get("STANDUP_ROLE", "")
     who = f"{user} ({role})" if user and role else user or "the developer"
     attribution = f"All commits were authored by {who}." if who != "the developer" else ""
-    return (
+
+    tone = s.get("tone", "neutral")
+    tone_instruction = _TONE_INSTRUCTIONS.get(tone, _TONE_INSTRUCTIONS["neutral"])
+
+    group_count = s.get("group_count") or "2-5"
+    output_format = s.get("output_format", "markdown")
+
+    if output_format == "plain":
+        format_instruction = (
+            "Format the response as plain text: each group is a label on its own line "
+            "followed by '- ' bullets, each describing a distinct piece of work."
+        )
+    else:
+        format_instruction = (
+            "Format the response as Markdown: each group is a '## <Theme>' heading followed by "
+            "'- ' bullets, each describing a distinct piece of work."
+        )
+
+    prompt = (
         "You are a tool that summarizes git commit history into a concise standup update. "
         + (attribution + " " if attribution else "")
         + "Group the work into a few thematic sections by feature area or type of work "
         "(for example: a feature name, Bug fixes, Documentation, Infrastructure, Tests) "
         "instead of one long flat list. "
-        "Format the response as Markdown: each group is a '## <Theme>' heading followed by "
-        "'- ' bullets, each describing a distinct piece of work. "
-        "Use 2-5 groups; with only a little activity, a single group is fine. "
-        "Write in plain, neutral language. Do not use first person. "
-        "No preamble, intro line, filler, or sign-off — start directly with the first '## ' heading."
+        + format_instruction
+        + f" Use {group_count} groups; with only a little activity, a single group is fine. "
+        + tone_instruction
+        + " No preamble, intro line, filler, or sign-off — start directly with the first heading or label."
     )
+
+    custom = s.get("custom_instructions", "")
+    if custom:
+        prompt += " " + custom
+
+    return prompt
 
 
 def _call_openai_compatible(
@@ -159,6 +190,7 @@ def generate_summary(
     commit_log: str,
     provider: str | None = None,
     model: str | None = None,
+    settings: dict | None = None,
 ) -> dict:
     """Summarize a formatted commit log with the chosen (or default) provider.
 
@@ -172,7 +204,7 @@ def generate_summary(
         raise ProviderError(f"{resolved.key_env} is not set")
 
     chosen_model = resolved.model(model)
-    system = _build_system_prompt()
+    system = _build_system_prompt(settings)
     if resolved.kind == "anthropic":
         summary = _call_anthropic(resolved, api_key, chosen_model, system, commit_log)
     else:
@@ -184,6 +216,7 @@ def generate_summary(
 def generate_summary_per_repo(
     log_by_repo: dict[str, str],
     provider: str | None = None,
+    settings: dict | None = None,
 ) -> dict[str, dict[str, str]]:
     """Generate one AI summary per repo. Returns {repo_name: {summary, provider, model}}."""
     results = {}
@@ -196,7 +229,7 @@ def generate_summary_per_repo(
             }
             continue
         try:
-            result = generate_summary(log_text, provider=provider)
+            result = generate_summary(log_text, provider=provider, settings=settings)
             results[repo_name] = result
         except ProviderError as e:
             results[repo_name] = {"summary": f"Error: {e}", "provider": "", "model": ""}

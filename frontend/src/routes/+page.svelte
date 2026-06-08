@@ -4,6 +4,7 @@
 	import RepoList from '$lib/components/RepoList.svelte';
 	import AddRepoForm from '$lib/components/AddRepoForm.svelte';
 	import SummaryPanel from '$lib/components/SummaryPanel.svelte';
+	import PromptSettings from '$lib/components/PromptSettings.svelte';
 	import ThemePicker from '$lib/components/ThemePicker.svelte';
 	import HelpOverlay from '$lib/components/HelpOverlay.svelte';
 
@@ -77,6 +78,10 @@
 			</h2>
 			<AddRepoForm onAdded={loadRepos} />
 			<RepoList {repos} {loading} {error} onChanged={loadRepos} />
+		</section>
+
+		<section class="px-4 pb-2 sm:px-6">
+			<PromptSettings />
 		</section>
 
 		<section class="px-4 pb-6 sm:px-6">

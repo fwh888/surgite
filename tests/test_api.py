@@ -117,7 +117,7 @@ def test_summary_ai_uses_selected_provider(client, add_commit, monkeypatch):
     add_commit()
     from backend import summarizer
 
-    def fake_generate(commit_log, provider=None, model=None):
+    def fake_generate(commit_log, provider=None, model=None, settings=None):
         return {"summary": "## Features\n- shipped it", "provider": "groq", "model": "x"}
 
     monkeypatch.setattr(summarizer, "generate_summary", fake_generate)
@@ -217,3 +217,63 @@ def test_cli_output_writes_to_file(monkeypatch, tmp_path):
     written = out_file.read_text()
     assert "fix bug" in written
     assert "Alice" in written
+
+
+# --- /settings/prompt ---
+
+
+def test_get_prompt_settings_returns_defaults(client):
+    r = client.get("/settings/prompt")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["user_name"] == ""
+    assert body["user_role"] == ""
+    assert body["tone"] == "neutral"
+    assert body["group_count"] == "2-5"
+    assert body["output_format"] == "markdown"
+    assert body["custom_instructions"] == ""
+
+
+def test_put_prompt_settings_partial_update(client):
+    r = client.put("/settings/prompt", json={"user_name": "Alice", "tone": "first-person"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["user_name"] == "Alice"
+    assert body["tone"] == "first-person"
+    assert body["user_role"] == ""
+    assert body["group_count"] == "2-5"
+
+
+def test_put_prompt_settings_persists(client):
+    client.put("/settings/prompt", json={"user_name": "Bob"})
+    r = client.get("/settings/prompt")
+    assert r.json()["user_name"] == "Bob"
+
+
+def test_put_prompt_settings_overwrites(client):
+    client.put("/settings/prompt", json={"user_name": "Alice"})
+    client.put("/settings/prompt", json={"user_name": "Bob"})
+    r = client.get("/settings/prompt")
+    assert r.json()["user_name"] == "Bob"
+
+
+def test_put_prompt_settings_all_fields(client):
+    r = client.put(
+        "/settings/prompt",
+        json={
+            "user_name": "Alice",
+            "user_role": "backend engineer",
+            "tone": "formal",
+            "group_count": "1-3",
+            "output_format": "plain",
+            "custom_instructions": "Focus on bug fixes.",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["user_name"] == "Alice"
+    assert body["user_role"] == "backend engineer"
+    assert body["tone"] == "formal"
+    assert body["group_count"] == "1-3"
+    assert body["output_format"] == "plain"
+    assert body["custom_instructions"] == "Focus on bug fixes."

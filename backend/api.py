@@ -12,11 +12,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import summarizer
-from backend.db import CommitRow, RepoRow, get_session
+from backend.db import CommitRow, PromptSettingsRow, RepoRow, get_session
 from backend.formatter import format_log
 from backend.git import get_raw_log, parse_log
 from backend.models import Commit
-from backend.schemas import RepoCreate
+from backend.schemas import PromptSettingsUpdate, RepoCreate
 from backend.summarizer import ProviderError
 
 log = logging.getLogger(__name__)
@@ -179,6 +179,53 @@ def providers():
     return {"default": summarizer.default_provider(), "providers": summarizer.provider_status()}
 
 
+def _get_or_create_prompt_settings() -> PromptSettingsRow:
+    with get_session() as session:
+        row = session.get(PromptSettingsRow, 1)
+        if row is None:
+            row = PromptSettingsRow(id=1)
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+        return row
+
+
+def _settings_row_to_dict(row: PromptSettingsRow) -> dict:
+    return {
+        "user_name": row.user_name,
+        "user_role": row.user_role,
+        "tone": row.tone,
+        "group_count": row.group_count,
+        "output_format": row.output_format,
+        "custom_instructions": row.custom_instructions,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@app.get("/settings/prompt")
+def get_prompt_settings():
+    row = _get_or_create_prompt_settings()
+    return _settings_row_to_dict(row)
+
+
+@app.put("/settings/prompt")
+def update_prompt_settings(update: PromptSettingsUpdate):
+    with get_session() as session:
+        row = session.get(PromptSettingsRow, 1)
+        if row is None:
+            row = PromptSettingsRow(id=1)
+            session.add(row)
+
+        update_data = update.model_dump(exclude_none=True)
+        for field, value in update_data.items():
+            setattr(row, field, value)
+
+        row.updated_at = datetime.now(UTC)
+        session.commit()
+        session.refresh(row)
+        return _settings_row_to_dict(row)
+
+
 @app.get("/commits")
 def list_commits(
     since: date | None = None,
@@ -261,14 +308,19 @@ def summary(
                     f"({len(commits)} > {AI_SUMMARY_MAX_COMMITS}); narrow the date range."
                 ),
             )
-        ai_summaries = summarizer.generate_summary_per_repo(log_by_repo, provider=provider)
-        # Backward-compat combined summary (first available repo, or all joined)
+        settings_row = _get_or_create_prompt_settings()
+        settings = _settings_row_to_dict(settings_row)
+        ai_summaries = summarizer.generate_summary_per_repo(
+            log_by_repo, provider=provider, settings=settings
+        )
         all_commit_objs = [
             Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"])
             for c in commits
         ]
         try:
-            result = summarizer.generate_summary(format_log(all_commit_objs), provider=provider)
+            result = summarizer.generate_summary(
+                format_log(all_commit_objs), provider=provider, settings=settings
+            )
         except ProviderError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except requests.RequestException as e:

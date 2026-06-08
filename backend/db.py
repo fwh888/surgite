@@ -44,5 +44,21 @@ class RepoRow(Base):
     )
 
 
+class PromptSettingsRow(Base):
+    __tablename__ = "prompt_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_name: Mapped[str] = mapped_column(String, default="")
+    user_role: Mapped[str] = mapped_column(String, default="")
+    tone: Mapped[str] = mapped_column(String, default="neutral")
+    group_count: Mapped[str] = mapped_column(String, default="2-5")
+    output_format: Mapped[str] = mapped_column(String, default="markdown")
+    custom_instructions: Mapped[str] = mapped_column(String, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+
+
 def get_session():
     return Session(engine)
