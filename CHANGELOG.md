@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-In progress toward 0.2.0: UI/UX improvements, additional features, and visual polish
-on the way to a 1.0.0 release.
+## [0.2.0] - 2026-06-08
+
+UI/UX improvements, additional summary controls, and a terminal-inspired visual
+rework on the way to a 1.0.0 release.
 
 ### Added
 
-- Toast notifications for repo ingest / add / delete actions and clipboard errors,
+- Toast notifications for repo add / delete actions and clipboard errors,
   so successful actions now give clear feedback instead of failing silently.
 - Empty-state hint and a "No commits in this period" state in the summary panel.
 - Summary controls: a custom date range (in addition to the 7/14/30-day presets)
@@ -24,10 +26,11 @@ on the way to a 1.0.0 release.
 ### Changed
 
 - **Terminal aesthetic rework:** the web UI is now a pseudo-terminal — monospace
-  (JetBrains Mono), terminal-window chrome with traffic-light dots, prompt-style
-  section headers (`~/repos ❯`, `~/summary ❯`), command-style buttons
-  (`❯ generate`, `❯ add-repo`, `❯ ingest --all`), and a CLI command echo above
-  each generated summary.
+  (JetBrains Mono), terminal-window chrome, prompt-style section headers
+  (`~/repos ❯`, `~/summary ❯`), command-style buttons (`❯ generate`,
+  `❯ add-repo`), and a CLI command echo above each generated summary.
+- Commits are now fetched automatically when a summary is generated; the separate
+  manual ingest step (endpoint and button) has been removed.
 - **Multi-theme colorschemes:** replaced the light/dark toggle with six
   colorschemes switched by a `data-theme` attribute: GitHub Dark (default),
   Light, Nord, Catppuccin Mocha, Solarized Dark, and a classic green/amber

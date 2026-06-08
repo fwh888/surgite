@@ -31,8 +31,7 @@
 			<div>
 				<p class="text-fg">Commands:</p>
 				<p>  <span class="text-accent">❯ add-repo</span>        — register a git repository</p>
-				<p>  <span class="text-accent">❯ ingest --all</span>    — fetch latest commits from all repos</p>
-				<p>  <span class="text-accent">❯ generate</span>        — produce a summary for the selected range</p>
+				<p>  <span class="text-accent">❯ generate</span>        — fetch latest commits and summarize the selected range</p>
 			</div>
 			<div>
 				<p class="text-fg">Keyboard:</p>
