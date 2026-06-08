@@ -59,10 +59,10 @@ This is a Python CLI tool and FastAPI REST API for generating standup summaries 
 CLI:  git.get_raw_log()  →  git.parse_log()  →  formatter.format_log()  →  stdout / file
                                                                         ↘  summarizer.summarize_commits()  →  LLM provider
 
-API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postgres)
-      GET /commits, /commits/{hash}, /summary  →  SQLAlchemy query  →  JSON
+API:  POST /repos  →  create repo + auto-ingest (clone/fetch + git log → CommitRow upsert)
+      GET /summary  →  auto-ingest all repos  →  SQLAlchemy query  →  JSON
       GET /summary?ai=true[&provider=]  →  formatter.format_log  →  summarizer  →  LLM provider
-      GET /providers  →  available providers + default model
+      GET /commits, /commits/{hash}, /providers  →  SQLAlchemy query / provider registry  →  JSON
 ```
 
 - `backend/models.py` — `Commit` dataclass (`hash`, `date`, `author`, `message`, optional `repo`, `ingested_at`)
@@ -72,12 +72,12 @@ API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postg
 - `backend/standup.py` — argparse CLI entry point; registered as the `standup` console script in `pyproject.toml`
 - `backend/config.py` — loads `DATABASE_URL` (required), `API_HOST`, `API_PORT` from env via `python-dotenv` (provider keys are read in `summarizer` at call time)
 - `backend/db.py` — SQLAlchemy engine, `Base`, `CommitRow` ORM model (`commits` table), and `get_session()` factory
-- `backend/schemas.py` — Pydantic request models (`IngestRequest`)
+- `backend/schemas.py` — Pydantic request models (`RepoCreate`)
 - `backend/api.py` — FastAPI app with routes:
-  - `POST /ingest` — runs `git log` against `repo_path`, upserts into `commits` (insert / update / unchanged counts returned)
+  - `POST /repos` — creates a repo and immediately ingests it (clone + git log → CommitRow upsert); ingest failures are logged but don't block creation
   - `GET /commits` — paginated list with `since`/`until`/`author`/`repo`/`limit`/`offset` filters
   - `GET /commits/{hash}` — lookup by full or prefix hash; 400 for invalid hex, 404 for not found, 409 for ambiguous prefix
-  - `GET /summary` — aggregates by repo and day over the full filtered set; `ai=true` runs the summarizer (capped at `AI_SUMMARY_MAX_COMMITS = 500` to bound token cost); optional `provider=` overrides the default; response includes `ai_provider`/`ai_model`. Unknown provider or missing key → 400; provider HTTP failure → 502
+  - `GET /summary` — auto-ingests all repos with the requested date range, then aggregates by repo and day; `ai=true` runs the summarizer (capped at `AI_SUMMARY_MAX_COMMITS = 500` to bound token cost); optional `provider=` overrides the default; response includes `ai_provider`/`ai_model`. Unknown provider or missing key → 400; provider HTTP failure → 502
   - `GET /providers` — lists providers, their default model, and whether each has a key configured (for a UI/CLI to offer a choice)
   - `SQLAlchemyError` is mapped to a 503 globally
 - `alembic/` — migrations; `e5e311c2e5f0_create_commits_table.py` is the initial schema
@@ -87,7 +87,6 @@ API:  POST /ingest  →  git.get_raw_log/parse_log  →  CommitRow upsert (Postg
 
 ## Planned upgrades
 
-- CLI `--ingest <url>` flag to POST to the API instead of printing (not yet wired up in `backend/standup.py`)
 - See [docs/production-readiness-plan.md](docs/production-readiness-plan.md) for the roadmap to a polished public release
 
 ## Environment Variables

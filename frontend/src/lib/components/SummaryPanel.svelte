@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { generateSummary, fetchProviders, ingestAll, type Repo, type Summary, type ProviderInfo } from '$lib/api';
+	import { generateSummary, fetchProviders, type Repo, type Summary, type ProviderInfo } from '$lib/api';
 	import { renderMarkdown } from '$lib/markdown';
 	import SummaryCard from './SummaryCard.svelte';
 
@@ -78,7 +78,6 @@
 			const custom = range === 'custom';
 			const since = custom ? customSince || undefined : sinceDate(Number(range));
 			const until = custom ? customUntil || undefined : undefined;
-			await ingestAll(since, until);
 			result = await generateSummary({
 				repo: repoName || undefined,
 				since,

@@ -23,13 +23,6 @@ export interface Commit {
 	ingested_at: string | null;
 }
 
-export interface IngestResult {
-	repo: string;
-	inserted: number;
-	updated: number;
-	unchanged: number;
-}
-
 export interface Summary {
 	period: { since: string | null; until: string | null };
 	total_commits: number;
@@ -68,22 +61,6 @@ export const addRepo = (url: string) =>
 	request<Repo>('/repos', { method: 'POST', body: JSON.stringify({ url }) });
 
 export const deleteRepo = (id: number) => request<void>(`/repos/${id}`, { method: 'DELETE' });
-
-export const ingestRepo = (id: number) =>
-	request<IngestResult>(`/repos/${id}/ingest`, { method: 'POST' });
-
-export interface IngestAllResult {
-	results: IngestResult[];
-	errors: { repo: string; error: string }[];
-}
-
-export const ingestAll = (since?: string, until?: string) => {
-	const q = new URLSearchParams();
-	if (since) q.set('since', since);
-	if (until) q.set('until', until);
-	const qs = q.toString();
-	return request<IngestAllResult>(`/repos/ingest-all${qs ? `?${qs}` : ''}`, { method: 'POST' });
-};
 
 export interface SummaryParams {
 	repo?: string;
