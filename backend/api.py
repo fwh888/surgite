@@ -24,17 +24,43 @@ log = logging.getLogger(__name__)
 # Cap on commits sent to the LLM in /summary?ai=true to bound token cost.
 AI_SUMMARY_MAX_COMMITS = 500
 
+# How long a successful ingest of a (repo, date range) stays fresh; repeat
+# requests within this window skip the git fetch + upsert for that repo.
+INGEST_TTL = timedelta(minutes=10)
 
-def _ingest_all_repos(since: date | None = None, until: date | None = None) -> list[dict]:
-    """Ingest every registered repo. Returns list of per-repo result/error dicts."""
+# (repo_id, since, until) -> time of last successful ingest. Keyed by date range
+# because an ingest only covers the requested window: a repo fetched for the last
+# 7 days is not fresh for a 30-day request. Process-local on purpose — commits are
+# persisted, so a restart costs at most one redundant fetch per repo and range.
+_INGEST_CACHE: dict[tuple[int, str, str], datetime] = {}
+
+
+def _ingest_all_repos(
+    since: date | None = None,
+    until: date | None = None,
+    repo: str | None = None,
+) -> list[dict]:
+    """Ingest registered repos, skipping any ingested recently for the same range.
+    `repo` narrows ingest to repos whose name contains it, matching the /summary
+    filter semantics. Returns list of per-repo result/error dicts."""
     results: list[dict] = []
     with get_session() as session:
         repos = session.scalars(select(RepoRow)).all()
         repo_data = [(r.id, r.name, r.clone_url) for r in repos]
 
+    if repo:
+        needle = repo.lower()
+        repo_data = [r for r in repo_data if needle in r[1].lower()]
+
     for repo_id, repo_name, clone_url in repo_data:
+        key = (repo_id, since.isoformat() if since else "", until.isoformat() if until else "")
+        last_run = _INGEST_CACHE.get(key)
+        if last_run and datetime.now(UTC) - last_run < INGEST_TTL:
+            results.append({"repo": repo_name, "skipped": True})
+            continue
         try:
             result = _ingest_repo(repo_id, repo_name, clone_url, since, until)
+            _INGEST_CACHE[key] = datetime.now(UTC)
             results.append(result)
         except Exception as exc:
             log.warning("Ingest failed for repo %s: %s", repo_name, exc)
@@ -64,9 +90,19 @@ def _ingest_repo(
     inserted = updated = unchanged = 0
 
     with get_session() as session:
+        # One bulk SELECT for already-known hashes instead of a per-commit get.
+        existing: dict[str, CommitRow] = {}
+        if commits:
+            existing = {
+                row.hash: row
+                for row in session.scalars(
+                    select(CommitRow).where(CommitRow.hash.in_([c.hash for c in commits]))
+                )
+            }
+        now = datetime.now(UTC)
         for c in commits:
-            existing = session.get(CommitRow, c.hash)
-            if existing is None:
+            row = existing.get(c.hash)
+            if row is None:
                 session.add(
                     CommitRow(
                         hash=c.hash,
@@ -75,20 +111,20 @@ def _ingest_repo(
                         author=c.author,
                         message=c.message,
                         repo=repo_name,
-                        ingested_at=datetime.now(UTC),
+                        ingested_at=now,
                     )
                 )
                 inserted += 1
-            elif existing.repo != repo_name:
-                existing.repo = repo_name
-                existing.ingested_at = datetime.now(UTC)
+            elif row.repo != repo_name:
+                row.repo = repo_name
+                row.ingested_at = now
                 updated += 1
             else:
                 unchanged += 1
 
         repo_row = session.get(RepoRow, repo_id)
         if repo_row:
-            repo_row.last_ingested_at = datetime.now(UTC)
+            repo_row.last_ingested_at = now
         session.commit()
 
     return {"repo": repo_name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
@@ -278,7 +314,7 @@ def summary(
     ai: bool = False,
     provider: str | None = None,
 ):
-    _ingest_all_repos(since, until)
+    _ingest_all_repos(since, until, repo)
     total, commits = _query_commits(since, until, author, repo, limit=None, offset=0)
 
     by_repo: dict[str, int] = defaultdict(int)
