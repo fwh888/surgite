@@ -430,7 +430,7 @@ search-as-you-type over `/commits` is added later, debounce it then.)
 | 1 | 1.3 Skip fresh/filtered repos on ingest | High | S | ✅ Done — `perf/summary-ingest`, merged 2026-06-10 |
 | 2 | 1.4 Bulk upsert in `_ingest_repo` | High | S | ✅ Done — `perf/summary-ingest`, merged 2026-06-10 |
 | 3 | 1.2 Make combined AI summary opt-in | High | S | 🔄 In review — `perf/ai-summary` |
-| 4 | 2.1 AbortController on generate | High | S | ⬜ Not started |
+| 4 | 2.1 AbortController on generate | High | S | 🔄 In review — `perf/abort-controller` |
 | 5 | 1.1 Parallelize per-repo LLM calls | High | M | 🔄 In review — `perf/ai-summary` |
 | 6 | 2.2 Markdown: ordered lists, links, fences | High | M | ⬜ Not started |
 | 7 | 1.5 + 1.6 Date column type + indexes (one migration) | Medium | M | ⬜ Not started |
@@ -465,3 +465,9 @@ and cost multipliers; doing just those four makes `/summary` roughly
   400, `ai=true` now validates the provider **up front** (unknown provider or
   missing key → 400 before any LLM work). The longer-term parts of 1.1
   (async endpoint, background ingest, streaming) remain open.
+- **PR `perf/abort-controller`** (item 2.1, in review): `generateSummary` in
+  `api.ts` accepts an optional `signal?: AbortSignal` and passes it through to
+  `fetch`. `SummaryPanel.svelte` tracks an `AbortController`, aborts the
+  previous request before starting a new one, and silently ignores
+  `AbortError` so superseded requests don't flash an error or overwrite the
+  result with stale data.

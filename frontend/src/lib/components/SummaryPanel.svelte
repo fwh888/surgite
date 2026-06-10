@@ -18,6 +18,7 @@
 	let generating = $state(false);
 	let error = $state<string | null>(null);
 	let result = $state<Summary | null>(null);
+	let controller: AbortController | undefined;
 
 	const BRAILLE = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 	let spinnerIdx = 0;
@@ -72,6 +73,8 @@
 	}
 
 	async function generate() {
+		controller?.abort();
+		controller = new AbortController();
 		generating = true;
 		error = null;
 		result = null;
@@ -86,8 +89,9 @@
 				author: author.trim() || undefined,
 				ai: useAi,
 				provider: useAi ? selectedProvider || undefined : undefined
-			});
+			}, controller.signal);
 		} catch (e) {
+			if (e instanceof DOMException && e.name === 'AbortError') return;
 			error = e instanceof Error ? e.message : 'Failed to generate summary';
 		} finally {
 			generating = false;
