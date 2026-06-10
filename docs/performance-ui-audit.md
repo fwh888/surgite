@@ -439,8 +439,8 @@ search-as-you-type over `/commits` is added later, debounce it then.)
 | 10 | 1.7 Single session per request | Medium | M | ⬜ Not started |
 | 11 | 2.4 Theme single source of truth | Medium | S | 🔄 In review — `ui/theme-single-source` |
 | 12 | 2.5 Loading skeletons | Medium | S | 🔄 In review — `ui/loading-skeletons` |
-| 13 | 2.6 Build-time version | Low | S | ⬜ Not started |
-| 14 | 2.7 Lazy-load prompt settings | Low | S | ⬜ Not started |
+| 13 | 2.6 Build-time version | Low | S | 🔄 In review — `ui/loading-skeletons` |
+| 14 | 2.7 Lazy-load prompt settings | Low | S | 🔄 In review — `ui/loading-skeletons` |
 | 15 | 1.9 Unique repo name + FK cascade | Low | M | ⬜ Not started |
 | 16 | 1.10 Background initial ingest | Low | S | ⬜ Not started |
 
@@ -507,8 +507,13 @@ and cost multipliers; doing just those four makes `/summary` roughly
   single source of truth via `THEMES` and corrects invalid values after
   hydration by calling `theme.set(theme.current)` on startup, which updates
   the DOM attribute if the stored value was invalid.
-- **PR `ui/loading-skeletons`** (item 2.5, in review): added a shared
+- **PR `ui/loading-skeletons`** (items 2.5 + 2.6 + 2.7, in review): added a shared
   `Skeleton.svelte` component using Tailwind's `animate-pulse` on rounded
   placeholder bars. `RepoList.svelte` and `PromptSettings.svelte` now render
   skeleton rows instead of bare "Loading…" text, eliminating layout jump
-  when content arrives.
+  when content arrives. `StatusBar.svelte` now reads the version from
+  `__APP_VERSION__` (injected at build time via `vite.config.ts` from
+  `package.json`), so it no longer drifts from the package version.
+  `PromptSettings.svelte` no longer fetches on mount — it fetches lazily on
+  first expand only, using a `loaded` flag to avoid refetching on subsequent
+  toggles (which also preserves unsaved edits).

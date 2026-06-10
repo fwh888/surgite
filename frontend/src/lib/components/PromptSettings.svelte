@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import {
 		fetchPromptSettings,
 		updatePromptSettings,
@@ -11,6 +10,7 @@
 	let expanded = $state(false);
 	let saving = $state(false);
 	let loading = $state(false);
+	let loaded = false;
 
 	let user_name = $state('');
 	let user_role = $state('');
@@ -33,15 +33,6 @@
 
 	const GROUP_COUNTS = ['1-3', '2-5', '3-7', '4-8'];
 
-	onMount(async () => {
-		try {
-			const s = await fetchPromptSettings();
-			applySettings(s);
-		} catch {
-			// endpoint unavailable
-		}
-	});
-
 	function applySettings(s: Settings) {
 		user_name = s.user_name;
 		user_role = s.user_role;
@@ -53,11 +44,12 @@
 
 	async function toggle() {
 		expanded = !expanded;
-		if (expanded) {
+		if (expanded && !loaded) {
 			loading = true;
 			try {
 				const s = await fetchPromptSettings();
 				applySettings(s);
+				loaded = true;
 			} catch {
 				toasts.error('Failed to load prompt settings');
 			} finally {
