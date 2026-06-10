@@ -432,7 +432,7 @@ search-as-you-type over `/commits` is added later, debounce it then.)
 | 3 | 1.2 Make combined AI summary opt-in | High | S | 🔄 In review — `perf/ai-summary` |
 | 4 | 2.1 AbortController on generate | High | S | 🔄 In review — `perf/abort-controller` |
 | 5 | 1.1 Parallelize per-repo LLM calls | High | M | 🔄 In review — `perf/ai-summary` |
-| 6 | 2.2 Markdown: ordered lists, links, fences | High | M | ⬜ Not started |
+| 6 | 2.2 Markdown: ordered lists, links, fences | High | M | 🔄 In review — `ui/markdown-render` |
 | 7 | 1.5 + 1.6 Date column type + indexes (one migration) | Medium | M | ⬜ Not started |
 | 8 | 1.8 Escape ILIKE wildcards / exact repo match | Medium | S | ⬜ Not started |
 | 9 | 2.3 Date-range validation | Medium | S | ⬜ Not started |
@@ -465,9 +465,17 @@ and cost multipliers; doing just those four makes `/summary` roughly
   400, `ai=true` now validates the provider **up front** (unknown provider or
   missing key → 400 before any LLM work). The longer-term parts of 1.1
   (async endpoint, background ingest, streaming) remain open.
-- **PR `perf/abort-controller`** (item 2.1, in review): `generateSummary` in
+- **PR `perf/abort-controller`** (item 2.1, merged 2026-06-10): `generateSummary` in
   `api.ts` accepts an optional `signal?: AbortSignal` and passes it through to
   `fetch`. `SummaryPanel.svelte` tracks an `AbortController`, aborts the
   previous request before starting a new one, and silently ignores
   `AbortError` so superseded requests don't flash an error or overwrite the
   result with stale data.
+- **PR `ui/markdown-render`** (item 2.2, in review): extended `markdown.ts`
+  line loop with three cases — ordered lists (`^\s*\d+[.)]\s+`) emit `<ol>`
+  with list-type tracking so switching between bullet/ordered closes and
+  reopens correctly; fenced code blocks toggle an `inCode` flag and collect
+  raw escaped lines into a single `<pre><code>` without running `inline()`;
+  links in `inline()` match `\[text\]\(https?://url\)` and emit `<a>` with
+  `rel="noopener noreferrer" target="_blank"`, rejecting non-http schemes.
+  Tests cover all three features plus XSS safety inside code blocks.
