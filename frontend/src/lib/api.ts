@@ -83,7 +83,7 @@ export interface ProvidersResponse {
 	providers: ProviderInfo[];
 }
 
-export function generateSummary(params: SummaryParams = {}) {
+export function generateSummary(params: SummaryParams = {}, signal?: AbortSignal) {
 	const q = new URLSearchParams();
 	if (params.repo) q.set('repo', params.repo);
 	if (params.since) q.set('since', params.since);
@@ -92,7 +92,7 @@ export function generateSummary(params: SummaryParams = {}) {
 	if (params.ai) q.set('ai', 'true');
 	if (params.provider) q.set('provider', params.provider);
 	const qs = q.toString();
-	return request<Summary>(`/summary${qs ? `?${qs}` : ''}`);
+	return request<Summary>(`/summary${qs ? `?${qs}` : ''}`, { signal });
 }
 
 export const fetchProviders = () =>
