@@ -1,15 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import {
 		fetchPromptSettings,
 		updatePromptSettings,
 		type PromptSettings as Settings
 	} from '$lib/api';
 	import { toasts } from '$lib/toast.svelte';
+	import Skeleton from './Skeleton.svelte';
 
 	let expanded = $state(false);
 	let saving = $state(false);
 	let loading = $state(false);
+	let loaded = false;
 
 	let user_name = $state('');
 	let user_role = $state('');
@@ -32,15 +33,6 @@
 
 	const GROUP_COUNTS = ['1-3', '2-5', '3-7', '4-8'];
 
-	onMount(async () => {
-		try {
-			const s = await fetchPromptSettings();
-			applySettings(s);
-		} catch {
-			// endpoint unavailable
-		}
-	});
-
 	function applySettings(s: Settings) {
 		user_name = s.user_name;
 		user_role = s.user_role;
@@ -52,11 +44,12 @@
 
 	async function toggle() {
 		expanded = !expanded;
-		if (expanded) {
+		if (expanded && !loaded) {
 			loading = true;
 			try {
 				const s = await fetchPromptSettings();
 				applySettings(s);
+				loaded = true;
 			} catch {
 				toasts.error('Failed to load prompt settings');
 			} finally {
@@ -101,7 +94,9 @@
 
 	{#if expanded}
 		{#if loading}
-			<p class="mt-3 text-sm text-fg-muted">Loading…</p>
+			<div class="mt-3">
+				<Skeleton rows={4} />
+			</div>
 		{:else}
 			<div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>

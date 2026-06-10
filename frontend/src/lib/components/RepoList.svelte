@@ -2,6 +2,7 @@
 	import { deleteRepo, type Repo } from '$lib/api';
 	import { relativeTime } from '$lib/time';
 	import { toasts } from '$lib/toast.svelte';
+	import Skeleton from './Skeleton.svelte';
 
 	let {
 		repos,
@@ -34,7 +35,7 @@
 
 <div class="mt-3 border border-border bg-bg">
 	{#if loading}
-		<p class="px-4 py-6 text-sm text-fg-muted">Loading…</p>
+		<Skeleton rows={3} />
 	{:else if error}
 		<p class="px-4 py-6 text-sm text-err">{error}</p>
 	{:else if repos.length === 0}
