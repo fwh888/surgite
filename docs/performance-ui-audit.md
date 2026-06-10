@@ -437,7 +437,7 @@ search-as-you-type over `/commits` is added later, debounce it then.)
 | 8 | 1.8 Escape ILIKE wildcards / exact repo match | Medium | S | 🔄 In review — `fix/ilike-escape` |
 | 9 | 2.3 Date-range validation | Medium | S | ✅ Done — `ui/date-validation`, merged 2026-06-10 |
 | 10 | 1.7 Single session per request | Medium | M | ⬜ Not started |
-| 11 | 2.4 Theme single source of truth | Medium | S | ⬜ Not started |
+| 11 | 2.4 Theme single source of truth | Medium | S | 🔄 In review — `ui/theme-single-source` |
 | 12 | 2.5 Loading skeletons | Medium | S | ⬜ Not started |
 | 13 | 2.6 Build-time version | Low | S | ⬜ Not started |
 | 14 | 2.7 Lazy-load prompt settings | Low | S | ⬜ Not started |
@@ -501,3 +501,9 @@ and cost multipliers; doing just those four makes `/summary` roughly
   customUntil`. The generate button is disabled when invalid and a red error
   message is shown. The native date pickers also enforce the constraint via
   `min`/`max` attributes so the picker prevents bad input in the first place.
+- **PR `ui/theme-single-source`** (item 2.4, in review): removed the hardcoded
+  theme list from `app.html`'s pre-paint script — it now applies whatever
+  `localStorage.theme` holds (or the default). `theme.svelte.ts` becomes the
+  single source of truth via `THEMES` and corrects invalid values after
+  hydration by calling `theme.set(theme.current)` on startup, which updates
+  the DOM attribute if the stored value was invalid.

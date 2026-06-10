@@ -47,3 +47,7 @@ class ThemeState {
 }
 
 export const theme = new ThemeState();
+
+// Normalize the DOM attribute after hydration — if localStorage held an invalid
+// value, the pre-paint script applied it as-is; this corrects it to the default.
+if (browser) theme.set(theme.current);

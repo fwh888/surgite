@@ -6,14 +6,11 @@
 		<meta name="text-scale" content="scale" />
 		<script>
 			// Apply the saved colorscheme before first paint to avoid a flash.
+			// No validation here — theme.svelte.ts corrects invalid values after hydration.
 			(function () {
-				var valid = ['github-dark', 'light', 'nord', 'catppuccin', 'solarized', 'terminal'];
-				var t = 'github-dark';
-				try {
-					var s = localStorage.getItem('theme');
-					if (valid.indexOf(s) !== -1) t = s;
-				} catch (e) {}
-				document.documentElement.setAttribute('data-theme', t);
+				var t = null;
+				try { t = localStorage.getItem('theme'); } catch (e) {}
+				document.documentElement.setAttribute('data-theme', t || 'github-dark');
 			})();
 		</script>
 		%sveltekit.head%
