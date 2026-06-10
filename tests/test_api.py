@@ -41,13 +41,32 @@ def test_commits_returns_inserted_rows(client, add_commit):
     assert body["commits"][0]["author"] == "Bob"
 
 
-def test_commits_filter_by_repo_substring(client, add_commit):
+def test_commits_filter_by_repo_exact(client, add_commit):
     add_commit(hash="1" * 40, short_hash="1111111", repo="standup-gen")
     add_commit(hash="2" * 40, short_hash="2222222", repo="other-project")
-    r = client.get("/commits?repo=standup")
+    r = client.get("/commits?repo=standup-gen")
     body = r.json()
     assert body["total"] == 1
     assert body["commits"][0]["repo"] == "standup-gen"
+
+
+def test_commits_author_filter_escapes_wildcards(client, add_commit):
+    add_commit(hash="1" * 40, short_hash="1111111", author="Alice")
+    add_commit(hash="2" * 40, short_hash="2222222", author="Bob")
+    add_commit(hash="3" * 40, short_hash="3333333", author="100%")
+    r = client.get("/commits?author=100%")
+    body = r.json()
+    assert body["total"] == 1
+    assert body["commits"][0]["author"] == "100%"
+
+
+def test_commits_author_filter_escapes_underscore(client, add_commit):
+    add_commit(hash="1" * 40, short_hash="1111111", author="foo_bar")
+    add_commit(hash="2" * 40, short_hash="2222222", author="fooXbar")
+    r = client.get("/commits?author=foo_bar")
+    body = r.json()
+    assert body["total"] == 1
+    assert body["commits"][0]["author"] == "foo_bar"
 
 
 def test_commit_by_short_hash(client, add_commit):

@@ -429,12 +429,12 @@ search-as-you-type over `/commits` is added later, debounce it then.)
 | --- | --- | --- | --- | --- |
 | 1 | 1.3 Skip fresh/filtered repos on ingest | High | S | ✅ Done — `perf/summary-ingest`, merged 2026-06-10 |
 | 2 | 1.4 Bulk upsert in `_ingest_repo` | High | S | ✅ Done — `perf/summary-ingest`, merged 2026-06-10 |
-| 3 | 1.2 Make combined AI summary opt-in | High | S | 🔄 In review — `perf/ai-summary` |
-| 4 | 2.1 AbortController on generate | High | S | 🔄 In review — `perf/abort-controller` |
-| 5 | 1.1 Parallelize per-repo LLM calls | High | M | 🔄 In review — `perf/ai-summary` |
-| 6 | 2.2 Markdown: ordered lists, links, fences | High | M | 🔄 In review — `ui/markdown-render` |
+| 3 | 1.2 Make combined AI summary opt-in | High | S | ✅ Done — `perf/ai-summary`, merged 2026-06-10 |
+| 4 | 2.1 AbortController on generate | High | S | ✅ Done — `perf/abort-controller`, merged 2026-06-10 |
+| 5 | 1.1 Parallelize per-repo LLM calls | High | M | ✅ Done — `perf/ai-summary`, merged 2026-06-10 |
+| 6 | 2.2 Markdown: ordered lists, links, fences | High | M | ✅ Done — `ui/markdown-render`, merged 2026-06-10 |
 | 7 | 1.5 + 1.6 Date column type + indexes (one migration) | Medium | M | ⬜ Not started |
-| 8 | 1.8 Escape ILIKE wildcards / exact repo match | Medium | S | ⬜ Not started |
+| 8 | 1.8 Escape ILIKE wildcards / exact repo match | Medium | S | 🔄 In review — `fix/ilike-escape` |
 | 9 | 2.3 Date-range validation | Medium | S | ⬜ Not started |
 | 10 | 1.7 Single session per request | Medium | M | ⬜ Not started |
 | 11 | 2.4 Theme single source of truth | Medium | S | ⬜ Not started |
@@ -471,7 +471,7 @@ and cost multipliers; doing just those four makes `/summary` roughly
   previous request before starting a new one, and silently ignores
   `AbortError` so superseded requests don't flash an error or overwrite the
   result with stale data.
-- **PR `ui/markdown-render`** (item 2.2, in review): extended `markdown.ts`
+- **PR `ui/markdown-render`** (item 2.2, merged 2026-06-10): extended `markdown.ts`
   line loop with three cases — ordered lists (`^\s*\d+[.)]\s+`) emit `<ol>`
   with list-type tracking so switching between bullet/ordered closes and
   reopens correctly; fenced code blocks toggle an `inCode` flag and collect
@@ -479,3 +479,11 @@ and cost multipliers; doing just those four makes `/summary` roughly
   links in `inline()` match `\[text\]\(https?://url\)` and emit `<a>` with
   `rel="noopener noreferrer" target="_blank"`, rejecting non-http schemes.
   Tests cover all three features plus XSS safety inside code blocks.
+- **PR `fix/ilike-escape`** (item 1.8, in review): added `_escape_like()`
+  helper in `api.py` that escapes `\`, `%`, and `_` characters. The `author`
+  filter now uses `ilike(f"%{_escape_like(author)}%", escape="\\")` so
+  wildcards in user input are treated literally. The `repo` filter switched
+  from `ilike` to exact equality (`CommitRow.repo == repo`) since the UI
+  sends exact repo names from a dropdown. Updated the substring test to
+  reflect exact matching; added two regression tests verifying `%` and `_`
+  in author names are escaped correctly.

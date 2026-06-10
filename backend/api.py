@@ -148,6 +148,11 @@ async def _sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
     return JSONResponse(status_code=503, content={"detail": "Database unavailable"})
 
 
+def _escape_like(s: str) -> str:
+    """Escape SQL LIKE wildcards so user input is treated literally."""
+    return s.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+
+
 def _repo_to_dict(row: RepoRow) -> dict:
     return {
         "id": row.id,
@@ -187,9 +192,9 @@ def _query_commits(
         if until:
             q = q.where(CommitRow.date <= until.isoformat())
         if author:
-            q = q.where(CommitRow.author.ilike(f"%{author}%"))
+            q = q.where(CommitRow.author.ilike(f"%{_escape_like(author)}%", escape="\\"))
         if repo:
-            q = q.where(CommitRow.repo.ilike(f"%{repo}%"))
+            q = q.where(CommitRow.repo == repo)
 
         total = session.scalar(select(func.count()).select_from(q.subquery())) or 0
         q = q.order_by(CommitRow.date.desc()).offset(offset)
