@@ -113,18 +113,58 @@ def test_summary_ai_unknown_provider_returns_400(client, add_commit):
     assert client.get("/summary?ai=true&provider=bogus").status_code == 400
 
 
-def test_summary_ai_uses_selected_provider(client, add_commit, monkeypatch):
-    add_commit()
-    from backend import summarizer
-
-    def fake_generate(commit_log, provider=None, model=None, settings=None):
+def _fake_generate(calls):
+    def fake(commit_log, provider=None, model=None, settings=None):
+        calls.append(commit_log)
         return {"summary": "## Features\n- shipped it", "provider": "groq", "model": "x"}
 
-    monkeypatch.setattr(summarizer, "generate_summary", fake_generate)
-    body = client.get("/summary?ai=true&provider=groq").json()
+    return fake
+
+
+def test_summary_ai_uses_selected_provider(client, add_commit, monkeypatch):
+    add_commit()
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    from backend import summarizer
+
+    monkeypatch.setattr(summarizer, "generate_summary", _fake_generate([]))
+    body = client.get("/summary?ai=true&provider=groq&combined=true").json()
     assert body["ai_summary"].startswith("## Features")
     assert body["ai_provider"] == "groq"
     assert body["ai_model"] == "x"
+
+
+def test_summary_ai_skips_combined_summary_by_default(client, add_commit, monkeypatch):
+    add_commit()
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    from backend import summarizer
+
+    calls = []
+    monkeypatch.setattr(summarizer, "generate_summary", _fake_generate(calls))
+    body = client.get("/summary?ai=true&provider=groq").json()
+    assert body["ai_summaries"]["demo"]["summary"].startswith("## Features")
+    assert body["ai_summary"] is None
+    assert body["ai_provider"] is None
+    assert len(calls) == 1  # one per-repo call, no whole-log call
+
+
+def test_summary_ai_combined_makes_one_extra_call(client, add_commit, monkeypatch):
+    add_commit()
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    from backend import summarizer
+
+    calls = []
+    monkeypatch.setattr(summarizer, "generate_summary", _fake_generate(calls))
+    body = client.get("/summary?ai=true&provider=groq&combined=true").json()
+    assert body["ai_summary"] is not None
+    assert len(calls) == 2  # per-repo + whole-log
+
+
+def test_summary_ai_without_key_returns_400_even_with_no_commits(client):
+    # The up-front provider check must catch a missing key before any LLM work,
+    # including when the period has no commits at all.
+    r = client.get("/summary?ai=true&provider=groq")
+    assert r.status_code == 400
+    assert "GROQ_API_KEY" in r.json()["detail"]
 
 
 # --- /repos ---

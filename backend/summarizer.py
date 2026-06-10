@@ -7,12 +7,16 @@ HTTP via `requests` so no provider SDK is required.
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import requests
 
 _TIMEOUT = 120
 _MAX_TOKENS = 1024
+# Concurrent provider calls in generate_summary_per_repo: enough to collapse the
+# per-repo round-trips without hammering the provider's rate limits.
+_MAX_PARALLEL_SUMMARIES = 4
 DEFAULT_PROVIDER = "anthropic"
 
 _TONE_INSTRUCTIONS: dict[str, str] = {
@@ -218,28 +222,25 @@ def generate_summary_per_repo(
     provider: str | None = None,
     settings: dict | None = None,
 ) -> dict[str, dict[str, str]]:
-    """Generate one AI summary per repo. Returns {repo_name: {summary, provider, model}}."""
-    results = {}
-    for repo_name, log_text in log_by_repo.items():
-        if not log_text.strip():
-            results[repo_name] = {
-                "summary": "No commits in this period.",
-                "provider": "",
-                "model": "",
-            }
-            continue
+    """Generate one AI summary per repo, calling the provider concurrently.
+    Returns {repo_name: {summary, provider, model}} in input order."""
+
+    def summarize(log_text: str) -> dict[str, str]:
         try:
-            result = generate_summary(log_text, provider=provider, settings=settings)
-            results[repo_name] = result
+            return generate_summary(log_text, provider=provider, settings=settings)
         except ProviderError as e:
-            results[repo_name] = {"summary": f"Error: {e}", "provider": "", "model": ""}
+            return {"summary": f"Error: {e}", "provider": "", "model": ""}
         except requests.RequestException as e:
-            results[repo_name] = {
-                "summary": f"Provider request failed: {e}",
-                "provider": "",
-                "model": "",
-            }
-    return results
+            return {"summary": f"Provider request failed: {e}", "provider": "", "model": ""}
+
+    pending = {name: log for name, log in log_by_repo.items() if log.strip()}
+    summaries: dict[str, dict[str, str]] = {}
+    if pending:
+        with ThreadPoolExecutor(max_workers=min(len(pending), _MAX_PARALLEL_SUMMARIES)) as pool:
+            summaries = dict(zip(pending, pool.map(summarize, pending.values()), strict=True))
+
+    empty = {"summary": "No commits in this period.", "provider": "", "model": ""}
+    return {name: summaries.get(name, empty) for name in log_by_repo}
 
 
 def summarize_commits(summary: str, provider: str | None = None) -> str:

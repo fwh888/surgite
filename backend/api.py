@@ -313,7 +313,11 @@ def summary(
     repo: str | None = None,
     ai: bool = False,
     provider: str | None = None,
+    combined: bool = False,
 ):
+    """Commit summary for the period. With ai=true, returns one AI summary per
+    repo (ai_summaries); the additional whole-log summary (ai_summary) costs an
+    extra provider call and is only generated when combined=true."""
     _ingest_all_repos(since, until, repo)
     total, commits = _query_commits(since, until, author, repo, limit=None, offset=0)
 
@@ -344,26 +348,37 @@ def summary(
                     f"({len(commits)} > {AI_SUMMARY_MAX_COMMITS}); narrow the date range."
                 ),
             )
+        # Validate the provider up front: per-repo errors are reported inline in
+        # ai_summaries, so a misconfiguration would otherwise surface as N error
+        # strings (or, without combined, not as an HTTP error at all).
+        try:
+            resolved = summarizer.resolve_provider(provider)
+        except ProviderError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        if resolved.api_key is None:
+            raise HTTPException(status_code=400, detail=f"{resolved.key_env} is not set")
+
         settings_row = _get_or_create_prompt_settings()
         settings = _settings_row_to_dict(settings_row)
         ai_summaries = summarizer.generate_summary_per_repo(
             log_by_repo, provider=provider, settings=settings
         )
-        all_commit_objs = [
-            Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"])
-            for c in commits
-        ]
-        try:
-            result = summarizer.generate_summary(
-                format_log(all_commit_objs), provider=provider, settings=settings
-            )
-        except ProviderError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        except requests.RequestException as e:
-            raise HTTPException(status_code=502, detail=f"Provider request failed: {e}") from e
-        ai_summary = result["summary"]
-        ai_provider = result["provider"]
-        ai_model = result["model"]
+        if combined:
+            all_commit_objs = [
+                Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"])
+                for c in commits
+            ]
+            try:
+                result = summarizer.generate_summary(
+                    format_log(all_commit_objs), provider=provider, settings=settings
+                )
+            except ProviderError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+            except requests.RequestException as e:
+                raise HTTPException(status_code=502, detail=f"Provider request failed: {e}") from e
+            ai_summary = result["summary"]
+            ai_provider = result["provider"]
+            ai_model = result["model"]
 
     return {
         "period": {
