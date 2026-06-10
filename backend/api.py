@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import summarizer
@@ -394,6 +394,7 @@ def delete_repo(repo_id: int):
         repo = session.get(RepoRow, repo_id)
         if not repo:
             raise HTTPException(status_code=404, detail="Repo not found")
+        session.execute(delete(CommitRow).where(CommitRow.repo == repo.name))
         session.delete(repo)
         session.commit()
 

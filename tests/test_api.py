@@ -175,6 +175,14 @@ def test_delete_repo_not_found_returns_404(client):
     assert client.delete("/repos/999").status_code == 404
 
 
+def test_delete_repo_cascades_commits(client, add_repo, add_commit):
+    repo_id = add_repo(name="doomed")
+    add_commit(hash="b" * 40, short_hash="bbbbbbb", repo="doomed")
+    client.delete(f"/repos/{repo_id}")
+    r = client.get("/commits", params={"repo": "doomed"})
+    assert r.json()["commits"] == []
+
+
 def test_cli_without_ingest_prints_formatted_log(monkeypatch):
     monkeypatch.setattr(
         "backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
