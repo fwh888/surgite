@@ -229,3 +229,34 @@ def test_per_repo_success(monkeypatch):
     out = generate_summary_per_repo({"repo-a": "log"}, provider="groq")
     assert out["repo-a"]["summary"].startswith("## Features")
     assert out["repo-a"]["provider"] == "groq"
+
+
+def test_per_repo_calls_run_concurrently(monkeypatch):
+    """Both provider calls must be in flight at once: each blocks on a barrier
+    that only releases when the other arrives. Sequential execution would leave
+    the first call waiting alone until the timeout breaks the barrier."""
+    import threading
+
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    barrier = threading.Barrier(2)
+
+    def fake_post(*a, **k):
+        barrier.wait(timeout=5)  # raises BrokenBarrierError if run sequentially
+        return FakeResp(_openai_payload("ok"))
+
+    monkeypatch.setattr(summarizer.requests, "post", fake_post)
+    out = generate_summary_per_repo({"repo-a": "log a", "repo-b": "log b"}, provider="groq")
+    assert out["repo-a"]["summary"] == "ok"
+    assert out["repo-b"]["summary"] == "ok"
+
+
+def test_per_repo_preserves_input_order(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    monkeypatch.setattr(
+        summarizer.requests,
+        "post",
+        lambda *a, **k: FakeResp(_openai_payload("ok")),
+    )
+    out = generate_summary_per_repo({"zeta": "log", "blank": "  ", "alpha": "log"}, provider="groq")
+    assert list(out.keys()) == ["zeta", "blank", "alpha"]
+    assert out["blank"]["summary"] == "No commits in this period."
