@@ -4,7 +4,7 @@ The git layer is faked (no subprocess calls); everything DB-side is real.
 """
 
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import event, select
@@ -40,9 +40,10 @@ def fake_git(monkeypatch):
     return rec
 
 
-def make_commits(n: int, date: str = "2026-06-01") -> list[Commit]:
+def make_commits(n: int, commit_date: date = date(2026, 6, 1)) -> list[Commit]:
     return [
-        Commit(hash=f"{i:040x}", date=date, author="Alice", message=f"commit {i}") for i in range(n)
+        Commit(hash=f"{i:040x}", date=commit_date, author="Alice", message=f"commit {i}")
+        for i in range(n)
     ]
 
 
@@ -91,7 +92,7 @@ def test_reingest_leaves_existing_rows_unchanged(add_repo, fake_git):
 def test_ingest_reassigns_commit_to_new_repo_name(add_repo, add_commit, fake_git):
     repo_id = add_repo(name="renamed")
     add_commit(hash="0" * 40, short_hash="0000000", repo="oldname")
-    fake_git.commits = [Commit(hash="0" * 40, date="2026-06-01", author="Alice", message="x")]
+    fake_git.commits = [Commit(hash="0" * 40, date=date(2026, 6, 1), author="Alice", message="x")]
 
     result = api._ingest_repo(repo_id, "renamed", "https://example.com/renamed.git")
 

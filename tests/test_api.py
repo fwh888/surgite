@@ -1,4 +1,5 @@
 import io
+from datetime import date
 
 import pytest
 
@@ -96,7 +97,7 @@ def test_summary_counts_all_matching_commits(client, add_commit):
     """Regression: /summary used to inherit list_commits' default limit=50,
     so by_repo/by_day undercounted whenever total > 50."""
     for i in range(60):
-        add_commit(hash=f"{i:040x}", short_hash=f"{i:07x}", repo="demo", date="2026-05-19")
+        add_commit(hash=f"{i:040x}", short_hash=f"{i:07x}", repo="demo", date=date(2026, 5, 19))
     body = client.get("/summary").json()
     assert body["total_commits"] == 60
     assert sum(body["by_repo"].values()) == 60
@@ -104,7 +105,7 @@ def test_summary_counts_all_matching_commits(client, add_commit):
 
 
 def test_summary_by_day_is_chronologically_sorted(client, add_commit):
-    for i, d in enumerate(["2026-05-21", "2026-05-19", "2026-05-20"]):
+    for i, d in enumerate([date(2026, 5, 21), date(2026, 5, 19), date(2026, 5, 20)]):
         add_commit(hash=f"{i:040x}", short_hash=f"{i:07x}", date=d)
     assert list(client.get("/summary").json()["by_day"].keys()) == [
         "2026-05-19",

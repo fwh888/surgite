@@ -1,4 +1,5 @@
 import subprocess
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -47,7 +48,7 @@ def test_parse_log_empty_returns_empty_list():
 def test_parse_log_single_commit():
     raw = "a1b2c3d\x1f2026-06-01\x1fAlice\x1ffix bug"
     assert parse_log(raw) == [
-        Commit(hash="a1b2c3d", date="2026-06-01", author="Alice", message="fix bug")
+        Commit(hash="a1b2c3d", date=date(2026, 6, 1), author="Alice", message="fix bug")
     ]
 
 

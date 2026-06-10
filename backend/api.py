@@ -168,7 +168,7 @@ def _row_to_dict(row: CommitRow) -> dict:
     return {
         "hash": row.hash,
         "short_hash": row.short_hash,
-        "date": row.date,
+        "date": row.date.isoformat(),
         "author": row.author,
         "message": row.message,
         "repo": row.repo,
@@ -188,9 +188,9 @@ def _query_commits(
     with get_session() as session:
         q = select(CommitRow)
         if since:
-            q = q.where(CommitRow.date >= since.isoformat())
+            q = q.where(CommitRow.date >= since)
         if until:
-            q = q.where(CommitRow.date <= until.isoformat())
+            q = q.where(CommitRow.date <= until)
         if author:
             q = q.where(CommitRow.author.ilike(f"%{_escape_like(author)}%", escape="\\"))
         if repo:

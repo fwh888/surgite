@@ -1,6 +1,6 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import DateTime, Integer, String, create_engine
+from sqlalchemy import Date, DateTime, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from backend.config import DATABASE_URL
@@ -17,7 +17,7 @@ class CommitRow(Base):
 
     hash: Mapped[str] = mapped_column(String, primary_key=True)
     short_hash: Mapped[str] = mapped_column(String(7))  # short 7 char git hash
-    date: Mapped[str] = mapped_column(String)
+    date: Mapped[date] = mapped_column(Date)
     author: Mapped[str] = mapped_column(String)
     message: Mapped[str] = mapped_column(String)
     repo: Mapped[str] = mapped_column(String)

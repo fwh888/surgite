@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+from datetime import date
 from pathlib import Path
 
 from backend.models import Commit
@@ -122,6 +123,13 @@ def parse_log(raw_log: str) -> list[Commit]:
     lines = raw_log.splitlines()
     commits = []
     for line in lines:
-        hash, date, author, message = line.split("\x1f", maxsplit=3)
-        commits.append(Commit(hash=hash, date=date, author=author, message=message))
+        hash, date_str, author, message = line.split("\x1f", maxsplit=3)
+        commits.append(
+            Commit(
+                hash=hash,
+                date=date.fromisoformat(date_str),
+                author=author,
+                message=message,
+            )
+        )
     return commits
