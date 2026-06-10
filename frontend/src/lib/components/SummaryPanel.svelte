@@ -20,6 +20,10 @@
 	let result = $state<Summary | null>(null);
 	let controller: AbortController | undefined;
 
+	const rangeInvalid = $derived(
+		range === 'custom' && !!customSince && !!customUntil && customSince > customUntil
+	);
+
 	const BRAILLE = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 	let spinnerIdx = 0;
 	let spinnerFrame = $state(BRAILLE[0]);
@@ -122,9 +126,9 @@
 		</select>
 
 		{#if range === 'custom'}
-			<input type="date" bind:value={customSince} aria-label="From date" class={inputCls} />
+			<input type="date" bind:value={customSince} max={customUntil || undefined} aria-label="From date" class={inputCls} />
 			<span class="text-sm text-fg-muted">to</span>
-			<input type="date" bind:value={customUntil} aria-label="To date" class={inputCls} />
+			<input type="date" bind:value={customUntil} min={customSince || undefined} aria-label="To date" class={inputCls} />
 		{/if}
 
 		<input
@@ -152,7 +156,7 @@
 
 		<button
 			onclick={generate}
-			disabled={generating}
+			disabled={generating || rangeInvalid}
 			class="border border-border bg-accent px-4 py-1.5 text-sm font-medium text-accent-contrast transition hover:bg-accent-hover disabled:opacity-50"
 		>
 			{#if generating}
@@ -162,6 +166,10 @@
 			{/if}
 		</button>
 	</div>
+
+	{#if rangeInvalid}
+		<p class="mt-3 text-sm text-err">"From" must be on or before "to".</p>
+	{/if}
 
 	{#if error}
 		<p class="mt-3 text-sm text-err">{error}</p>
