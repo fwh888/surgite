@@ -6,7 +6,7 @@ Test config. DATABASE_URL and the provider API keys must be set BEFORE any
 
 import os
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 _db_file = Path(tempfile.gettempdir()) / "standup_test.db"
@@ -55,7 +55,7 @@ def add_commit():
         defaults = {
             "hash": "a" * 40,
             "short_hash": "aaaaaaa",
-            "date": "2026-05-19",
+            "date": date(2026, 5, 19),
             "author": "Alice",
             "message": "init",
             "repo": "demo",

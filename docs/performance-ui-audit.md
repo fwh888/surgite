@@ -433,7 +433,7 @@ search-as-you-type over `/commits` is added later, debounce it then.)
 | 4 | 2.1 AbortController on generate | High | S | ✅ Done — `perf/abort-controller`, merged 2026-06-10 |
 | 5 | 1.1 Parallelize per-repo LLM calls | High | M | ✅ Done — `perf/ai-summary`, merged 2026-06-10 |
 | 6 | 2.2 Markdown: ordered lists, links, fences | High | M | ✅ Done — `ui/markdown-render`, merged 2026-06-10 |
-| 7 | 1.5 + 1.6 Date column type + indexes (one migration) | Medium | M | ⬜ Not started |
+| 7 | 1.5 + 1.6 Date column type + indexes (one migration) | Medium | M | 🔄 In review — `perf/date-indexes` |
 | 8 | 1.8 Escape ILIKE wildcards / exact repo match | Medium | S | 🔄 In review — `fix/ilike-escape` |
 | 9 | 2.3 Date-range validation | Medium | S | ⬜ Not started |
 | 10 | 1.7 Single session per request | Medium | M | ⬜ Not started |
@@ -479,7 +479,7 @@ and cost multipliers; doing just those four makes `/summary` roughly
   links in `inline()` match `\[text\]\(https?://url\)` and emit `<a>` with
   `rel="noopener noreferrer" target="_blank"`, rejecting non-http schemes.
   Tests cover all three features plus XSS safety inside code blocks.
-- **PR `fix/ilike-escape`** (item 1.8, in review): added `_escape_like()`
+- **PR `fix/ilike-escape`** (item 1.8, merged 2026-06-10): added `_escape_like()`
   helper in `api.py` that escapes `\`, `%`, and `_` characters. The `author`
   filter now uses `ilike(f"%{_escape_like(author)}%", escape="\\")` so
   wildcards in user input are treated literally. The `repo` filter switched
@@ -487,3 +487,12 @@ and cost multipliers; doing just those four makes `/summary` roughly
   sends exact repo names from a dropdown. Updated the substring test to
   reflect exact matching; added two regression tests verifying `%` and `_`
   in author names are escaped correctly.
+- **PR `perf/date-indexes`** (items 1.5 + 1.6, in review): migration
+  `f1a2b3c4d5e6` changes `commits.date` from `String` to `Date` (with
+  `USING date::date` for Postgres) and adds three indexes: `ix_commits_date`,
+  `ix_commits_repo_date`, and `ix_commits_author`. The `CommitRow` model and
+  `Commit` dataclass now use `date` instead of `str`; `parse_log` converts
+  the ISO date string from git via `date.fromisoformat()`; `_row_to_dict`
+  calls `.isoformat()` for JSON serialization; `_query_commits` compares
+  dates directly instead of via `.isoformat()`. Test fixtures updated to
+  pass `date` objects.
