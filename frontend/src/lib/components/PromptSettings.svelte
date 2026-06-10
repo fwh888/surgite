@@ -6,6 +6,7 @@
 		type PromptSettings as Settings
 	} from '$lib/api';
 	import { toasts } from '$lib/toast.svelte';
+	import Skeleton from './Skeleton.svelte';
 
 	let expanded = $state(false);
 	let saving = $state(false);
@@ -101,7 +102,9 @@
 
 	{#if expanded}
 		{#if loading}
-			<p class="mt-3 text-sm text-fg-muted">Loading…</p>
+			<div class="mt-3">
+				<Skeleton rows={4} />
+			</div>
 		{:else}
 			<div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
