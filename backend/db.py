@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Date, DateTime, Integer, String, create_engine
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from backend.config import DATABASE_URL
@@ -16,16 +16,15 @@ class CommitRow(Base):
     __tablename__ = "commits"
 
     hash: Mapped[str] = mapped_column(String, primary_key=True)
-    short_hash: Mapped[str] = mapped_column(String(7))  # short 7 char git hash
+    short_hash: Mapped[str] = mapped_column(String(7))
     date: Mapped[date] = mapped_column(Date)
     author: Mapped[str] = mapped_column(String)
     message: Mapped[str] = mapped_column(String)
     repo: Mapped[str] = mapped_column(String)
+    repo_id: Mapped[int] = mapped_column(ForeignKey("repos.id", ondelete="CASCADE"))
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(
-            UTC
-        ),  # lambda to ensure it's evaluated at insert time, not at class definition time
+        default=lambda: datetime.now(UTC),
     )
 
 
@@ -33,7 +32,7 @@ class RepoRow(Base):
     __tablename__ = "repos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String)
+    name: Mapped[str] = mapped_column(String, unique=True)
     clone_url: Mapped[str] = mapped_column(String, unique=True)
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

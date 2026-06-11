@@ -224,6 +224,29 @@ def test_create_repo_non_remote_url_returns_400(client):
     assert r.status_code == 400
 
 
+def test_create_repo_duplicate_name_returns_409(client):
+    client.post("/repos", json={"url": "https://github.com/user/repo.git"})
+    r = client.post("/repos", json={"url": "https://gitlab.com/other/repo.git"})
+    assert r.status_code == 409
+    assert "name" in r.json()["detail"].lower()
+
+
+def test_create_repo_runs_ingest_in_background(client, monkeypatch):
+    from backend import api as api_module
+
+    calls = []
+
+    def fake_ingest(*args, **kwargs):
+        calls.append(args)
+        return {"repo": "mocked", "inserted": 0, "updated": 0, "unchanged": 0}
+
+    monkeypatch.setattr(api_module, "_ingest_repo", fake_ingest)
+    r = client.post("/repos", json={"url": "https://github.com/user/repo.git"})
+    assert r.status_code == 201
+    assert r.json()["last_ingested_at"] is None
+    assert len(calls) == 1
+
+
 def test_delete_repo(client, add_repo):
     repo_id = add_repo()
     r = client.delete(f"/repos/{repo_id}")
