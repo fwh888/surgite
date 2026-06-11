@@ -195,7 +195,7 @@ def test_repo_filter_is_case_insensitive_substring(add_repo, fake_git):
 def test_summary_passes_repo_filter_to_ingest(client, monkeypatch):
     received = {}
 
-    def record(since=None, until=None, repo=None):
+    def record(since=None, until=None, repo=None, session=None):
         received.update(since=since, until=until, repo=repo)
         return []
 
@@ -204,3 +204,24 @@ def test_summary_passes_repo_filter_to_ingest(client, monkeypatch):
 
     assert received["repo"] == "standup-gen"
     assert received["since"] is not None
+
+
+def test_summary_uses_single_session(client, add_repo, fake_git, monkeypatch):
+    """Regression: /summary used to open a new session for each helper call."""
+    from backend import db as db_module
+
+    add_repo()
+    fake_git.commits = []
+
+    session_count = 0
+    original_get_session = db_module.get_session
+
+    def counting_get_session():
+        nonlocal session_count
+        session_count += 1
+        return original_get_session()
+
+    monkeypatch.setattr(db_module, "get_session", counting_get_session)
+    client.get("/summary")
+
+    assert session_count == 1, f"expected 1 session, got {session_count}"

@@ -50,3 +50,5 @@ select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
 # conftest deliberately sets env vars before importing backend modules, so its
 # imports can't sit at the top of the file.
 "tests/conftest.py" = ["E402"]
+# Depends() in argument defaults is the standard FastAPI pattern.
+"backend/api.py" = ["B008"]
