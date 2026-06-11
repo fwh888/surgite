@@ -5,13 +5,61 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-06-11
+
+UI polish, configurable AI prompts, and a sweep of performance and correctness
+fixes ahead of 1.0.0.
 
 ### Added
 
 - A summary stats block above the generated cards: total commits, repos touched,
   and active days, a per-repo commit-count bar chart, and a daily-activity
   sparkline (with quiet days filled in) over the selected period.
+- User-configurable AI prompt settings — a dedicated `prompt_settings` table and
+  UI panel for customising the system prompt and identity fields used during
+  summarization.
+- Loading skeletons for the repo list and prompt settings panel while data is
+  being fetched.
+- Markdown rendering enhancements in summaries: ordered lists, links, and
+  fenced code blocks now render properly.
+- A help overlay (F1) and a per-commit "view raw log" export option.
+- A standalone performance & UI/UX audit document
+  (`docs/performance-ui-audit.md`) tracking remaining work toward 1.0.0.
+
+### Changed
+
+- The `commits.date` column has been migrated from `String` to `Date` with
+  supporting indexes, replacing string-comparison date filtering in queries.
+- The theme system uses a single source of truth: the hardcoded theme list has
+  been removed and the DOM `data-theme` attribute is now normalised after
+  hydration to prevent flash-of-wrong-theme on first paint.
+- The summary panel validates the custom date range and shows user feedback
+  when `since` is after `until`.
+- The version string surfaced in the status bar is now driven from a single
+  source instead of being duplicated across components.
+
+### Fixed
+
+- Deleting a repo now removes all of its commits from the `commits` table
+  (previously only the `RepoRow` was deleted, leaving orphaned commits).
+- The `repos.name` column has a unique constraint, and `repos` → `commits` now
+  cascade on delete to keep referential integrity intact.
+- The author filter escapes SQL `LIKE` wildcards (`%`, `_`) in user input, and
+  the repo filter now does an exact match instead of a partial `ILIKE`.
+- Ingest runs as a background task, so a slow ingest no longer blocks the
+  HTTP request that triggered it.
+- The summary-generation request now respects `AbortController` cancellation
+  when the user navigates away or hits a control mid-request.
+
+### Performance
+
+- Ingest skips repos that are already up to date and bulk-upserts commits in
+  batches, cutting wall-clock time on large repos.
+- Per-repo AI summaries are generated in parallel; a combined cross-repo
+  summary is now opt-in rather than the default, removing the cost when it's
+  not wanted.
+- A single SQLAlchemy session is injected per request via FastAPI `Depends`,
+  removing per-call session churn.
 
 ## [0.2.0] - 2026-06-08
 
