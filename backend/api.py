@@ -4,11 +4,11 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import requests
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import summarizer
@@ -111,11 +111,13 @@ def _ingest_repo(
                         author=c.author,
                         message=c.message,
                         repo=repo_name,
+                        repo_id=repo_id,
                         ingested_at=now,
                     )
                 )
                 inserted += 1
-            elif row.repo != repo_name:
+            elif row.repo_id != repo_id:
+                row.repo_id = repo_id
                 row.repo = repo_name
                 row.ingested_at = now
                 updated += 1
@@ -194,7 +196,10 @@ def _query_commits(
         if author:
             q = q.where(CommitRow.author.ilike(f"%{_escape_like(author)}%", escape="\\"))
         if repo:
-            q = q.where(CommitRow.repo == repo)
+            repo_row = session.scalar(select(RepoRow).where(RepoRow.name == repo))
+            if repo_row is None:
+                return 0, []
+            q = q.where(CommitRow.repo_id == repo_row.id)
 
         total = session.scalar(select(func.count()).select_from(q.subquery())) or 0
         q = q.order_by(CommitRow.date.desc()).offset(offset)
@@ -410,7 +415,7 @@ def list_repos():
 
 
 @app.post("/repos", status_code=201)
-def create_repo(req: RepoCreate):
+def create_repo(req: RepoCreate, background: BackgroundTasks):
     from backend.git import _repo_name_from_url, is_remote_url
 
     if not is_remote_url(req.url):
@@ -424,6 +429,8 @@ def create_repo(req: RepoCreate):
         existing = session.scalar(select(RepoRow).where(RepoRow.clone_url == req.url))
         if existing:
             raise HTTPException(status_code=409, detail="Repo already registered")
+        if session.scalar(select(RepoRow).where(RepoRow.name == name)):
+            raise HTTPException(status_code=409, detail="A repo with this name already exists")
         repo = RepoRow(
             name=name,
             clone_url=req.url,
@@ -434,10 +441,7 @@ def create_repo(req: RepoCreate):
         session.refresh(repo)
         repo_id = repo.id
 
-    try:
-        _ingest_repo(repo_id, name, req.url)
-    except Exception as exc:
-        log.warning("Initial ingest failed for %s: %s", name, exc)
+    background.add_task(_ingest_repo, repo_id, name, req.url)
 
     with get_session() as session:
         repo = session.get(RepoRow, repo_id)
@@ -450,7 +454,6 @@ def delete_repo(repo_id: int):
         repo = session.get(RepoRow, repo_id)
         if not repo:
             raise HTTPException(status_code=404, detail="Repo not found")
-        session.execute(delete(CommitRow).where(CommitRow.repo == repo.name))
         session.delete(repo)
         session.commit()
 

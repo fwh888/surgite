@@ -434,13 +434,13 @@ search-as-you-type over `/commits` is added later, debounce it then.)
 | 5 | 1.1 Parallelize per-repo LLM calls | High | M | ✅ Done — `perf/ai-summary`, merged 2026-06-10 |
 | 6 | 2.2 Markdown: ordered lists, links, fences | High | M | ✅ Done — `ui/markdown-render`, merged 2026-06-10 |
 | 7 | 1.5 + 1.6 Date column type + indexes (one migration) | Medium | M | ✅ Done — `perf/date-indexes`, merged 2026-06-10 |
-| 8 | 1.8 Escape ILIKE wildcards / exact repo match | Medium | S | 🔄 In review — `fix/ilike-escape` |
+| 8 | 1.8 Escape ILIKE wildcards / exact repo match | Medium | S | ✅ Done — `fix/ilike-escape`, merged 2026-06-11 |
 | 9 | 2.3 Date-range validation | Medium | S | ✅ Done — `ui/date-validation`, merged 2026-06-10 |
 | 10 | 1.7 Single session per request | Medium | M | ⬜ Not started |
-| 11 | 2.4 Theme single source of truth | Medium | S | 🔄 In review — `ui/theme-single-source` |
-| 12 | 2.5 Loading skeletons | Medium | S | 🔄 In review — `ui/loading-skeletons` |
-| 13 | 2.6 Build-time version | Low | S | 🔄 In review — `ui/loading-skeletons` |
-| 14 | 2.7 Lazy-load prompt settings | Low | S | 🔄 In review — `ui/loading-skeletons` |
+| 11 | 2.4 Theme single source of truth | Medium | S | ✅ Done — `ui/theme-single-source`, merged 2026-06-11 |
+| 12 | 2.5 Loading skeletons | Medium | S | ✅ Done — `ui/loading-skeletons`, merged 2026-06-11 |
+| 13 | 2.6 Build-time version | Low | S | ✅ Done — `ui/loading-skeletons`, merged 2026-06-11 |
+| 14 | 2.7 Lazy-load prompt settings | Low | S | ✅ Done — `ui/loading-skeletons`, merged 2026-06-11 |
 | 15 | 1.9 Unique repo name + FK cascade | Low | M | ⬜ Not started |
 | 16 | 1.10 Background initial ingest | Low | S | ⬜ Not started |
 
@@ -458,7 +458,7 @@ and cost multipliers; doing just those four makes `/summary` roughly
   incomplete results. `last_ingested_at` is still updated for the UI. Failed
   ingests are not cached. Regression tests in `tests/test_ingest.py`, including
   a SELECT-count guard for the N+1.
-- **PR `perf/ai-summary`** (items 1.1 partial + 1.2, in review): per-repo LLM
+- **PR `perf/ai-summary`** (items 1.1 partial + 1.2, merged 2026-06-10): per-repo LLM
   calls run through a 4-worker `ThreadPoolExecutor`; the whole-log summary is
   gated behind `combined=false` with the response shape unchanged. Because the
   always-on combined call was what mapped provider misconfiguration to HTTP
@@ -501,13 +501,13 @@ and cost multipliers; doing just those four makes `/summary` roughly
   customUntil`. The generate button is disabled when invalid and a red error
   message is shown. The native date pickers also enforce the constraint via
   `min`/`max` attributes so the picker prevents bad input in the first place.
-- **PR `ui/theme-single-source`** (item 2.4, in review): removed the hardcoded
+- **PR `ui/theme-single-source`** (item 2.4, merged 2026-06-11): removed the hardcoded
   theme list from `app.html`'s pre-paint script — it now applies whatever
   `localStorage.theme` holds (or the default). `theme.svelte.ts` becomes the
   single source of truth via `THEMES` and corrects invalid values after
   hydration by calling `theme.set(theme.current)` on startup, which updates
   the DOM attribute if the stored value was invalid.
-- **PR `ui/loading-skeletons`** (items 2.5 + 2.6 + 2.7, in review): added a shared
+- **PR `ui/loading-skeletons`** (items 2.5 + 2.6 + 2.7, merged 2026-06-11): added a shared
   `Skeleton.svelte` component using Tailwind's `animate-pulse` on rounded
   placeholder bars. `RepoList.svelte` and `PromptSettings.svelte` now render
   skeleton rows instead of bare "Loading…" text, eliminating layout jump

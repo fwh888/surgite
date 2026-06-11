@@ -22,9 +22,17 @@ os.environ["ANTHROPIC_API_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event, select
 
 from backend.api import app
 from backend.db import Base, CommitRow, PromptSettingsRow, RepoRow, engine, get_session
+
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_fk(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -52,18 +60,30 @@ def client():
 @pytest.fixture
 def add_commit():
     def _add(**overrides):
+        repo_name = overrides.pop("repo", "demo")
+        repo_id = overrides.pop("repo_id", None)
         defaults = {
             "hash": "a" * 40,
             "short_hash": "aaaaaaa",
             "date": date(2026, 5, 19),
             "author": "Alice",
             "message": "init",
-            "repo": "demo",
+            "repo": repo_name,
             "ingested_at": datetime.now(UTC),
         }
         defaults.update(overrides)
         with get_session() as s:
-            s.add(CommitRow(**defaults))
+            if repo_id is None:
+                repo = s.scalar(select(RepoRow).where(RepoRow.name == repo_name))
+                if repo is None:
+                    repo = RepoRow(
+                        name=repo_name,
+                        clone_url=f"https://example.com/{repo_name}.git",
+                    )
+                    s.add(repo)
+                    s.flush()
+                repo_id = repo.id
+            s.add(CommitRow(repo_id=repo_id, **defaults))
             s.commit()
 
     return _add
