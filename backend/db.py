@@ -1,3 +1,5 @@
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, create_engine
@@ -5,7 +7,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from backend.config import DATABASE_URL
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, pool_size=10, max_overflow=20, pool_pre_ping=True)
 
 
 class Base(DeclarativeBase):  # Base class for SQLAlchemy models
@@ -61,3 +63,17 @@ class PromptSettingsRow(Base):
 
 def get_session():
     return Session(engine)
+
+
+def get_db() -> Generator[Session]:
+    with get_session() as session:
+        yield session
+
+
+@contextmanager
+def session_scope(session: Session | None = None):
+    if session is not None:
+        yield session
+    else:
+        with get_session() as s:
+            yield s

@@ -441,8 +441,8 @@ search-as-you-type over `/commits` is added later, debounce it then.)
 | 12 | 2.5 Loading skeletons | Medium | S | ✅ Done — `ui/loading-skeletons`, merged 2026-06-11 |
 | 13 | 2.6 Build-time version | Low | S | ✅ Done — `ui/loading-skeletons`, merged 2026-06-11 |
 | 14 | 2.7 Lazy-load prompt settings | Low | S | ✅ Done — `ui/loading-skeletons`, merged 2026-06-11 |
-| 15 | 1.9 Unique repo name + FK cascade | Low | M | ⬜ Not started |
-| 16 | 1.10 Background initial ingest | Low | S | ⬜ Not started |
+| 15 | 1.9 Unique repo name + FK cascade | Low | M | ✅ Done — `fix/repo-integrity`, merged 2026-06-11 |
+| 16 | 1.10 Background initial ingest | Low | S | ✅ Done — `fix/repo-integrity`, merged 2026-06-11 |
 
 Items 1–4 are each small, independent changes that remove the worst latency
 and cost multipliers; doing just those four makes `/summary` roughly
@@ -517,3 +517,12 @@ and cost multipliers; doing just those four makes `/summary` roughly
   `PromptSettings.svelte` no longer fetches on mount — it fetches lazily on
   first expand only, using a `loaded` flag to avoid refetching on subsequent
   toggles (which also preserves unsaved edits).
+- **PR `fix/repo-integrity`** (items 1.9 + 1.10, merged 2026-06-11): added
+  `UNIQUE` constraint on `repos.name` so two clone URLs resolving to the same
+  name are rejected at `POST /repos` with a clear 409. Added `commits.repo_id`
+  FK with `ON DELETE CASCADE` and dropped the manual `DELETE` in `delete_repo` —
+  deleting a repo now automatically removes its commits. Migration backfills
+  `repo_id` from existing repo names and rebuilds the `(repo, date)` index on
+  `(repo_id, date)`. `_query_commits` filters by `repo_id` via FK lookup
+  instead of string match. Initial ingest in `POST /repos` moved to
+  `BackgroundTasks` so the endpoint returns immediately.
