@@ -436,7 +436,7 @@ search-as-you-type over `/commits` is added later, debounce it then.)
 | 7 | 1.5 + 1.6 Date column type + indexes (one migration) | Medium | M | ✅ Done — `perf/date-indexes`, merged 2026-06-10 |
 | 8 | 1.8 Escape ILIKE wildcards / exact repo match | Medium | S | ✅ Done — `fix/ilike-escape`, merged 2026-06-11 |
 | 9 | 2.3 Date-range validation | Medium | S | ✅ Done — `ui/date-validation`, merged 2026-06-10 |
-| 10 | 1.7 Single session per request | Medium | M | ⬜ Not started |
+| 10 | 1.7 Single session per request | Medium | M | 🔄 In review — `perf/single-session` |
 | 11 | 2.4 Theme single source of truth | Medium | S | ✅ Done — `ui/theme-single-source`, merged 2026-06-11 |
 | 12 | 2.5 Loading skeletons | Medium | S | ✅ Done — `ui/loading-skeletons`, merged 2026-06-11 |
 | 13 | 2.6 Build-time version | Low | S | ✅ Done — `ui/loading-skeletons`, merged 2026-06-11 |
@@ -526,3 +526,12 @@ and cost multipliers; doing just those four makes `/summary` roughly
   `(repo_id, date)`. `_query_commits` filters by `repo_id` via FK lookup
   instead of string match. Initial ingest in `POST /repos` moved to
   `BackgroundTasks` so the endpoint returns immediately.
+- **PR `perf/single-session`** (item 1.7, in review): added `get_db()` FastAPI
+  dependency and `session_scope()` context manager in `db.py`. All helpers
+  (`_ingest_all_repos`, `_ingest_repo`, `_query_commits`,
+  `_get_or_create_prompt_setting`) accept an optional `session` parameter; when
+  provided by the API endpoint via `Depends(get_db)`, they reuse the same
+  connection instead of each opening their own. `/summary` with 10 repos and
+  `ai=true` now uses 1 session instead of 13. Engine configured with
+  `pool_size=10, max_overflow=20, pool_pre_ping=True` as a safety net.
+  Regression test verifies single session per `/summary` request.
