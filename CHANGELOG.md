@@ -5,6 +5,48 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Foundation work for 0.4.0: hygiene, infrastructure, and operational hardening.
+User-facing features (streaming summaries, shareable links, per-repo prompt
+overrides, CLI↔API bridge) and the remaining open-question answers land in
+follow-up PRs — see [docs/0.4.0-plan.md](docs/0.4.0-plan.md).
+
+### Added
+
+- A background ingest scheduler (asyncio task started in the FastAPI lifespan)
+  that runs `_ingest_all_repos` every `INGEST_INTERVAL` seconds (default 300,
+  set to `0` to disable). The DB now stays fresh without anyone hitting
+  `/summary`, and the endpoint is a pure read.
+- Structured logging: `LOG_LEVEL` (default `INFO`) and `LOG_FORMAT=json`
+  controls. In JSON mode, `LogRecord` extras are flattened to top-level keys
+  for log-shipping pipelines.
+- Per-IP rate limit on `/summary?ai=true` (hand-rolled token bucket; default
+  5 requests / 60 s, configurable via `RATE_LIMIT_REQUESTS` and
+  `RATE_LIMIT_WINDOW_SECONDS`). Trusts the first `X-Forwarded-For` entry.
+- `scripts/backup.sh` and `scripts/restore.sh` for off-host `pg_dump` /
+  `pg_restore`. Default mode runs `pg_dump` inside the `db` container via
+  `docker compose exec`; `BACKUP_MODE=local` runs against a host-side
+  Postgres. `backup.sh` keeps the most recent `BACKUP_KEEP` dumps
+  (default 14) and prunes older ones.
+
+### Changed
+
+- `/summary` no longer triggers a git fetch. Freshness is owned by the
+  scheduler; the per-repo ingest on `POST /repos` still runs as a FastAPI
+  `BackgroundTask` so newly added repos show up immediately.
+- The `INGEST_TTL` / `_INGEST_CACHE` band-aid and the `repo=` filter on
+  `_ingest_all_repos` are gone. A user opening the app now gets fresh data
+  on the first click without paying the fetch cost, and a re-rendered
+  summary no longer hits the network.
+
+### Fixed
+
+- Dead link rot: `AGENTS.md` and `README.md` no longer reference
+  `docs/production-readiness-plan.md` (deleted during 0.2.0 cleanup).
+  The current roadmap is `docs/0.4.0-plan.md`, and
+  `docs/performance-ui-audit.md` carries a closed-out banner.
+
 ## [0.3.0] - 2026-06-11
 
 UI polish, configurable AI prompts, and a sweep of performance and correctness

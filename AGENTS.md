@@ -59,9 +59,10 @@ This is a Python CLI tool and FastAPI REST API for generating standup summaries 
 CLI:  git.get_raw_log()  →  git.parse_log()  →  formatter.format_log()  →  stdout / file
                                                                         ↘  summarizer.summarize_commits()  →  LLM provider
 
-API:  POST /repos  →  create repo + auto-ingest (clone/fetch + git log → CommitRow upsert)
-      GET /summary  →  auto-ingest all repos  →  SQLAlchemy query  →  JSON
-      GET /summary?ai=true[&provider=]  →  formatter.format_log  →  summarizer  →  LLM provider
+API:  POST /repos  →  create repo + per-repo BackgroundTask ingest (clone/fetch + git log → CommitRow upsert)
+      (lifespan)  →  background asyncio task runs _ingest_all_repos() every INGEST_INTERVAL seconds
+      GET /summary  →  SQLAlchemy query (pure read; freshness owned by the scheduler above)  →  JSON
+      GET /summary?ai=true[&provider=]  →  formatter.format_log  →  summarizer  →  LLM provider (rate-limited)
       GET /commits, /commits/{hash}, /providers  →  SQLAlchemy query / provider registry  →  JSON
 ```
 
@@ -74,12 +75,15 @@ API:  POST /repos  →  create repo + auto-ingest (clone/fetch + git log → Com
 - `backend/db.py` — SQLAlchemy engine, `Base`, `CommitRow` ORM model (`commits` table), and `get_session()` factory
 - `backend/schemas.py` — Pydantic request models (`RepoCreate`)
 - `backend/api.py` — FastAPI app with routes:
-  - `POST /repos` — creates a repo and immediately ingests it (clone + git log → CommitRow upsert); ingest failures are logged but don't block creation
+  - `POST /repos` — creates a repo and immediately ingests it as a `BackgroundTask` (clone + git log → CommitRow upsert); ingest failures are logged but don't block creation. A lifespan-managed scheduler task also runs `_ingest_all_repos` every `INGEST_INTERVAL` seconds so the DB stays fresh without anyone hitting `/summary`
   - `GET /commits` — paginated list with `since`/`until`/`author`/`repo`/`limit`/`offset` filters
   - `GET /commits/{hash}` — lookup by full or prefix hash; 400 for invalid hex, 404 for not found, 409 for ambiguous prefix
-  - `GET /summary` — auto-ingests all repos with the requested date range, then aggregates by repo and day; `ai=true` runs the summarizer (capped at `AI_SUMMARY_MAX_COMMITS = 500` to bound token cost); optional `provider=` overrides the default; response includes `ai_provider`/`ai_model`. Unknown provider or missing key → 400; provider HTTP failure → 502
+  - `GET /summary` — pure read against the DB; aggregates by repo and day. `ai=true` runs the summarizer (capped at `AI_SUMMARY_MAX_COMMITS = 500` to bound token cost) behind a per-IP rate limit; optional `provider=` overrides the default; response includes `ai_provider`/`ai_model`. Unknown provider or missing key → 400; provider HTTP failure → 502; rate limit exceeded → 429
   - `GET /providers` — lists providers, their default model, and whether each has a key configured (for a UI/CLI to offer a choice)
   - `SQLAlchemyError` is mapped to a 503 globally
+- `backend/logging_config.py` — `configure_logging()` sets the root logger from `LOG_LEVEL` (default INFO) and `LOG_FORMAT` (default human-readable; set to `json` for log-shipping-friendly output). Extras on a `LogRecord` are flattened into top-level JSON keys.
+- `backend/rate_limit.py` — hand-rolled per-IP token-bucket guard for `/summary?ai=true` (default 5 req / 60 s; override with `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS`). Trusts the first `X-Forwarded-For` entry; the project sits behind Traefik in production.
+- `scripts/backup.sh` / `scripts/restore.sh` — `pg_dump` / `psql` over `docker compose exec db` by default; `BACKUP_MODE=local` for a host-side Postgres. `backup.sh` rotates `BACKUP_KEEP` (default 14) dated dumps.
 - `alembic/` — migrations; `e5e311c2e5f0_create_commits_table.py` is the initial schema
 - `tests/` — pytest suite covering the API; `conftest.py` swaps in a temp SQLite DB and clears tables between tests
 
@@ -87,7 +91,7 @@ API:  POST /repos  →  create repo + auto-ingest (clone/fetch + git log → Com
 
 ## Planned upgrades
 
-- See [docs/production-readiness-plan.md](docs/production-readiness-plan.md) for the roadmap to a polished public release
+- See [docs/0.4.0-plan.md](docs/0.4.0-plan.md) for the current roadmap (the 0.3.0 release closed out the items in [docs/performance-ui-audit.md](docs/performance-ui-audit.md))
 
 ## Environment Variables
 
@@ -99,6 +103,10 @@ API:  POST /repos  →  create repo + auto-ingest (clone/fetch + git log → Com
 | `ANTHROPIC_MODEL` / `GROQ_MODEL` / `DEEPSEEK_MODEL` | Optional per-provider model override (defaults: `claude-haiku-4-5-20251001`, `llama-3.1-8b-instant`, `deepseek-chat`) |
 | `API_HOST` | Defaults to `127.0.0.1` |
 | `API_PORT` | Defaults to `8000` |
+| `INGEST_INTERVAL` | Seconds between automatic background ingests of all registered repos. Set to `0` to disable the scheduler. |
+| `LOG_LEVEL` | Root logger level (default `INFO`). |
+| `LOG_FORMAT` | Set to `json` for structured logs (Loki / vector / fluentbit); default is human-readable. |
+| `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS` | Per-IP guard on `/summary?ai=true` (default `5` / `60`). |
 | `STANDUP_USER` | Name injected into the summarizer prompt (e.g. `Alice`); defaults to `the developer` |
 | `STANDUP_ROLE` | Optional role description (e.g. `backend engineer at Acme`) appended to the identity in the prompt |
 

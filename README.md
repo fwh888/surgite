@@ -100,20 +100,26 @@ needs a key.
 | `STANDUP_USER` | `the developer` | Name injected into the summary prompt. |
 | `STANDUP_ROLE` | *(none)* | Optional role description appended to the prompt identity. |
 | `API_HOST` / `API_PORT` | `127.0.0.1` / `8000` | Where the API binds. |
-| `INGEST_INTERVAL` | `300` | Seconds between automatic background ingests of registered repos. |
+| `INGEST_INTERVAL` | `300` | Seconds between automatic background ingests of registered repos. Set to `0` to disable. |
 | `REPO_CACHE_DIR` | `/var/standup/repos` | Where the app clones registered repos for ingest. |
+| `LOG_LEVEL` | `INFO` | Root logger level. |
+| `LOG_FORMAT` | *(human-readable)* | Set to `json` for structured logs. |
+| `RATE_LIMIT_REQUESTS` | `5` | Max `/summary?ai=true` requests per IP per window. |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate-limit window. |
 
 ## API endpoints
 
-- `POST /ingest` — runs `git log` against a repo path and upserts commits
 - `GET /commits` — paginated list with `since` / `until` / `author` / `repo` filters
 - `GET /commits/{hash}` — lookup by full or prefix hash
 - `GET /summary` — aggregate by repo and day; `?ai=true` runs the AI summarizer
-  (optional `&provider=anthropic|groq|deepseek`)
+  (optional `&provider=anthropic|groq|deepseek`; rate-limited per client IP)
 - `GET /providers` — list available summary providers and the default
-- `GET /repos`, `POST /repos`, `DELETE /repos/{id}`, `POST /repos/{id}/ingest` —
-  manage registered repos
+- `GET /repos`, `POST /repos`, `DELETE /repos/{id}` — manage registered repos;
+  `POST /repos` kicks off a background ingest of the new repo immediately
 - `GET /health` — liveness + database readiness; `{"status": "ok"}` or `503`
+
+A background scheduler task also runs `_ingest_all_repos` every
+`INGEST_INTERVAL` seconds so the database stays fresh between user requests.
 
 Check it's up after `docker compose up`:
 
@@ -133,8 +139,26 @@ uv run pytest                           # tests
 ```
 
 See [AGENTS.md](AGENTS.md) for the full architecture overview, and
-[docs/production-readiness-plan.md](docs/production-readiness-plan.md) for the roadmap
-to a polished public release.
+[docs/0.4.0-plan.md](docs/0.4.0-plan.md) for the current roadmap.
+
+## Backup & restore
+
+The `pgdata` named volume is the only persistent state. `scripts/backup.sh`
+dumps the database to a gzip file in `BACKUP_DIR` (default `./backups`),
+with a `KEEP`-day rotation. `scripts/restore.sh <file>` drops the database
+and loads a dump back in. Both default to running `pg_dump`/`psql` inside
+the `db` container via `docker compose exec`; set `BACKUP_MODE=local` to
+run them against a host-side Postgres instead.
+
+```bash
+scripts/backup.sh                          # one dump, keep last 14
+BACKUP_KEEP=30 scripts/backup.sh           # keep last 30
+scripts/restore.sh backups/standup-…sql.gz # point-in-time restore
+```
+
+The natural hook for these is your PBS job (`vmid 207`); add a daily
+`scripts/backup.sh` to its schedule and the dumps land in a directory PBS
+can pull from.
 
 ## Contributing
 
