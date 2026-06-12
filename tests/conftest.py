@@ -19,6 +19,10 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_db_file}"
 os.environ["GROQ_API_KEY"] = ""
 os.environ["DEEPSEEK_API_KEY"] = ""
 os.environ["ANTHROPIC_API_KEY"] = ""
+# Disable the background ingest scheduler in tests by default. A single test
+# (test_scheduler_runs_periodically) opts back in via the
+# `client_with_scheduler` fixture.
+os.environ["INGEST_INTERVAL"] = "0"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -52,9 +56,32 @@ def _clean_tables():
         s.commit()
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limit_buckets():
+    """The rate limiter is process-local. Without this, tests that hit
+    /summary?ai=true in succession would start hitting 429s after the 5th
+    call, regardless of which test made the earlier ones."""
+    from backend import rate_limit
+
+    rate_limit._reset_for_tests()
+    yield
+    rate_limit._reset_for_tests()
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+@pytest.fixture
+def client_with_scheduler(monkeypatch):
+    """A TestClient whose lifespan actually runs the background ingest
+    scheduler. Use this for tests that want to verify the scheduler is
+    firing on its timer. Sets INGEST_INTERVAL to 1 second and lets the
+    lifespan re-read it on startup."""
+    monkeypatch.setenv("INGEST_INTERVAL", "1")
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture
