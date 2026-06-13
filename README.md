@@ -202,7 +202,7 @@ uv run pytest                           # tests
 ```
 
 See [AGENTS.md](AGENTS.md) for the full architecture overview, and
-[docs/0.4.0-plan.md](docs/0.4.0-plan.md) for the current roadmap.
+[CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Backup & restore
 

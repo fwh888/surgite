@@ -12,8 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Operational hardening plus a round of real features: a background ingest
 scheduler, structured logging, rate limiting, backup/restore, streaming AI
 summaries, shareable links, per-repo prompt overrides, a CLI↔API bridge, and
-a deep health check. See [docs/0.4.0-plan.md](docs/0.4.0-plan.md) and the
-[tracker](docs/0.4.0-tracker.md).
+a deep health check.
 
 ### Added
 
