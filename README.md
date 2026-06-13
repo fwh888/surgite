@@ -29,9 +29,40 @@ Three layers that build on each other; the CLI stays first-class and works on it
 
 ## Architecture
 
-<p align="center">
-  <img src="docs/architecture.svg" alt="standup-gen architecture: SvelteKit web UI and a standalone CLI, the FastAPI + Postgres backend with a background ingest scheduler, and the external LLM providers and git remotes they talk to" width="90%">
-</p>
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'JetBrains Mono, ui-monospace, monospace','primaryColor':'#161b22','primaryTextColor':'#c9d1d9','primaryBorderColor':'#30363d','lineColor':'#8b949e','clusterBkg':'#0d1117','clusterBorder':'#30363d'}}}%%
+flowchart TB
+    subgraph interfaces["interfaces"]
+        direction LR
+        UI["Web UI · SvelteKit SPA<br/>repo mgmt · summary controls · prompt config<br/>streaming cards (SSE) · copy markdown · share links"]
+        CLI["CLI · standup<br/>local path: git log → format → optional AI<br/>--registered → pull from a running API"]
+    end
+
+    subgraph backend["API · FastAPI (async)"]
+        direction TB
+        EP["endpoints<br/>/summary · /summary/stream<br/>/commits · /repos · /providers<br/>/settings/prompt · /summaries · /s/:slug<br/>/health · /health/deep"]
+        SCHED["background scheduler<br/>ingest every INGEST_INTERVAL<br/>sweep expired share slugs"]
+    end
+
+    DB[("Postgres<br/>commits · repos<br/>prompt_settings · shared_summaries")]
+    LLM["LLM providers<br/>Anthropic · Groq · DeepSeek<br/>via httpx.AsyncClient"]
+    GIT["git remotes<br/>shallow clone / fetch"]
+
+    UI <-->|"HTTP / SSE"| EP
+    CLI -->|"--registered"| EP
+    CLI -->|"--summarize"| LLM
+    EP -->|"summarize"| LLM
+    EP <-->|"read / write"| DB
+    SCHED -->|"upsert"| DB
+    SCHED -->|"ingest"| GIT
+
+    classDef svc fill:#161b22,stroke:#1f6feb,color:#79c0ff;
+    classDef ext fill:#161b22,stroke:#d29922,color:#e3b341;
+    classDef store fill:#161b22,stroke:#3fb950,color:#7ee787;
+    class EP,SCHED svc;
+    class LLM,GIT ext;
+    class DB store;
+```
 
 A background scheduler keeps the database fresh so `/summary` is a pure read;
 AI summaries stream from the provider over SSE. See [AGENTS.md](AGENTS.md) for
