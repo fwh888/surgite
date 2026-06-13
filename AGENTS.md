@@ -95,9 +95,9 @@ API:  POST /repos  →  create repo + per-repo BackgroundTask ingest (clone/fetc
 
 - `frontend/` — SvelteKit SPA (Svelte 5 + Tailwind v4) for managing repos and generating summaries; built to static assets and served same-origin by FastAPI via the `StaticFiles` mount at the end of `backend/api.py`
 
-## Planned upgrades
+## Roadmap
 
-- See [docs/0.4.0-plan.md](docs/0.4.0-plan.md) for the current roadmap (the 0.3.0 release closed out the items in [docs/performance-ui-audit.md](docs/performance-ui-audit.md))
+- Release history lives in [CHANGELOG.md](CHANGELOG.md); 0.4.0 was the most recent release. There's no open roadmap doc — file an issue for new work.
 
 ## Environment Variables
 
