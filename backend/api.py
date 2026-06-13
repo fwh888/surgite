@@ -1,28 +1,38 @@
 import asyncio
+import json
 import logging
 import os
+import secrets
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-import requests
+import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend import summarizer
-from backend.db import CommitRow, PromptSettingsRow, RepoRow, get_db, session_scope
+from backend.config import SHARE_TTL_DAYS
+from backend.db import (
+    CommitRow,
+    PromptSettingsRow,
+    RepoRow,
+    SharedSummaryRow,
+    get_db,
+    session_scope,
+)
 from backend.formatter import format_log
-from backend.git import get_raw_log, parse_log
+from backend.git import get_raw_log, ls_remote, parse_log
 from backend.logging_config import configure_logging
 from backend.models import Commit
 from backend.rate_limit import check_rate_limit
-from backend.schemas import PromptSettingsUpdate, RepoCreate
+from backend.schemas import PromptSettingsUpdate, RepoCreate, ShareCreate
 from backend.summarizer import ProviderError
 
 configure_logging()
@@ -116,10 +126,31 @@ def _ingest_repo(
     return {"repo": repo_name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
 
 
-async def _scheduler_loop(interval: int) -> None:
-    """Background task: every `interval` seconds, ingest all registered repos.
+def _delete_expired_summaries() -> int:
+    """Sweep shared-summary slugs past their expiry. Read-path also rejects
+    expired slugs, so this is just housekeeping to keep the table small.
+    Returns the number of rows deleted."""
+    now = datetime.now(UTC)
+    with session_scope() as s:
+        rows = s.scalars(select(SharedSummaryRow).where(SharedSummaryRow.expires_at <= now)).all()
+        for row in rows:
+            s.delete(row)
+        s.commit()
+        return len(rows)
 
-    Runs `_ingest_all_repos` in a thread (it's sync, talks to git + DB) so
+
+def _scheduler_tick() -> None:
+    """One pass of the background work: ingest every repo, then prune expired
+    share slugs. Runs in a thread (sync DB + git) off the event loop."""
+    _ingest_all_repos()
+    _delete_expired_summaries()
+
+
+async def _scheduler_loop(interval: int) -> None:
+    """Background task: every `interval` seconds, ingest all registered repos
+    and prune expired share slugs.
+
+    Runs `_scheduler_tick` in a thread (it's sync, talks to git + DB) so
     the event loop stays responsive. Any exception is logged and the loop
     continues — a transient git failure must not stop the scheduler. Stops
     cleanly when the task is cancelled at app shutdown."""
@@ -128,7 +159,7 @@ async def _scheduler_loop(interval: int) -> None:
     try:
         while True:
             try:
-                await loop.run_in_executor(None, _ingest_all_repos)
+                await loop.run_in_executor(None, _scheduler_tick)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -250,6 +281,61 @@ def health(session: Session = Depends(get_db)):
     return {"status": "ok"}
 
 
+async def _check_providers() -> dict[str, str]:
+    """Per-provider reachability: missing_key (no key, not a failure), ok (key
+    set + host answered), or unreachable (key set but the network call failed).
+    Reachability only — we don't spend a token validating the key."""
+    out: dict[str, str] = {}
+    async with httpx.AsyncClient(timeout=5) as client:
+        for name, provider in summarizer.PROVIDERS.items():
+            if provider.api_key is None:
+                out[name] = "missing_key"
+                continue
+            try:
+                await client.get(provider.base_url)
+                out[name] = "ok"
+            except httpx.HTTPError:
+                out[name] = "unreachable"
+    return out
+
+
+@app.get("/health/deep")
+async def health_deep(session: Session = Depends(get_db)):
+    """Deep health for a real uptime check: DB connectivity, a remote-reachable
+    probe against one registered repo, and provider-key reachability. Returns
+    503 if any *checked* component is down (no_repos / missing_key are not
+    failures), else 200."""
+    components: dict[str, object] = {}
+    healthy = True
+
+    try:
+        session.execute(select(1))
+        components["db"] = "ok"
+    except SQLAlchemyError:
+        components["db"] = "error"
+        healthy = False
+
+    repo = session.scalar(select(RepoRow).limit(1))
+    if repo is None:
+        components["git"] = "no_repos"
+    else:
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(None, ls_remote, repo.clone_url)
+            components["git"] = "ok"
+        except Exception as exc:
+            log.warning("Deep health git probe failed: %s", exc, extra={"repo": repo.name})
+            components["git"] = "error"
+            healthy = False
+
+    providers = await _check_providers()
+    components["providers"] = providers
+    if any(state == "unreachable" for state in providers.values()):
+        healthy = False
+
+    return JSONResponse(status_code=200 if healthy else 503, content=components)
+
+
 @app.get("/providers")
 def providers():
     """List summary providers, their default model, and whether each is
@@ -257,19 +343,37 @@ def providers():
     return {"default": summarizer.default_provider(), "providers": summarizer.provider_status()}
 
 
-def _get_or_create_prompt_setting(session: Session | None = None) -> PromptSettingsRow:
+def _get_prompt_setting(session: Session, repo_id: int | None) -> PromptSettingsRow | None:
+    """The settings row owned by `repo_id` (or the global row for None). No
+    fallback — returns None when this exact scope has no row yet."""
+    return session.scalar(select(PromptSettingsRow).where(PromptSettingsRow.repo_id == repo_id))
+
+
+def _get_or_create_prompt_setting(
+    session: Session | None = None, repo_id: int | None = None
+) -> PromptSettingsRow:
     with session_scope(session) as s:
-        row = s.get(PromptSettingsRow, 1)
+        row = _get_prompt_setting(s, repo_id)
         if row is None:
-            row = PromptSettingsRow(id=1)
+            row = PromptSettingsRow(repo_id=repo_id)
             s.add(row)
             s.commit()
             s.refresh(row)
         return row
 
 
+def _resolve_settings_dict(session: Session, repo_id: int | None) -> dict:
+    """Settings that apply to `repo_id`: its own row if it has one, else the
+    global default. This is the lookup the summarizer uses per repo."""
+    row = _get_prompt_setting(session, repo_id) if repo_id is not None else None
+    if row is None:
+        row = _get_or_create_prompt_setting(session, repo_id=None)
+    return _settings_row_to_dict(row)
+
+
 def _settings_row_to_dict(row: PromptSettingsRow) -> dict:
     return {
+        "repo_id": row.repo_id,
         "user_name": row.user_name,
         "user_role": row.user_role,
         "tone": row.tone,
@@ -281,16 +385,28 @@ def _settings_row_to_dict(row: PromptSettingsRow) -> dict:
 
 
 @app.get("/settings/prompt")
-def get_prompt_settings(session: Session = Depends(get_db)):
-    row = _get_or_create_prompt_setting(session)
+def get_prompt_settings(repo_id: int | None = None, session: Session = Depends(get_db)):
+    """Return the prompt settings for `repo_id`. If that repo has no row of its
+    own, return the global default (its `repo_id` will be null, signalling the
+    UI that the values are inherited rather than repo-specific)."""
+    row = _get_prompt_setting(session, repo_id) if repo_id is not None else None
+    if row is None:
+        row = _get_or_create_prompt_setting(session, repo_id=None)
     return _settings_row_to_dict(row)
 
 
 @app.put("/settings/prompt")
-def update_prompt_settings(update: PromptSettingsUpdate, session: Session = Depends(get_db)):
-    row = session.get(PromptSettingsRow, 1)
+def update_prompt_settings(
+    update: PromptSettingsUpdate,
+    repo_id: int | None = None,
+    session: Session = Depends(get_db),
+):
+    if repo_id is not None and session.get(RepoRow, repo_id) is None:
+        raise HTTPException(status_code=404, detail="Repo not found")
+
+    row = _get_prompt_setting(session, repo_id)
     if row is None:
-        row = PromptSettingsRow(id=1)
+        row = PromptSettingsRow(repo_id=repo_id)
         session.add(row)
 
     update_data = update.model_dump(exclude_none=True)
@@ -344,8 +460,52 @@ def get_commit(hash: str, session: Session = Depends(get_db)):
     return _row_to_dict(rows[0])
 
 
+def _aggregate_commits(
+    commits: list[dict],
+) -> tuple[dict[str, int], dict[str, int], dict[str, list[Commit]]]:
+    """Roll a list of commit dicts up into the per-repo and per-day counts the
+    summary view needs, plus the Commit objects grouped by repo for the log."""
+    by_repo: dict[str, int] = defaultdict(int)
+    by_day: dict[str, int] = defaultdict(int)
+    repo_commits: dict[str, list[Commit]] = {}
+    for c in commits:
+        repo_name = c["repo"]
+        by_repo[repo_name] += 1
+        by_day[c["date"]] += 1
+        repo_commits.setdefault(repo_name, []).append(
+            Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"])
+        )
+    return by_repo, by_day, repo_commits
+
+
+def _repo_name_to_id(session: Session) -> dict[str, int]:
+    return {r.name: r.id for r in session.scalars(select(RepoRow)).all()}
+
+
+def _check_ai_preconditions(request: Request, provider: str | None, total: int):
+    """Shared gate for the AI paths: rate limit, commit cap, provider/key
+    validity. Raises the appropriate HTTPException; returns the resolved
+    provider on success."""
+    check_rate_limit(request)
+    if total > AI_SUMMARY_MAX_COMMITS:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Too many commits for AI summary "
+                f"({total} > {AI_SUMMARY_MAX_COMMITS}); narrow the date range."
+            ),
+        )
+    try:
+        resolved = summarizer.resolve_provider(provider)
+    except ProviderError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if resolved.api_key is None:
+        raise HTTPException(status_code=400, detail=f"{resolved.key_env} is not set")
+    return resolved
+
+
 @app.get("/summary")
-def summary(
+async def summary(
     request: Request,
     since: date | None = None,
     until: date | None = None,
@@ -354,31 +514,23 @@ def summary(
     ai: bool = False,
     provider: str | None = None,
     combined: bool = False,
+    commits: bool = False,
     session: Session = Depends(get_db),
 ):
     """Commit summary for the period. With ai=true, returns one AI summary per
     repo (ai_summaries); the additional whole-log summary (ai_summary) costs an
     extra provider call and is only generated when combined=true.
 
+    The raw `commits` list is omitted by default (it can be hundreds of KB the
+    web UI never renders); pass commits=true to include it, or use /commits.
+
     This is a pure read against the DB; freshness is owned by the background
     ingest scheduler (see _scheduler_loop) and the per-repo BackgroundTask
     on POST /repos. No git fetch happens here."""
-    total, commits = _query_commits(
+    total, commit_rows = _query_commits(
         since, until, author, repo, limit=None, offset=0, session=session
     )
-
-    by_repo: dict[str, int] = defaultdict(int)
-    by_day: dict[str, int] = defaultdict(int)
-    repo_commits: dict[str, list[Commit]] = {}
-    for c in commits:
-        repo_name = c["repo"]
-        by_repo[repo_name] += 1
-        by_day[c["date"]] += 1
-        commit_obj = Commit(
-            hash=c["hash"], date=c["date"], author=c["author"], message=c["message"]
-        )
-        repo_commits.setdefault(repo_name, []).append(commit_obj)
-
+    by_repo, by_day, repo_commits = _aggregate_commits(commit_rows)
     log_by_repo = {name: format_log(cs) for name, cs in repo_commits.items()}
 
     ai_summary = None
@@ -386,39 +538,27 @@ def summary(
     ai_model = None
     ai_summaries = None
     if ai:
-        check_rate_limit(request)
-        if len(commits) > AI_SUMMARY_MAX_COMMITS:
-            raise HTTPException(
-                status_code=413,
-                detail=(
-                    f"Too many commits for AI summary "
-                    f"({len(commits)} > {AI_SUMMARY_MAX_COMMITS}); narrow the date range."
-                ),
-            )
-        try:
-            resolved = summarizer.resolve_provider(provider)
-        except ProviderError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        if resolved.api_key is None:
-            raise HTTPException(status_code=400, detail=f"{resolved.key_env} is not set")
-
-        settings_row = _get_or_create_prompt_setting(session)
-        settings = _settings_row_to_dict(settings_row)
-        ai_summaries = summarizer.generate_summary_per_repo(
-            log_by_repo, provider=provider, settings=settings
+        _check_ai_preconditions(request, provider, total)
+        name_to_id = _repo_name_to_id(session)
+        global_settings = _resolve_settings_dict(session, None)
+        settings_by_repo = {
+            name: _resolve_settings_dict(session, name_to_id.get(name)) for name in log_by_repo
+        }
+        ai_summaries = await summarizer.generate_summary_per_repo(
+            log_by_repo,
+            provider=provider,
+            settings=global_settings,
+            settings_by_repo=settings_by_repo,
         )
         if combined:
-            all_commit_objs = [
-                Commit(hash=c["hash"], date=c["date"], author=c["author"], message=c["message"])
-                for c in commits
-            ]
+            all_commit_objs = [c for cs in repo_commits.values() for c in cs]
             try:
-                result = summarizer.generate_summary(
-                    format_log(all_commit_objs), provider=provider, settings=settings
+                result = await summarizer.generate_summary(
+                    format_log(all_commit_objs), provider=provider, settings=global_settings
                 )
             except ProviderError as e:
                 raise HTTPException(status_code=400, detail=str(e)) from e
-            except requests.RequestException as e:
+            except httpx.HTTPError as e:
                 raise HTTPException(status_code=502, detail=f"Provider request failed: {e}") from e
             ai_summary = result["summary"]
             ai_provider = result["provider"]
@@ -432,13 +572,91 @@ def summary(
         "total_commits": total,
         "by_repo": dict(by_repo),
         "by_day": dict(sorted(by_day.items())),
-        "commits": commits,
+        "commits": commit_rows if commits else [],
         "log_by_repo": log_by_repo,
         "ai_summary": ai_summary,
         "ai_provider": ai_provider,
         "ai_model": ai_model,
         "ai_summaries": ai_summaries,
     }
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@app.get("/summary/stream")
+async def summary_stream(
+    request: Request,
+    since: date | None = None,
+    until: date | None = None,
+    author: str | None = None,
+    repo: str | None = None,
+    provider: str | None = None,
+    session: Session = Depends(get_db),
+):
+    """Server-sent-events variant of /summary?ai=true. Emits a `meta` event
+    (the same stats/log payload /summary returns) followed by per-repo `delta`
+    events as the provider streams tokens, a `repo_done`/`repo_error` per repo,
+    and a final `done`. The UI fills each card in as text arrives instead of
+    blocking on a spinner for the whole fan-out.
+
+    All DB reads happen up front: the StreamingResponse generator runs after
+    the request handler returns and the Depends-injected session is closed, so
+    it must only touch the provider, never the DB."""
+    total, commit_rows = _query_commits(
+        since, until, author, repo, limit=None, offset=0, session=session
+    )
+    _check_ai_preconditions(request, provider, total)
+
+    by_repo, by_day, repo_commits = _aggregate_commits(commit_rows)
+    log_by_repo = {name: format_log(cs) for name, cs in repo_commits.items()}
+    name_to_id = _repo_name_to_id(session)
+    global_settings = _resolve_settings_dict(session, None)
+    settings_by_repo = {
+        name: _resolve_settings_dict(session, name_to_id.get(name)) for name in log_by_repo
+    }
+    resolved = summarizer.resolve_provider(provider)
+
+    meta = {
+        "period": {
+            "since": since.isoformat() if since else None,
+            "until": until.isoformat() if until else None,
+        },
+        "total_commits": total,
+        "by_repo": dict(by_repo),
+        "by_day": dict(sorted(by_day.items())),
+        "repos": list(log_by_repo),
+        "provider": resolved.name,
+        "model": resolved.model(),
+    }
+
+    async def event_stream():
+        yield _sse("meta", meta)
+        async with httpx.AsyncClient() as client:
+            for name, log_text in log_by_repo.items():
+                try:
+                    async for chunk in summarizer.stream_summary(
+                        log_text,
+                        provider=provider,
+                        settings=settings_by_repo.get(name, global_settings),
+                        client=client,
+                    ):
+                        yield _sse("delta", {"repo": name, "text": chunk})
+                    yield _sse(
+                        "repo_done",
+                        {"repo": name, "provider": resolved.name, "model": resolved.model()},
+                    )
+                except (ProviderError, httpx.HTTPError) as e:
+                    log.warning("Stream failed for repo %s: %s", name, e, extra={"repo": name})
+                    yield _sse("repo_error", {"repo": name, "detail": str(e)})
+        yield _sse("done", {})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/repos")
@@ -485,9 +703,67 @@ def delete_repo(repo_id: int, session: Session = Depends(get_db)):
     session.commit()
 
 
+@app.post("/summaries", status_code=201)
+def create_share(req: ShareCreate, session: Session = Depends(get_db)):
+    """Persist the parameters of a summary behind a short slug. The slug is the
+    only secret guarding it — resolving /summaries/{slug} re-runs the query. No
+    auth: the threat model is a single user behind Tailscale."""
+    now = datetime.now(UTC)
+    slug = secrets.token_urlsafe(8)
+    row = SharedSummaryRow(
+        slug=slug,
+        params=req.model_dump(),
+        created_at=now,
+        expires_at=now + timedelta(days=SHARE_TTL_DAYS),
+    )
+    session.add(row)
+    session.commit()
+    return {"slug": slug, "expires_at": row.expires_at.isoformat()}
+
+
+def _share_to_dict(row: SharedSummaryRow) -> dict:
+    return {
+        "slug": row.slug,
+        "params": row.params,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+    }
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Treat a tz-naive datetime as UTC. Postgres returns aware datetimes for
+    our timezone=True columns, but SQLite (the test DB) hands back naive ones —
+    normalise so the expiry comparison works on both."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
+@app.get("/summaries/{slug}")
+def get_share(slug: str, session: Session = Depends(get_db)):
+    """Resolve a slug to its stored summary params. 404 for unknown or expired
+    slugs (the read path enforces expiry independently of the cleanup sweep)."""
+    row = session.get(SharedSummaryRow, slug)
+    if row is None or _as_utc(row.expires_at) <= datetime.now(UTC):
+        raise HTTPException(status_code=404, detail="Share not found or expired")
+    return _share_to_dict(row)
+
+
 # Serve the built SvelteKit SPA same-origin in production. Mounted LAST so it never
 # shadows the API routes above, and only when the build exists (in dev the frontend
 # runs on the Vite server instead, so this is skipped and startup doesn't fail).
 _FRONTEND_BUILD = Path(__file__).resolve().parent.parent / "frontend" / "build"
+
+
+@app.get("/s/{slug}")
+def share_page(slug: str):
+    """Serve the SPA shell for a shared-summary deep link so a hard refresh on
+    /s/{slug} works. The client-side route reads the slug and re-runs the
+    query via GET /summaries/{slug}. In dev (no build) the Vite server handles
+    this route instead, so a 404 here is correct."""
+    fallback = _FRONTEND_BUILD / "200.html"
+    if fallback.is_file():
+        return FileResponse(fallback)
+    raise HTTPException(status_code=404, detail="Frontend build not available")
+
+
 if _FRONTEND_BUILD.is_dir():
     app.mount("/", StaticFiles(directory=_FRONTEND_BUILD, html=True), name="frontend")

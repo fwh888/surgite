@@ -30,6 +30,13 @@ def upgrade() -> None:
 
     op.execute("UPDATE commits SET repo_id = repos.id FROM repos WHERE commits.repo = repos.name")
 
+    # Any commit whose repo name matches no repos row is an orphan left behind
+    # by the pre-0.3.0 delete bug (deleting a repo didn't cascade to its
+    # commits). It can't be attributed to a repo, so drop it before enforcing
+    # NOT NULL — otherwise the ALTER below fails with a NotNullViolation on a
+    # database that has any such rows.
+    op.execute("DELETE FROM commits WHERE repo_id IS NULL")
+
     op.alter_column("commits", "repo_id", nullable=False)
 
     op.create_foreign_key(

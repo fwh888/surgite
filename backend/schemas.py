@@ -5,6 +5,20 @@ class RepoCreate(BaseModel):
     url: str
 
 
+class ShareCreate(BaseModel):
+    """Parameters of a summary to persist behind a shareable slug. Mirrors the
+    /summary query string; all fields optional so a bare 'all repos, last 7
+    days' share is valid."""
+
+    repo: str | None = None
+    since: str | None = None
+    until: str | None = None
+    author: str | None = None
+    ai: bool = False
+    provider: str | None = None
+    combined: bool = False
+
+
 class PromptSettings(BaseModel):
     user_name: str = ""
     user_role: str = ""

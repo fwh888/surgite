@@ -63,6 +63,23 @@ def ensure_repo(name: str, url: str, cache_dir: str) -> str:
     return dest
 
 
+def ls_remote(url: str, timeout: int = 10) -> None:
+    """Cheaply check a remote is reachable without cloning. Runs
+    `git ls-remote --heads <url>` and raises RuntimeError on a non-zero exit
+    (auth failure, DNS, network) or timeout. Used by the deep health check."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--heads", url],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"git ls-remote timed out after {timeout}s") from exc
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "git ls-remote failed")
+
+
 def _is_git_ref(repo_path: str, value: str) -> bool:
     result = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", value], capture_output=True, cwd=repo_path

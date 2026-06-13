@@ -1,5 +1,5 @@
+import httpx
 import pytest
-import requests
 
 from backend import summarizer
 from backend.summarizer import (
@@ -9,29 +9,24 @@ from backend.summarizer import (
     generate_summary_per_repo,
     provider_status,
     resolve_provider,
+    stream_summary,
     summarize_commits,
 )
 
 
-class FakeResp:
-    def __init__(self, payload=None, raise_exc=None):
-        self._payload = payload or {}
-        self._raise_exc = raise_exc
-
-    def json(self):
-        return self._payload
-
-    def raise_for_status(self):
-        if self._raise_exc:
-            raise self._raise_exc
+def _mock_client(handler) -> httpx.AsyncClient:
+    """An AsyncClient whose requests are answered by `handler(request)` instead
+    of hitting the network — exercises the real request-building and
+    response-parsing code paths."""
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
-def _anthropic_payload(text):
-    return {"content": [{"type": "text", "text": text}]}
+def _anthropic_response(text: str) -> httpx.Response:
+    return httpx.Response(200, json={"content": [{"type": "text", "text": text}]})
 
 
-def _openai_payload(text):
-    return {"choices": [{"message": {"content": text}}]}
+def _openai_response(text: str) -> httpx.Response:
+    return httpx.Response(200, json={"choices": [{"message": {"content": text}}]})
 
 
 # --- provider resolution ---
@@ -146,24 +141,20 @@ def test_system_prompt_settings_fallback_to_env(monkeypatch):
     assert "EnvUser (dev)" in prompt
 
 
-# --- generate_summary ---
+# --- generate_summary (async, httpx) ---
 
 
-def test_generate_summary_missing_key_raises():
+async def test_generate_summary_missing_key_raises():
     # conftest leaves ANTHROPIC_API_KEY empty.
     with pytest.raises(ProviderError):
-        generate_summary("log", provider="anthropic")
+        await generate_summary("log", provider="anthropic")
 
 
-def test_generate_summary_anthropic_path(monkeypatch):
+async def test_generate_summary_anthropic_path(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
-    monkeypatch.setattr(
-        summarizer.requests,
-        "post",
-        lambda *a, **k: FakeResp(_anthropic_payload("Accomplishments:\n- shipped")),
-    )
-    out = generate_summary("commit log", provider="anthropic")
+    client = _mock_client(lambda req: _anthropic_response("Accomplishments:\n- shipped"))
+    out = await generate_summary("commit log", provider="anthropic", client=client)
     assert out == {
         "summary": "Accomplishments:\n- shipped",
         "provider": "anthropic",
@@ -171,92 +162,156 @@ def test_generate_summary_anthropic_path(monkeypatch):
     }
 
 
-def test_generate_summary_openai_path_with_model_override(monkeypatch):
+async def test_generate_summary_anthropic_request_shape(monkeypatch):
+    """The Anthropic path must hit /v1/messages with the x-api-key header."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["url"] = str(req.url)
+        seen["key"] = req.headers.get("x-api-key")
+        return _anthropic_response("ok")
+
+    await generate_summary("log", provider="anthropic", client=_mock_client(handler))
+    assert seen["url"].endswith("/v1/messages")
+    assert seen["key"] == "sk-ant-test"
+
+
+async def test_generate_summary_openai_path_with_model_override(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
-    monkeypatch.setattr(
-        summarizer.requests,
-        "post",
-        lambda *a, **k: FakeResp(_openai_payload("Accomplishments:\n- did it")),
-    )
-    out = generate_summary("log", provider="groq", model="custom-model")
+    client = _mock_client(lambda req: _openai_response("Accomplishments:\n- did it"))
+    out = await generate_summary("log", provider="groq", model="custom-model", client=client)
     assert out["summary"] == "Accomplishments:\n- did it"
     assert out["provider"] == "groq"
     assert out["model"] == "custom-model"
 
 
-def test_generate_summary_propagates_request_errors(monkeypatch):
+async def test_generate_summary_propagates_request_errors(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
-    def boom(*a, **k):
-        raise requests.ConnectionError("refused")
+    def boom(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused")
 
-    monkeypatch.setattr(summarizer.requests, "post", boom)
-    with pytest.raises(requests.RequestException):
-        generate_summary("log", provider="anthropic")
+    with pytest.raises(httpx.HTTPError):
+        await generate_summary("log", provider="anthropic", client=_mock_client(boom))
+
+
+async def test_generate_summary_raises_on_http_error_status(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    client = _mock_client(lambda req: httpx.Response(500, json={"error": "boom"}))
+    with pytest.raises(httpx.HTTPStatusError):
+        await generate_summary("log", provider="groq", client=client)
 
 
 def test_summarize_commits_returns_text_only(monkeypatch):
+    """The CLI helper is sync; it drives the async path on its own loop."""
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-    monkeypatch.setattr(
-        summarizer.requests,
-        "post",
-        lambda *a, **k: FakeResp(_openai_payload("just text")),
-    )
+
+    async def fake_generate(*a, **k):
+        return {"summary": "just text", "provider": "deepseek", "model": "x"}
+
+    monkeypatch.setattr(summarizer, "generate_summary", fake_generate)
     assert summarize_commits("log", provider="deepseek") == "just text"
 
 
 # --- generate_summary_per_repo ---
 
 
-def test_per_repo_blank_log_skips_provider():
-    out = generate_summary_per_repo({"repo-a": "   "})
+async def test_per_repo_blank_log_skips_provider():
+    out = await generate_summary_per_repo({"repo-a": "   "})
     assert out["repo-a"]["summary"] == "No commits in this period."
 
 
-def test_per_repo_provider_error_is_captured_not_raised():
+async def test_per_repo_provider_error_is_captured_not_raised():
     # No key configured -> ProviderError captured per repo.
-    out = generate_summary_per_repo({"repo-a": "some log"}, provider="anthropic")
+    out = await generate_summary_per_repo({"repo-a": "some log"}, provider="anthropic")
     assert out["repo-a"]["summary"].startswith("Error:")
 
 
-def test_per_repo_success(monkeypatch):
+async def test_per_repo_success(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
-    monkeypatch.setattr(
-        summarizer.requests,
-        "post",
-        lambda *a, **k: FakeResp(_openai_payload("## Features\n- x")),
-    )
-    out = generate_summary_per_repo({"repo-a": "log"}, provider="groq")
+
+    async def fake_generate(log_text, **kwargs):
+        return {"summary": "## Features\n- x", "provider": "groq", "model": "m"}
+
+    monkeypatch.setattr(summarizer, "generate_summary", fake_generate)
+    out = await generate_summary_per_repo({"repo-a": "log"}, provider="groq")
     assert out["repo-a"]["summary"].startswith("## Features")
     assert out["repo-a"]["provider"] == "groq"
 
 
-def test_per_repo_calls_run_concurrently(monkeypatch):
-    """Both provider calls must be in flight at once: each blocks on a barrier
-    that only releases when the other arrives. Sequential execution would leave
-    the first call waiting alone until the timeout breaks the barrier."""
-    import threading
-
+async def test_per_repo_uses_per_repo_settings(monkeypatch):
+    """settings_by_repo overrides the fallback `settings` per repo."""
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
-    barrier = threading.Barrier(2)
+    seen: dict[str, dict | None] = {}
 
-    def fake_post(*a, **k):
-        barrier.wait(timeout=5)  # raises BrokenBarrierError if run sequentially
-        return FakeResp(_openai_payload("ok"))
+    async def fake_generate(log_text, provider=None, settings=None, client=None):
+        seen[log_text] = settings
+        return {"summary": "ok", "provider": "groq", "model": "m"}
 
-    monkeypatch.setattr(summarizer.requests, "post", fake_post)
-    out = generate_summary_per_repo({"repo-a": "log a", "repo-b": "log b"}, provider="groq")
-    assert out["repo-a"]["summary"] == "ok"
-    assert out["repo-b"]["summary"] == "ok"
-
-
-def test_per_repo_preserves_input_order(monkeypatch):
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
-    monkeypatch.setattr(
-        summarizer.requests,
-        "post",
-        lambda *a, **k: FakeResp(_openai_payload("ok")),
+    monkeypatch.setattr(summarizer, "generate_summary", fake_generate)
+    await generate_summary_per_repo(
+        {"a": "log-a", "b": "log-b"},
+        provider="groq",
+        settings={"tone": "neutral"},
+        settings_by_repo={"a": {"tone": "casual"}},
     )
-    out = generate_summary_per_repo({"zeta": "log", "blank": "  ", "alpha": "log"}, provider="groq")
+    assert seen["log-a"] == {"tone": "casual"}
+    assert seen["log-b"] == {"tone": "neutral"}
+
+
+async def test_per_repo_preserves_input_order(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+
+    async def fake_generate(log_text, **kwargs):
+        return {"summary": "ok", "provider": "groq", "model": "m"}
+
+    monkeypatch.setattr(summarizer, "generate_summary", fake_generate)
+    out = await generate_summary_per_repo(
+        {"zeta": "log", "blank": "  ", "alpha": "log"}, provider="groq"
+    )
     assert list(out.keys()) == ["zeta", "blank", "alpha"]
     assert out["blank"]["summary"] == "No commits in this period."
+
+
+# --- stream_summary ---
+
+
+async def test_stream_summary_openai_yields_deltas(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    sse = (
+        b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'
+        b'data: {"choices":[{"delta":{"content":" world"}}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    client = _mock_client(lambda req: httpx.Response(200, content=sse))
+    chunks = [c async for c in stream_summary("log", provider="groq", client=client)]
+    assert "".join(chunks) == "Hello world"
+
+
+async def test_stream_summary_anthropic_yields_deltas(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    sse = (
+        b"event: content_block_delta\n"
+        b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi "}}\n\n'
+        b"event: content_block_delta\n"
+        b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"there"}}\n\n'
+        b"event: message_stop\ndata: {}\n\n"
+    )
+    client = _mock_client(lambda req: httpx.Response(200, content=sse))
+    chunks = [c async for c in stream_summary("log", provider="anthropic", client=client)]
+    assert "".join(chunks) == "Hi there"
+
+
+async def test_stream_summary_missing_key_raises():
+    with pytest.raises(ProviderError):
+        async for _ in stream_summary("log", provider="anthropic"):
+            pass
+
+
+async def test_stream_summary_raises_on_http_error_status(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    client = _mock_client(lambda req: httpx.Response(429, json={"error": "rate"}))
+    with pytest.raises(httpx.HTTPStatusError):
+        async for _ in stream_summary("log", provider="groq", client=client):
+            pass

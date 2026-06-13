@@ -81,7 +81,7 @@
 		</section>
 
 		<section class="px-4 pb-2 sm:px-6">
-			<PromptSettings />
+			<PromptSettings {repos} />
 		</section>
 
 		<section class="px-4 pb-6 sm:px-6">

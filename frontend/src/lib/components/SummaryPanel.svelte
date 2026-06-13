@@ -1,7 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { generateSummary, fetchProviders, type Repo, type Summary, type ProviderInfo } from '$lib/api';
+	import {
+		generateSummary,
+		streamSummary,
+		createShare,
+		fetchProviders,
+		type Repo,
+		type ProviderInfo,
+		type SummaryParams
+	} from '$lib/api';
 	import { renderMarkdown } from '$lib/markdown';
+	import { toasts } from '$lib/toast.svelte';
 	import SummaryCard from './SummaryCard.svelte';
 	import SummaryStats from './SummaryStats.svelte';
 
@@ -16,13 +25,28 @@
 	let selectedProvider = $state('');
 	let providers = $state<ProviderInfo[]>([]);
 	let generating = $state(false);
+	let sharing = $state(false);
 	let error = $state<string | null>(null);
-	let result = $state<Summary | null>(null);
+
+	// Result state. `stats` is set once (from the JSON body or the SSE `meta`
+	// event); `summaries` fills in token-by-token while streaming; `logByRepo`
+	// holds the non-AI formatted logs.
+	type RepoSummary = { text: string; provider: string; model: string; error: boolean };
+	let stats = $state<{
+		total: number;
+		byRepo: Record<string, number>;
+		byDay: Record<string, number>;
+	} | null>(null);
+	let summaries = $state<Record<string, RepoSummary>>({});
+	let logByRepo = $state<Record<string, string> | null>(null);
+	let isAiResult = $state(false);
+	let lastParams: SummaryParams | null = null;
 	let controller: AbortController | undefined;
 
 	const rangeInvalid = $derived(
 		range === 'custom' && !!customSince && !!customUntil && customSince > customUntil
 	);
+	const hasResult = $derived(stats !== null);
 
 	const BRAILLE = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 	let spinnerIdx = 0;
@@ -39,7 +63,9 @@
 		} else {
 			if (spinnerInterval) clearInterval(spinnerInterval);
 		}
-		return () => { if (spinnerInterval) clearInterval(spinnerInterval); };
+		return () => {
+			if (spinnerInterval) clearInterval(spinnerInterval);
+		};
 	});
 
 	onMount(async () => {
@@ -76,24 +102,66 @@
 		return `$ ${parts.join(' ')}`;
 	}
 
+	function currentParams(): SummaryParams {
+		const custom = range === 'custom';
+		return {
+			repo: repoName || undefined,
+			since: custom ? customSince || undefined : sinceDate(Number(range)),
+			until: custom ? customUntil || undefined : undefined,
+			author: author.trim() || undefined,
+			ai: useAi,
+			provider: useAi ? selectedProvider || undefined : undefined
+		};
+	}
+
 	async function generate() {
 		controller?.abort();
 		controller = new AbortController();
 		generating = true;
 		error = null;
-		result = null;
+		stats = null;
+		summaries = {};
+		logByRepo = null;
+		isAiResult = useAi;
+		const params = currentParams();
+		lastParams = params;
 		try {
-			const custom = range === 'custom';
-			const since = custom ? customSince || undefined : sinceDate(Number(range));
-			const until = custom ? customUntil || undefined : undefined;
-			result = await generateSummary({
-				repo: repoName || undefined,
-				since,
-				until,
-				author: author.trim() || undefined,
-				ai: useAi,
-				provider: useAi ? selectedProvider || undefined : undefined
-			}, controller.signal);
+			if (useAi) {
+				await streamSummary(
+					params,
+					{
+						onMeta: (m) => {
+							stats = { total: m.total_commits, byRepo: m.by_repo, byDay: m.by_day };
+							summaries = Object.fromEntries(
+								m.repos.map((r) => [
+									r,
+									{ text: '', provider: m.provider, model: m.model, error: false }
+								])
+							);
+						},
+						onDelta: (repo, text) => {
+							if (summaries[repo]) summaries[repo].text += text;
+						},
+						onRepoDone: (repo, provider, model) => {
+							if (summaries[repo]) {
+								summaries[repo].provider = provider;
+								summaries[repo].model = model;
+							}
+						},
+						onRepoError: (repo, detail) => {
+							if (summaries[repo]) {
+								summaries[repo].text = detail;
+								summaries[repo].error = true;
+							}
+						}
+					},
+					controller.signal
+				);
+			} else {
+				const r = await generateSummary(params, controller.signal);
+				stats = { total: r.total_commits, byRepo: r.by_repo, byDay: r.by_day };
+				logByRepo = r.log_by_repo;
+			}
 		} catch (e) {
 			if (e instanceof DOMException && e.name === 'AbortError') return;
 			error = e instanceof Error ? e.message : 'Failed to generate summary';
@@ -102,7 +170,45 @@
 		}
 	}
 
+	function asMarkdown(): string {
+		const parts: string[] = [];
+		if (isAiResult) {
+			for (const [repo, s] of Object.entries(summaries)) parts.push(`## ${repo}\n\n${s.text}`);
+		} else if (logByRepo) {
+			for (const [repo, log] of Object.entries(logByRepo))
+				parts.push(`## ${repo}\n\n\`\`\`\n${log}\n\`\`\``);
+		}
+		return parts.join('\n\n');
+	}
+
+	async function copyMarkdown() {
+		try {
+			await navigator.clipboard.writeText(asMarkdown());
+			toasts.success('copied as markdown');
+		} catch {
+			toasts.error('could not copy — clipboard needs a secure (HTTPS) context');
+		}
+	}
+
+	async function share() {
+		if (!lastParams) return;
+		sharing = true;
+		try {
+			const { slug, expires_at } = await createShare(lastParams);
+			const url = `${location.origin}/s/${slug}`;
+			await navigator.clipboard.writeText(url);
+			const expires = new Date(expires_at).toLocaleDateString();
+			toasts.success(`share link copied (expires ${expires})`);
+		} catch (e) {
+			toasts.error(e instanceof Error ? e.message : 'could not create share link');
+		} finally {
+			sharing = false;
+		}
+	}
+
 	const inputCls = 'border border-border bg-bg px-2 py-1.5 text-sm text-fg';
+	const actionCls =
+		'inline-flex items-center gap-1 border border-border px-3 py-1 text-xs text-fg-muted transition hover:bg-surface hover:text-fg disabled:opacity-50';
 </script>
 
 <section class="mt-8">
@@ -173,35 +279,46 @@
 
 	{#if error}
 		<p class="mt-3 text-sm text-err">{error}</p>
-	{:else if result}
-		{#if result.total_commits === 0}
+	{:else if hasResult && stats}
+		{#if stats.total === 0}
 			<p class="mt-4 text-sm text-fg-muted">No commits in this period.</p>
 		{:else}
-			<div class="mt-2 text-xs text-fg-faint">{buildCliEcho()}</div>
-			<SummaryStats
-				totalCommits={result.total_commits}
-				byRepo={result.by_repo}
-				byDay={result.by_day}
-			/>
+			<div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+				<span class="text-xs text-fg-faint">{buildCliEcho()}</span>
+				<div class="flex items-center gap-2">
+					<button onclick={copyMarkdown} disabled={generating} class={actionCls}>
+						❯ copy markdown
+					</button>
+					<button onclick={share} disabled={generating || sharing} class={actionCls}>
+						{sharing ? 'sharing…' : '❯ share link'}
+					</button>
+				</div>
+			</div>
+			<SummaryStats totalCommits={stats.total} byRepo={stats.byRepo} byDay={stats.byDay} />
 			<div class="mt-3 space-y-3">
-				{#if result.ai_summaries}
-					{#each Object.entries(result.ai_summaries) as [repo, s] (repo)}
+				{#if isAiResult}
+					{#each Object.entries(summaries) as [repo, s] (repo)}
 						<SummaryCard
 							{repo}
-							commits={result.by_repo[repo]}
+							commits={stats.byRepo[repo]}
 							provider={s.provider}
 							model={s.model}
-							copyText={s.summary}
-							typewriter
+							copyText={s.text}
 						>
-							<div class="space-y-2 text-sm leading-relaxed text-fg">
-								{@html renderMarkdown(s.summary)}
-							</div>
+							{#if s.error}
+								<p class="text-sm text-err">{s.text}</p>
+							{:else if s.text}
+								<div class="space-y-2 text-sm leading-relaxed text-fg">
+									{@html renderMarkdown(s.text)}
+								</div>
+							{:else}
+								<p class="text-sm text-fg-muted">{spinnerFrame} waiting for tokens…</p>
+							{/if}
 						</SummaryCard>
 					{/each}
-				{:else if result.log_by_repo}
-					{#each Object.entries(result.log_by_repo) as [repo, log] (repo)}
-						<SummaryCard {repo} commits={result.by_repo[repo]} copyText={log}>
+				{:else if logByRepo}
+					{#each Object.entries(logByRepo) as [repo, log] (repo)}
+						<SummaryCard {repo} commits={stats.byRepo[repo]} copyText={log}>
 							<pre class="max-h-80 overflow-auto bg-bg p-3 text-xs leading-relaxed text-fg">{log}</pre>
 						</SummaryCard>
 					{/each}
