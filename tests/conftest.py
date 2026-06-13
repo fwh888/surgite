@@ -29,7 +29,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, select
 
 from backend.api import app
-from backend.db import Base, CommitRow, PromptSettingsRow, RepoRow, engine, get_session
+from backend.db import (
+    Base,
+    CommitRow,
+    PromptSettingsRow,
+    RepoRow,
+    SharedSummaryRow,
+    engine,
+    get_session,
+)
 
 
 @event.listens_for(engine, "connect")
@@ -51,8 +59,9 @@ def _clean_tables():
     yield
     with get_session() as s:
         s.query(CommitRow).delete()
-        s.query(RepoRow).delete()
+        s.query(SharedSummaryRow).delete()
         s.query(PromptSettingsRow).delete()
+        s.query(RepoRow).delete()
         s.commit()
 
 

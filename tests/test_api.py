@@ -134,7 +134,7 @@ def test_summary_ai_unknown_provider_returns_400(client, add_commit):
 
 
 def _fake_generate(calls):
-    def fake(commit_log, provider=None, model=None, settings=None):
+    async def fake(commit_log, provider=None, model=None, settings=None, client=None):
         calls.append(commit_log)
         return {"summary": "## Features\n- shipped it", "provider": "groq", "model": "x"}
 
@@ -368,3 +368,236 @@ def test_put_prompt_settings_all_fields(client):
     assert body["group_count"] == "1-3"
     assert body["output_format"] == "plain"
     assert body["custom_instructions"] == "Focus on bug fixes."
+
+
+# --- item 5: /summary omits the commits list by default ---
+
+
+def test_summary_omits_commits_list_by_default(client, add_commit):
+    add_commit()
+    body = client.get("/summary").json()
+    assert body["total_commits"] == 1
+    assert body["commits"] == []
+    # stats are still computed from the (internally queried) commits
+    assert body["by_repo"]["demo"] == 1
+
+
+def test_summary_includes_commits_when_requested(client, add_commit):
+    add_commit()
+    body = client.get("/summary?commits=true").json()
+    assert len(body["commits"]) == 1
+    assert body["commits"][0]["repo"] == "demo"
+
+
+# --- item 7: per-repo prompt settings ---
+
+
+def test_prompt_settings_default_repo_id_is_null(client):
+    assert client.get("/settings/prompt").json()["repo_id"] is None
+
+
+def test_prompt_settings_per_repo_override(client, add_repo):
+    repo_id = add_repo()
+    client.put("/settings/prompt", json={"user_name": "Global"})
+    r = client.put(f"/settings/prompt?repo_id={repo_id}", json={"user_name": "RepoSpecific"})
+    assert r.status_code == 200
+    assert r.json()["repo_id"] == repo_id
+    assert r.json()["user_name"] == "RepoSpecific"
+    # The two scopes are independent.
+    assert client.get("/settings/prompt").json()["user_name"] == "Global"
+    assert client.get(f"/settings/prompt?repo_id={repo_id}").json()["user_name"] == "RepoSpecific"
+
+
+def test_prompt_settings_repo_without_row_falls_back_to_global(client, add_repo):
+    repo_id = add_repo()
+    client.put("/settings/prompt", json={"user_name": "Global"})
+    body = client.get(f"/settings/prompt?repo_id={repo_id}").json()
+    # No repo-specific row yet -> the global default is returned (repo_id null
+    # signals the value is inherited, not repo-specific).
+    assert body["user_name"] == "Global"
+    assert body["repo_id"] is None
+
+
+def test_prompt_settings_put_unknown_repo_returns_404(client):
+    assert client.put("/settings/prompt?repo_id=999", json={"user_name": "x"}).status_code == 404
+
+
+# --- item 6: shareable summary links ---
+
+
+def test_create_share_returns_slug(client):
+    r = client.post("/summaries", json={"repo": "demo", "since": "2026-05-01", "ai": True})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["slug"]
+    assert body["expires_at"]
+
+
+def test_resolve_share_returns_params(client):
+    slug = client.post(
+        "/summaries", json={"repo": "demo", "since": "2026-05-01", "author": "Alice"}
+    ).json()["slug"]
+    body = client.get(f"/summaries/{slug}").json()
+    assert body["params"]["repo"] == "demo"
+    assert body["params"]["since"] == "2026-05-01"
+    assert body["params"]["author"] == "Alice"
+
+
+def test_resolve_unknown_share_returns_404(client):
+    assert client.get("/summaries/nope").status_code == 404
+
+
+def test_resolve_expired_share_returns_404(client):
+    from datetime import UTC, datetime, timedelta
+
+    from backend.db import SharedSummaryRow, get_session
+
+    with get_session() as s:
+        s.add(
+            SharedSummaryRow(
+                slug="stale",
+                params={"repo": "demo"},
+                created_at=datetime.now(UTC) - timedelta(days=30),
+                expires_at=datetime.now(UTC) - timedelta(days=1),
+            )
+        )
+        s.commit()
+    assert client.get("/summaries/stale").status_code == 404
+
+
+def test_expired_share_cleanup():
+    from datetime import UTC, datetime, timedelta
+
+    from backend import api
+    from backend.db import SharedSummaryRow, get_session
+
+    now = datetime.now(UTC)
+    with get_session() as s:
+        s.add(
+            SharedSummaryRow(slug="old", params={}, created_at=now, expires_at=now - timedelta(1))
+        )
+        s.add(
+            SharedSummaryRow(slug="live", params={}, created_at=now, expires_at=now + timedelta(1))
+        )
+        s.commit()
+    assert api._delete_expired_summaries() == 1
+    with get_session() as s:
+        remaining = [r.slug for r in s.query(SharedSummaryRow).all()]
+    assert remaining == ["live"]
+
+
+# --- item 12: /health/deep ---
+
+
+def test_health_deep_no_repos_no_keys_is_ok(client):
+    r = client.get("/health/deep")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["db"] == "ok"
+    assert body["git"] == "no_repos"
+    # conftest clears every key -> all providers report missing_key, not failure.
+    assert all(state == "missing_key" for state in body["providers"].values())
+
+
+def test_health_deep_git_ok(client, add_repo, monkeypatch):
+    add_repo()
+    monkeypatch.setattr("backend.api.ls_remote", lambda url, timeout=10: None)
+    body = client.get("/health/deep").json()
+    assert body["git"] == "ok"
+
+
+def test_health_deep_git_failure_returns_503(client, add_repo, monkeypatch):
+    add_repo()
+
+    def boom(url, timeout=10):
+        raise RuntimeError("unreachable host")
+
+    monkeypatch.setattr("backend.api.ls_remote", boom)
+    r = client.get("/health/deep")
+    assert r.status_code == 503
+    assert r.json()["git"] == "error"
+
+
+# --- item 4: /summary/stream (SSE) ---
+
+
+def test_summary_stream_emits_meta_deltas_and_done(client, add_commit, monkeypatch):
+    add_commit()
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    from backend import summarizer
+
+    async def fake_stream(log_text, provider=None, settings=None, client=None):
+        yield "Hello "
+        yield "world"
+
+    monkeypatch.setattr(summarizer, "stream_summary", fake_stream)
+    r = client.get("/summary/stream?ai=true&provider=groq")
+    assert r.status_code == 200
+    assert "text/event-stream" in r.headers["content-type"]
+    text = r.text
+    assert "event: meta" in text
+    assert "event: delta" in text
+    assert "Hello " in text and "world" in text
+    assert "event: repo_done" in text
+    assert "event: done" in text
+
+
+def test_summary_stream_without_key_returns_400(client):
+    assert client.get("/summary/stream?provider=groq").status_code == 400
+
+
+# --- item 8: CLI --registered ---
+
+
+class _FakeApiResp:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+def test_cli_registered_log_mode(monkeypatch):
+    captured = {}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        captured["url"] = url
+        captured["params"] = params
+        return _FakeApiResp({"log_by_repo": {"demo": "[2026-06-01] fix bug (Alice) <abc1234>"}})
+
+    monkeypatch.setattr("backend.standup.httpx.get", fake_get)
+    monkeypatch.setattr("sys.argv", ["standup", "--registered", "demo", "--since", "2026-06-01"])
+    stdout = io.StringIO()
+    monkeypatch.setattr("sys.stdout", stdout)
+
+    main()
+
+    assert captured["url"].endswith("/summary")
+    assert captured["params"]["repo"] == "demo"
+    assert "fix bug" in stdout.getvalue()
+
+
+def test_cli_registered_summarize_mode(monkeypatch):
+    def fake_get(url, params=None, headers=None, timeout=None):
+        assert params["ai"] == "true"
+        return _FakeApiResp(
+            {"ai_summaries": {"demo": {"summary": "## Work\n- shipped", "provider": "groq"}}}
+        )
+
+    monkeypatch.setattr("backend.standup.httpx.get", fake_get)
+    monkeypatch.setattr("sys.argv", ["standup", "--registered", "demo", "--summarize"])
+    stdout = io.StringIO()
+    monkeypatch.setattr("sys.stdout", stdout)
+
+    main()
+
+    assert "## Work" in stdout.getvalue()
+
+
+def test_cli_requires_path_or_registered(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["standup"])
+    with pytest.raises(SystemExit):
+        main()

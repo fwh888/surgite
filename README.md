@@ -84,6 +84,16 @@ standup /path/to/your/repo --since 1.day.ago --summarize
 | `--since-commit` | *(none)* | Range starting from a given commit |
 | `--summarize` | off | Use AI to write a prose summary (needs a provider key) |
 | `--output` | *(stdout)* | Write output to a file instead |
+| `--registered` | *(none)* | Pull a repo registered in a running standup-gen API instead of a local path (see below) |
+
+Instead of a local path you can point the CLI at a running standup-gen
+instance and reuse a repo it already ingested:
+
+```bash
+export STANDUP_API_URL=http://localhost:8000   # default
+export STANDUP_API_TOKEN=...                   # only if your instance is behind a token
+standup --registered my-repo --since 2026-06-01 --summarize
+```
 
 ## Configuration
 
@@ -106,17 +116,29 @@ needs a key.
 | `LOG_FORMAT` | *(human-readable)* | Set to `json` for structured logs. |
 | `RATE_LIMIT_REQUESTS` | `5` | Max `/summary?ai=true` requests per IP per window. |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate-limit window. |
+| `SHARE_TTL_DAYS` | `7` | Lifetime of a shared-summary `/s/<slug>` link. |
+| `STANDUP_API_URL` | `http://localhost:8000` | API the CLI's `--registered` mode talks to. |
+| `STANDUP_API_TOKEN` | *(none)* | Optional bearer token sent by the CLI in `--registered` mode. |
 
 ## API endpoints
 
 - `GET /commits` — paginated list with `since` / `until` / `author` / `repo` filters
 - `GET /commits/{hash}` — lookup by full or prefix hash
 - `GET /summary` — aggregate by repo and day; `?ai=true` runs the AI summarizer
-  (optional `&provider=anthropic|groq|deepseek`; rate-limited per client IP)
+  (optional `&provider=anthropic|groq|deepseek`; rate-limited per client IP).
+  The raw commit list is omitted by default — pass `&commits=true` for it.
+- `GET /summary/stream` — the same AI summary as Server-Sent Events, streaming
+  each repo card token-by-token
 - `GET /providers` — list available summary providers and the default
+- `GET /settings/prompt` — get/put the AI prompt settings; `?repo_id=` scopes
+  them to a single repo (falling back to the global default)
+- `POST /summaries`, `GET /summaries/{slug}`, `GET /s/{slug}` — create and
+  resolve a shareable summary link
 - `GET /repos`, `POST /repos`, `DELETE /repos/{id}` — manage registered repos;
   `POST /repos` kicks off a background ingest of the new repo immediately
 - `GET /health` — liveness + database readiness; `{"status": "ok"}` or `503`
+- `GET /health/deep` — DB + git remote + provider reachability; `503` names the
+  failing component
 
 A background scheduler task also runs `_ingest_all_repos` every
 `INGEST_INTERVAL` seconds so the database stays fresh between user requests.

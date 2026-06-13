@@ -99,6 +99,8 @@ export const fetchProviders = () =>
 	request<ProvidersResponse>('/providers');
 
 export interface PromptSettings {
+	// null = the global default row; a number = a repo-specific override.
+	repo_id: number | null;
 	user_name: string;
 	user_role: string;
 	tone: string;
@@ -108,12 +110,122 @@ export interface PromptSettings {
 	updated_at: string | null;
 }
 
-export type PromptSettingsUpdate = Partial<Omit<PromptSettings, 'updated_at'>>;
+export type PromptSettingsUpdate = Partial<Omit<PromptSettings, 'updated_at' | 'repo_id'>>;
 
-export const fetchPromptSettings = () => request<PromptSettings>('/settings/prompt');
+const repoQuery = (repoId?: number | null) =>
+	repoId == null ? '' : `?repo_id=${repoId}`;
 
-export const updatePromptSettings = (update: PromptSettingsUpdate) =>
-	request<PromptSettings>('/settings/prompt', {
+export const fetchPromptSettings = (repoId?: number | null) =>
+	request<PromptSettings>(`/settings/prompt${repoQuery(repoId)}`);
+
+export const updatePromptSettings = (update: PromptSettingsUpdate, repoId?: number | null) =>
+	request<PromptSettings>(`/settings/prompt${repoQuery(repoId)}`, {
 		method: 'PUT',
 		body: JSON.stringify(update)
 	});
+
+// --- shareable summary links ---
+
+export interface ShareResponse {
+	slug: string;
+	expires_at: string;
+}
+
+export interface SharedSummary {
+	slug: string;
+	params: SummaryParams;
+	created_at: string | null;
+	expires_at: string | null;
+}
+
+export const createShare = (params: SummaryParams) =>
+	request<ShareResponse>('/summaries', { method: 'POST', body: JSON.stringify(params) });
+
+export const fetchShare = (slug: string) =>
+	request<SharedSummary>(`/summaries/${encodeURIComponent(slug)}`);
+
+// --- streaming AI summaries (SSE) ---
+
+export interface StreamMeta {
+	period: { since: string | null; until: string | null };
+	total_commits: number;
+	by_repo: Record<string, number>;
+	by_day: Record<string, number>;
+	repos: string[];
+	provider: string;
+	model: string;
+}
+
+export interface StreamHandlers {
+	onMeta: (meta: StreamMeta) => void;
+	onDelta: (repo: string, text: string) => void;
+	onRepoDone: (repo: string, provider: string, model: string) => void;
+	onRepoError: (repo: string, detail: string) => void;
+}
+
+function summaryQuery(params: SummaryParams): string {
+	const q = new URLSearchParams();
+	if (params.repo) q.set('repo', params.repo);
+	if (params.since) q.set('since', params.since);
+	if (params.until) q.set('until', params.until);
+	if (params.author) q.set('author', params.author);
+	if (params.provider) q.set('provider', params.provider);
+	return q.toString();
+}
+
+/**
+ * Stream an AI summary over SSE, invoking handlers as events arrive. Resolves
+ * when the stream completes; rejects on a transport error or an HTTP error
+ * status (so the caller can surface it like any other failure). Honour the
+ * passed AbortSignal to cancel mid-stream.
+ */
+export async function streamSummary(
+	params: SummaryParams,
+	handlers: StreamHandlers,
+	signal?: AbortSignal
+): Promise<void> {
+	const qs = summaryQuery(params);
+	const res = await fetch(`${BASE}/summary/stream${qs ? `?${qs}` : ''}`, {
+		headers: { Accept: 'text/event-stream' },
+		signal
+	});
+	if (!res.ok || !res.body) {
+		let detail: unknown = res.statusText;
+		try {
+			detail = (await res.json()).detail ?? res.statusText;
+		} catch {
+			/* non-JSON body */
+		}
+		throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+	}
+
+	const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+	let buffer = '';
+	for (;;) {
+		const { value, done } = await reader.read();
+		if (done) break;
+		buffer += value;
+		// SSE frames are separated by a blank line.
+		let sep: number;
+		while ((sep = buffer.indexOf('\n\n')) !== -1) {
+			const frame = buffer.slice(0, sep);
+			buffer = buffer.slice(sep + 2);
+			dispatchFrame(frame, handlers);
+		}
+	}
+}
+
+function dispatchFrame(frame: string, handlers: StreamHandlers): void {
+	let event = 'message';
+	let data = '';
+	for (const line of frame.split('\n')) {
+		if (line.startsWith('event:')) event = line.slice(6).trim();
+		else if (line.startsWith('data:')) data += line.slice(5).trim();
+	}
+	if (!data) return;
+	const payload = JSON.parse(data);
+	if (event === 'meta') handlers.onMeta(payload);
+	else if (event === 'delta') handlers.onDelta(payload.repo, payload.text);
+	else if (event === 'repo_done') handlers.onRepoDone(payload.repo, payload.provider, payload.model);
+	else if (event === 'repo_error') handlers.onRepoError(payload.repo, payload.detail);
+}

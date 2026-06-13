@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Foundation work for 0.4.0: hygiene, infrastructure, and operational hardening.
-User-facing features (streaming summaries, shareable links, per-repo prompt
-overrides, CLI↔API bridge) and the remaining open-question answers land in
-follow-up PRs — see [docs/0.4.0-plan.md](docs/0.4.0-plan.md).
+0.4.0 work. The Foundation slice (hygiene, infrastructure, ops hardening)
+landed first; this entry also covers the user-facing release —
+streaming summaries, shareable links, per-repo prompt overrides, and the
+CLI↔API bridge. See [docs/0.4.0-plan.md](docs/0.4.0-plan.md) and the
+[tracker](docs/0.4.0-tracker.md).
 
 ### Added
 
@@ -29,6 +30,25 @@ follow-up PRs — see [docs/0.4.0-plan.md](docs/0.4.0-plan.md).
   `docker compose exec`; `BACKUP_MODE=local` runs against a host-side
   Postgres. `backup.sh` keeps the most recent `BACKUP_KEEP` dumps
   (default 14) and prunes older ones.
+- Streaming AI summaries over SSE (`GET /summary/stream`). The web UI fills
+  each repo card in token-by-token as the provider streams, instead of
+  blocking on a spinner for the whole fan-out; cancellation still works
+  mid-stream.
+- Shareable summary links. "share link" copies a `/s/{slug}` URL that
+  re-runs the saved query in a read-only view; "copy markdown" puts the whole
+  summary on the clipboard for pasting into Slack/Jira. Slugs live in a
+  `shared_summaries` table and expire after `SHARE_TTL_DAYS` (default 7),
+  swept by the scheduler and rejected on read once expired.
+- Per-repo prompt settings. `prompt_settings` gains a `repo_id` so a repo can
+  carry its own tone/identity/format, falling back to the global default;
+  `GET`/`PUT /settings/prompt?repo_id=` and a scope selector in the config
+  panel drive it.
+- `standup --registered <name>` pulls a repo registered in a running API
+  (`STANDUP_API_URL`, optional bearer `STANDUP_API_TOKEN`) instead of a local
+  clone, so the CLI can reuse what the web app already ingested.
+- `GET /health/deep` — DB connectivity, a `git ls-remote` probe against one
+  registered repo, and provider reachability, returning 503 with the failing
+  component. A meatier target for an uptime check than `/health`.
 
 ### Changed
 
@@ -39,6 +59,14 @@ follow-up PRs — see [docs/0.4.0-plan.md](docs/0.4.0-plan.md).
   `_ingest_all_repos` are gone. A user opening the app now gets fresh data
   on the first click without paying the fetch cost, and a re-rendered
   summary no longer hits the network.
+- The summarizer is now async: provider calls go through `httpx.AsyncClient`
+  and the per-repo fan-out runs on `asyncio.gather` instead of a
+  `ThreadPoolExecutor`, so a burst of concurrent `/summary?ai=true` requests
+  no longer exhausts FastAPI's request threadpool. `requests` is dropped from
+  the runtime dependencies in favour of `httpx`.
+- `/summary` omits the full `commits` list by default (it was hundreds of KB
+  the UI never rendered). Pass `commits=true` to include it, or use
+  `/commits`.
 
 ### Fixed
 

@@ -2,15 +2,24 @@
 	import {
 		fetchPromptSettings,
 		updatePromptSettings,
-		type PromptSettings as Settings
+		type PromptSettings as Settings,
+		type Repo
 	} from '$lib/api';
 	import { toasts } from '$lib/toast.svelte';
 	import Skeleton from './Skeleton.svelte';
 
+	let { repos = [] }: { repos?: Repo[] } = $props();
+
 	let expanded = $state(false);
 	let saving = $state(false);
 	let loading = $state(false);
-	let loaded = false;
+
+	// null = the global default; a number = a specific repo's override.
+	let selectedRepoId = $state<number | null>(null);
+	// repo_id of the row actually returned: when a repo has no override of its
+	// own, the API returns the global row (repo_id null), so the values shown
+	// are inherited rather than repo-specific.
+	let loadedRepoId = $state<number | null>(null);
 
 	let user_name = $state('');
 	let user_role = $state('');
@@ -18,6 +27,8 @@
 	let group_count = $state('2-5');
 	let output_format = $state('markdown');
 	let custom_instructions = $state('');
+
+	const inherited = $derived(selectedRepoId !== null && loadedRepoId === null);
 
 	const TONES = [
 		{ value: 'neutral', label: 'Neutral' },
@@ -34,6 +45,7 @@
 	const GROUP_COUNTS = ['1-3', '2-5', '3-7', '4-8'];
 
 	function applySettings(s: Settings) {
+		loadedRepoId = s.repo_id;
 		user_name = s.user_name;
 		user_role = s.user_role;
 		tone = s.tone;
@@ -42,35 +54,38 @@
 		custom_instructions = s.custom_instructions;
 	}
 
+	async function load() {
+		loading = true;
+		try {
+			applySettings(await fetchPromptSettings(selectedRepoId));
+		} catch {
+			toasts.error('Failed to load prompt settings');
+		} finally {
+			loading = false;
+		}
+	}
+
 	async function toggle() {
 		expanded = !expanded;
-		if (expanded && !loaded) {
-			loading = true;
-			try {
-				const s = await fetchPromptSettings();
-				applySettings(s);
-				loaded = true;
-			} catch {
-				toasts.error('Failed to load prompt settings');
-			} finally {
-				loading = false;
-			}
-		}
+		if (expanded) await load();
+	}
+
+	async function selectRepo(value: string) {
+		selectedRepoId = value === '' ? null : Number(value);
+		await load();
 	}
 
 	async function save() {
 		saving = true;
 		try {
-			const s = await updatePromptSettings({
-				user_name,
-				user_role,
-				tone,
-				group_count,
-				output_format,
-				custom_instructions
-			});
+			const s = await updatePromptSettings(
+				{ user_name, user_role, tone, group_count, output_format, custom_instructions },
+				selectedRepoId
+			);
 			applySettings(s);
-			toasts.success('Prompt settings saved');
+			toasts.success(
+				selectedRepoId === null ? 'Global prompt settings saved' : 'Repo prompt settings saved'
+			);
 		} catch {
 			toasts.error('Failed to save prompt settings');
 		} finally {
@@ -98,6 +113,24 @@
 				<Skeleton rows={4} />
 			</div>
 		{:else}
+			<div class="mt-3 flex flex-wrap items-center gap-2">
+				<label class={labelCls} for="ps-scope">Scope</label>
+				<select
+					id="ps-scope"
+					value={selectedRepoId === null ? '' : String(selectedRepoId)}
+					onchange={(e) => selectRepo(e.currentTarget.value)}
+					class="border border-border bg-bg px-2 py-1.5 text-sm text-fg"
+				>
+					<option value="">Global default</option>
+					{#each repos as r (r.id)}
+						<option value={String(r.id)}>{r.name}</option>
+					{/each}
+				</select>
+				{#if inherited}
+					<span class="text-xs text-fg-faint">inherited from global — save to override for this repo</span>
+				{/if}
+			</div>
+
 			<div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
 					<label class={labelCls} for="ps-name">Name</label>
