@@ -7,10 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-0.4.0 work. The Foundation slice (hygiene, infrastructure, ops hardening)
-landed first; this entry also covers the user-facing release —
-streaming summaries, shareable links, per-repo prompt overrides, and the
-CLI↔API bridge. See [docs/0.4.0-plan.md](docs/0.4.0-plan.md) and the
+## [0.4.0] - 2026-06-13
+
+Operational hardening plus a round of real features: a background ingest
+scheduler, structured logging, rate limiting, backup/restore, streaming AI
+summaries, shareable links, per-repo prompt overrides, a CLI↔API bridge, and
+a deep health check. See [docs/0.4.0-plan.md](docs/0.4.0-plan.md) and the
 [tracker](docs/0.4.0-tracker.md).
 
 ### Added
@@ -74,6 +76,10 @@ CLI↔API bridge. See [docs/0.4.0-plan.md](docs/0.4.0-plan.md) and the
   `docs/production-readiness-plan.md` (deleted during 0.2.0 cleanup).
   The current roadmap is `docs/0.4.0-plan.md`, and
   `docs/performance-ui-audit.md` carries a closed-out banner.
+- The `repo_id` backfill migration (`b2c3d4e5f6a7`) aborted with a
+  `NotNullViolation` on databases holding commits orphaned by the pre-0.3.0
+  delete bug (a repo's commits weren't removed with it). Those orphans are now
+  dropped before the `NOT NULL` is enforced, unblocking the upgrade.
 
 ## [0.3.0] - 2026-06-11
 

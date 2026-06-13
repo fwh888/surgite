@@ -27,6 +27,16 @@ Three layers that build on each other; the CLI stays first-class and works on it
 | **REST API** (FastAPI + Postgres) | Ingests commits into a `commits` table, exposes filterable read + summary endpoints, and CRUD for registered repos. | Working |
 | **Web UI** (SvelteKit) | Register repos, trigger ingests, and generate standup summaries from the browser — light/dark themed. Served same-origin by the API. | Working |
 
+## Architecture
+
+<p align="center">
+  <img src="docs/architecture.svg" alt="standup-gen architecture: SvelteKit web UI and a standalone CLI, the FastAPI + Postgres backend with a background ingest scheduler, and the external LLM providers and git remotes they talk to" width="90%">
+</p>
+
+A background scheduler keeps the database fresh so `/summary` is a pure read;
+AI summaries stream from the provider over SSE. See [AGENTS.md](AGENTS.md) for
+the full data-flow walkthrough.
+
 ## Quickstart (self-hosted web app)
 
 Runs Postgres + the API + the bundled web UI with one command.
