@@ -4,6 +4,10 @@ Audit of standup-gen (FastAPI + SQLAlchemy/Postgres backend, Svelte 5 SPA fronte
 focused on performance and UI/UX. Each item lists severity, affected files/lines
 (as of `main` @ 0154b06), the problem, and the minimal recommended fix.
 
+> **Status: closed.** The 0.3.0 release shipped or merged every item in this
+> audit. The current roadmap is [docs/0.4.0-plan.md](0.4.0-plan.md); this
+> document is kept as a historical reference.
+
 Items are ordered by priority within each category.
 
 ---

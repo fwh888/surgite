@@ -1,5 +1,8 @@
+import asyncio
 import logging
+import os
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -16,56 +19,35 @@ from backend import summarizer
 from backend.db import CommitRow, PromptSettingsRow, RepoRow, get_db, session_scope
 from backend.formatter import format_log
 from backend.git import get_raw_log, parse_log
+from backend.logging_config import configure_logging
 from backend.models import Commit
+from backend.rate_limit import check_rate_limit
 from backend.schemas import PromptSettingsUpdate, RepoCreate
 from backend.summarizer import ProviderError
 
+configure_logging()
 log = logging.getLogger(__name__)
 
 # Cap on commits sent to the LLM in /summary?ai=true to bound token cost.
 AI_SUMMARY_MAX_COMMITS = 500
 
-# How long a successful ingest of a (repo, date range) stays fresh; repeat
-# requests within this window skip the git fetch + upsert for that repo.
-INGEST_TTL = timedelta(minutes=10)
 
-# (repo_id, since, until) -> time of last successful ingest. Keyed by date range
-# because an ingest only covers the requested window: a repo fetched for the last
-# 7 days is not fresh for a 30-day request. Process-local on purpose — commits are
-# persisted, so a restart costs at most one redundant fetch per repo and range.
-_INGEST_CACHE: dict[tuple[int, str, str], datetime] = {}
-
-
-def _ingest_all_repos(
-    since: date | None = None,
-    until: date | None = None,
-    repo: str | None = None,
-    session: Session | None = None,
-) -> list[dict]:
-    """Ingest registered repos, skipping any ingested recently for the same range.
-    `repo` narrows ingest to repos whose name contains it, matching the /summary
-    filter semantics. Returns list of per-repo result/error dicts."""
+def _ingest_all_repos() -> list[dict]:
+    """Ingest every registered repo. The background scheduler calls this on
+    a timer (see `_scheduler_loop`); the /summary endpoint itself stays a
+    pure read against the DB. The per-repo ingest (`_ingest_repo`) is still
+    wired up as a FastAPI BackgroundTask on `POST /repos` so newly added
+    repos show up immediately rather than waiting up to INGEST_INTERVAL
+    seconds. Returns list of per-repo result/error dicts."""
     results: list[dict] = []
-    with session_scope(session) as s:
-        repos = s.scalars(select(RepoRow)).all()
-        repo_data = [(r.id, r.name, r.clone_url) for r in repos]
-
-    if repo:
-        needle = repo.lower()
-        repo_data = [r for r in repo_data if needle in r[1].lower()]
+    with session_scope() as s:
+        repo_data = [(r.id, r.name, r.clone_url) for r in s.scalars(select(RepoRow)).all()]
 
     for repo_id, repo_name, clone_url in repo_data:
-        key = (repo_id, since.isoformat() if since else "", until.isoformat() if until else "")
-        last_run = _INGEST_CACHE.get(key)
-        if last_run and datetime.now(UTC) - last_run < INGEST_TTL:
-            results.append({"repo": repo_name, "skipped": True})
-            continue
         try:
-            result = _ingest_repo(repo_id, repo_name, clone_url, since, until, session=session)
-            _INGEST_CACHE[key] = datetime.now(UTC)
-            results.append(result)
+            results.append(_ingest_repo(repo_id, repo_name, clone_url))
         except Exception as exc:
-            log.warning("Ingest failed for repo %s: %s", repo_name, exc)
+            log.warning("Ingest failed for repo %s: %s", repo_name, exc, extra={"repo": repo_name})
             results.append({"repo": repo_name, "error": str(exc)})
 
     return results
@@ -134,7 +116,55 @@ def _ingest_repo(
     return {"repo": repo_name, "inserted": inserted, "updated": updated, "unchanged": unchanged}
 
 
-app = FastAPI()
+async def _scheduler_loop(interval: int) -> None:
+    """Background task: every `interval` seconds, ingest all registered repos.
+
+    Runs `_ingest_all_repos` in a thread (it's sync, talks to git + DB) so
+    the event loop stays responsive. Any exception is logged and the loop
+    continues — a transient git failure must not stop the scheduler. Stops
+    cleanly when the task is cancelled at app shutdown."""
+    log.info("Background ingest scheduler started (interval=%ds)", interval)
+    loop = asyncio.get_running_loop()
+    try:
+        while True:
+            try:
+                await loop.run_in_executor(None, _ingest_all_repos)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Defence in depth: _ingest_all_repos already swallows per-repo
+                # failures, so anything reaching here is unexpected.
+                log.exception("Background ingest loop failed: %s", exc)
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        log.info("Background ingest scheduler stopped")
+        raise
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Start the background ingest scheduler on app startup, cancel it on
+    shutdown. Disabled (interval<=0) for tests and one-off CLI runs where
+    a background task would never be observed.
+
+    INGEST_INTERVAL is read fresh from the environment on every startup so
+    tests can flip it without reloading the config module."""
+    interval = int(os.environ.get("INGEST_INTERVAL", "300"))
+    task: asyncio.Task | None = None
+    if interval > 0:
+        task = asyncio.create_task(_scheduler_loop(interval))
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
+app = FastAPI(lifespan=_lifespan)
 
 # Allow the Vite dev server (separate origin) to call the API during development.
 # In production the frontend is served same-origin from the static mount below, so
@@ -316,6 +346,7 @@ def get_commit(hash: str, session: Session = Depends(get_db)):
 
 @app.get("/summary")
 def summary(
+    request: Request,
     since: date | None = None,
     until: date | None = None,
     author: str | None = None,
@@ -327,8 +358,11 @@ def summary(
 ):
     """Commit summary for the period. With ai=true, returns one AI summary per
     repo (ai_summaries); the additional whole-log summary (ai_summary) costs an
-    extra provider call and is only generated when combined=true."""
-    _ingest_all_repos(since, until, repo, session=session)
+    extra provider call and is only generated when combined=true.
+
+    This is a pure read against the DB; freshness is owned by the background
+    ingest scheduler (see _scheduler_loop) and the per-repo BackgroundTask
+    on POST /repos. No git fetch happens here."""
     total, commits = _query_commits(
         since, until, author, repo, limit=None, offset=0, session=session
     )
@@ -352,6 +386,7 @@ def summary(
     ai_model = None
     ai_summaries = None
     if ai:
+        check_rate_limit(request)
         if len(commits) > AI_SUMMARY_MAX_COMMITS:
             raise HTTPException(
                 status_code=413,

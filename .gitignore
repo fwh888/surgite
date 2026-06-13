@@ -9,3 +9,4 @@ build/
 testing.py
 repos.txt
 ingest.log
+backups/
