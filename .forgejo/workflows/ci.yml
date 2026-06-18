@@ -96,3 +96,4 @@ jobs:
 
       - name: Build SvelteKit SPA
         run: cd frontend && npm run build
+# Re-trigger 2026-06-18T22:41:54Z
