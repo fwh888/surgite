@@ -26,7 +26,7 @@ from backend.auth import (
     revoke_session,
     verify_password,
 )
-from backend.db import SessionRow, UserRow, get_session
+from backend.db import SessionRow, get_session
 
 COOKIE = config.SESSION_COOKIE_NAME
 
