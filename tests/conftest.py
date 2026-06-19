@@ -29,12 +29,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, select
 
 from backend.api import app
+from backend.auth import ensure_bootstrap_user
 from backend.db import (
     Base,
     CommitRow,
+    InviteRow,
     PromptSettingsRow,
     RepoRow,
+    SessionRow,
     SharedSummaryRow,
+    UserRow,
     engine,
     get_session,
 )
@@ -58,10 +62,14 @@ def _schema():
 def _clean_tables():
     yield
     with get_session() as s:
+        # Children first, then the auth parents (FKs cascade, but be explicit).
         s.query(CommitRow).delete()
         s.query(SharedSummaryRow).delete()
         s.query(PromptSettingsRow).delete()
         s.query(RepoRow).delete()
+        s.query(SessionRow).delete()
+        s.query(InviteRow).delete()
+        s.query(UserRow).delete()
         s.commit()
 
 
@@ -98,6 +106,7 @@ def add_commit():
     def _add(**overrides):
         repo_name = overrides.pop("repo", "demo")
         repo_id = overrides.pop("repo_id", None)
+        owner_id = overrides.pop("owner_id", None)
         defaults = {
             "hash": "a" * 40,
             "short_hash": "aaaaaaa",
@@ -109,17 +118,20 @@ def add_commit():
         }
         defaults.update(overrides)
         with get_session() as s:
+            if owner_id is None:
+                owner_id = ensure_bootstrap_user(s).id
             if repo_id is None:
                 repo = s.scalar(select(RepoRow).where(RepoRow.name == repo_name))
                 if repo is None:
                     repo = RepoRow(
                         name=repo_name,
                         clone_url=f"https://example.com/{repo_name}.git",
+                        owner_id=owner_id,
                     )
                     s.add(repo)
                     s.flush()
                 repo_id = repo.id
-            s.add(CommitRow(repo_id=repo_id, **defaults))
+            s.add(CommitRow(repo_id=repo_id, owner_id=owner_id, **defaults))
             s.commit()
 
     return _add
@@ -128,6 +140,7 @@ def add_commit():
 @pytest.fixture
 def add_repo():
     def _add(**overrides):
+        owner_id = overrides.pop("owner_id", None)
         defaults = {
             "name": "demo",
             "clone_url": "https://example.com/demo.git",
@@ -136,7 +149,9 @@ def add_repo():
         }
         defaults.update(overrides)
         with get_session() as s:
-            repo = RepoRow(**defaults)
+            if owner_id is None:
+                owner_id = ensure_bootstrap_user(s).id
+            repo = RepoRow(owner_id=owner_id, **defaults)
             s.add(repo)
             s.commit()
             s.refresh(repo)

@@ -1,13 +1,19 @@
 import argparse
 import os
+import sys
 from datetime import date, timedelta
 
 import httpx
 from dotenv import load_dotenv
 
+from backend import cli_auth
 from backend.formatter import format_log
 from backend.git import get_raw_log, parse_log
 from backend.summarizer import summarize_commits
+
+
+def _api_base() -> str:
+    return os.environ.get("STANDUP_API_URL", "http://localhost:8000").rstrip("/")
 
 
 def _run_local(args) -> str:
@@ -28,11 +34,12 @@ def _run_local(args) -> str:
 
 def _run_registered(args) -> str:
     """Pull a registered repo's data from a running standup-gen API instead of
-    a local clone. URL from STANDUP_API_URL, optional bearer from
-    STANDUP_API_TOKEN. Mirrors what the web UI shows for the same repo."""
-    base = os.environ.get("STANDUP_API_URL", "http://localhost:8000").rstrip("/")
-    token = os.environ.get("STANDUP_API_TOKEN")
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    a local clone. URL from STANDUP_API_URL. Auth (multi_user deployments) via
+    a saved session cookie (`standup --login` / `--redeem-invite`) or
+    STANDUP_API_KEY; off/single_user deployments need none. Mirrors what the
+    web UI shows for the same repo."""
+    base = _api_base()
+    headers = cli_auth.auth_headers(base)
 
     # The API filters by date, not git's relative syntax. Default to the last
     # 7 days to match the local path's default window.
@@ -66,8 +73,24 @@ def main():
         "--registered",
         metavar="NAME",
         help="Pull a repo registered in a running standup-gen API "
-        "(set STANDUP_API_URL / STANDUP_API_TOKEN) instead of a local path",
+        "(set STANDUP_API_URL; auth via `standup --login` or STANDUP_API_KEY) "
+        "instead of a local path",
     )
+
+    auth_group = parser.add_argument_group("auth (multi_user deployments)")
+    auth_group.add_argument(
+        "--login", action="store_true", help="Log in to the API and save a session"
+    )
+    auth_group.add_argument(
+        "--logout", action="store_true", help="Revoke and forget the saved session"
+    )
+    auth_group.add_argument(
+        "--redeem-invite",
+        metavar="TOKEN",
+        help="Redeem an invite token: create an account and log in",
+    )
+    auth_group.add_argument("--email", help="Email for --login / --redeem-invite (or prompt)")
+
     since_group = parser.add_mutually_exclusive_group()
     since_group.add_argument("--since", help="Start date for git log (default: 7.days.ago)")
     since_group.add_argument("--since-commit", help="Starting commit hash (overrides --since)")
@@ -79,6 +102,17 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Auth subcommands short-circuit before the repo/summary path.
+    if args.login or args.logout or args.redeem_invite:
+        if sum(bool(x) for x in (args.login, args.logout, args.redeem_invite)) > 1:
+            parser.error("use only one of --login, --logout, --redeem-invite")
+        base = _api_base()
+        if args.login:
+            sys.exit(cli_auth.cmd_login(base, email=args.email))
+        if args.logout:
+            sys.exit(cli_auth.cmd_logout(base))
+        sys.exit(cli_auth.cmd_redeem_invite(base, args.redeem_invite, email=args.email))
 
     if bool(args.repo_path) == bool(args.registered):
         parser.error("provide either a repo_path or --registered <name>, not both")

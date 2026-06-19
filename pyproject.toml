@@ -16,6 +16,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "uvicorn>=0.47.0",
     "httpx>=0.27.0",
+    "argon2-cffi>=23.1.0",
 ]
 
 [project.scripts]
@@ -61,3 +62,4 @@ select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
 "tests/conftest.py" = ["E402"]
 # Depends() in argument defaults is the standard FastAPI pattern.
 "backend/api.py" = ["B008"]
+"backend/auth.py" = ["B008"]
