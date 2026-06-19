@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Auth foundation (0.5.0 slice 1).** An `AUTH_MODE` setting with three modes:
+  `off` (default; anonymous, indistinguishable from 0.4.0), `single_user`, and
+  `multi_user` (email + password with first-party session cookies).
+- New `users`, `sessions`, and `invites` tables. `email` is `CITEXT` on
+  Postgres for case-insensitive, index-supported lookups.
+- A non-nullable `owner_id` on `repos`, `commits`, `prompt_settings`, and
+  `shared_summaries`; every query is now scoped to the current user.
+- `backend/auth.py`: argon2id password hashing, server-side sessions with
+  sliding refresh, the `get_current_user` dependency, and a hardened
+  `__Host-`-prefixed `Secure`/`HttpOnly`/`SameSite=Lax` session cookie.
+- `/auth/login`, `/auth/logout`, `/auth/redeem-invite`, `/auth/me` (multi_user
+  only). On first run with no admin, an admin invite is minted and logged for
+  `BOOTSTRAP_OWNER_EMAIL`.
+- CLI: `standup --login`, `standup --logout`, `standup --redeem-invite <token>`,
+  storing a 0600 session at `$XDG_CONFIG_HOME/standup/session`.
+- `scripts/upgrade-from-0.4.sh` and `docs/migrations/0.4.0-to-0.5.0.md` for the
+  single-operator upgrade path.
+
+### Changed
+
+- `/health/deep` returns a redacted `{status, components}` shape and scopes its
+  git probe to the caller's own repos (no cross-user repo enumeration).
+- `/providers` is admin-only in `multi_user` mode.
+- The CLI env var `STANDUP_API_TOKEN` is renamed to `STANDUP_API_KEY`; the old
+  name still works as a deprecated alias with a one-time warning.
+
 ## [0.4.0] - 2026-06-13
 
 Operational hardening plus a round of real features: a background ingest
