@@ -35,3 +35,19 @@ class PromptSettingsUpdate(BaseModel):
     group_count: str | None = None
     output_format: str | None = None
     custom_instructions: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class RedeemInviteRequest(BaseModel):
+    """Claim an invite and set the new account's password. `email` is required
+    only for an open invite (one with no email pinned); for a pinned invite the
+    server uses the invite's email and ignores this field."""
+
+    token: str
+    password: str
+    email: str | None = None
+    display_name: str | None = None

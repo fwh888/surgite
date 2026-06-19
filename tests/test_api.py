@@ -450,12 +450,15 @@ def test_resolve_unknown_share_returns_404(client):
 def test_resolve_expired_share_returns_404(client):
     from datetime import UTC, datetime, timedelta
 
+    from backend.auth import ensure_bootstrap_user
     from backend.db import SharedSummaryRow, get_session
 
     with get_session() as s:
+        owner_id = ensure_bootstrap_user(s).id
         s.add(
             SharedSummaryRow(
                 slug="stale",
+                owner_id=owner_id,
                 params={"repo": "demo"},
                 created_at=datetime.now(UTC) - timedelta(days=30),
                 expires_at=datetime.now(UTC) - timedelta(days=1),
@@ -469,15 +472,23 @@ def test_expired_share_cleanup():
     from datetime import UTC, datetime, timedelta
 
     from backend import api
+    from backend.auth import ensure_bootstrap_user
     from backend.db import SharedSummaryRow, get_session
 
     now = datetime.now(UTC)
     with get_session() as s:
+        owner_id = ensure_bootstrap_user(s).id
         s.add(
-            SharedSummaryRow(slug="old", params={}, created_at=now, expires_at=now - timedelta(1))
+            SharedSummaryRow(
+                slug="old", owner_id=owner_id, params={}, created_at=now,
+                expires_at=now - timedelta(1),
+            )
         )
         s.add(
-            SharedSummaryRow(slug="live", params={}, created_at=now, expires_at=now + timedelta(1))
+            SharedSummaryRow(
+                slug="live", owner_id=owner_id, params={}, created_at=now,
+                expires_at=now + timedelta(1),
+            )
         )
         s.commit()
     assert api._delete_expired_summaries() == 1
@@ -493,17 +504,19 @@ def test_health_deep_no_repos_no_keys_is_ok(client):
     r = client.get("/health/deep")
     assert r.status_code == 200
     body = r.json()
-    assert body["db"] == "ok"
-    assert body["git"] == "no_repos"
+    assert body["status"] == "ok"
+    components = body["components"]
+    assert components["db"] == "ok"
+    assert components["git"] == "no_repos"
     # conftest clears every key -> all providers report missing_key, not failure.
-    assert all(state == "missing_key" for state in body["providers"].values())
+    assert all(state == "missing_key" for state in components["providers"].values())
 
 
 def test_health_deep_git_ok(client, add_repo, monkeypatch):
     add_repo()
     monkeypatch.setattr("backend.api.ls_remote", lambda url, timeout=10: None)
     body = client.get("/health/deep").json()
-    assert body["git"] == "ok"
+    assert body["components"]["git"] == "ok"
 
 
 def test_health_deep_git_failure_returns_503(client, add_repo, monkeypatch):
@@ -515,7 +528,7 @@ def test_health_deep_git_failure_returns_503(client, add_repo, monkeypatch):
     monkeypatch.setattr("backend.api.ls_remote", boom)
     r = client.get("/health/deep")
     assert r.status_code == 503
-    assert r.json()["git"] == "error"
+    assert r.json()["components"]["git"] == "error"
 
 
 # --- item 4: /summary/stream (SSE) ---

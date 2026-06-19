@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import httpx
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,13 +17,28 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend import summarizer
+from backend import config, summarizer
+from backend.auth import (
+    clear_session_cookie,
+    create_session,
+    create_user,
+    ensure_bootstrap_invite,
+    get_current_user,
+    get_optional_user,
+    normalize_email,
+    purge_expired_sessions,
+    revoke_session,
+    set_session_cookie,
+    verify_password,
+)
 from backend.config import SHARE_TTL_DAYS
 from backend.db import (
     CommitRow,
+    InviteRow,
     PromptSettingsRow,
     RepoRow,
     SharedSummaryRow,
+    UserRow,
     get_db,
     session_scope,
 )
@@ -32,7 +47,13 @@ from backend.git import get_raw_log, ls_remote, parse_log
 from backend.logging_config import configure_logging
 from backend.models import Commit
 from backend.rate_limit import check_rate_limit
-from backend.schemas import PromptSettingsUpdate, RepoCreate, ShareCreate
+from backend.schemas import (
+    LoginRequest,
+    PromptSettingsUpdate,
+    RedeemInviteRequest,
+    RepoCreate,
+    ShareCreate,
+)
 from backend.summarizer import ProviderError
 
 configure_logging()
@@ -51,11 +72,13 @@ def _ingest_all_repos() -> list[dict]:
     seconds. Returns list of per-repo result/error dicts."""
     results: list[dict] = []
     with session_scope() as s:
-        repo_data = [(r.id, r.name, r.clone_url) for r in s.scalars(select(RepoRow)).all()]
+        repo_data = [
+            (r.id, r.name, r.clone_url, r.owner_id) for r in s.scalars(select(RepoRow)).all()
+        ]
 
-    for repo_id, repo_name, clone_url in repo_data:
+    for repo_id, repo_name, clone_url, owner_id in repo_data:
         try:
-            results.append(_ingest_repo(repo_id, repo_name, clone_url))
+            results.append(_ingest_repo(repo_id, repo_name, clone_url, owner_id))
         except Exception as exc:
             log.warning("Ingest failed for repo %s: %s", repo_name, exc, extra={"repo": repo_name})
             results.append({"repo": repo_name, "error": str(exc)})
@@ -67,11 +90,13 @@ def _ingest_repo(
     repo_id: int,
     repo_name: str,
     clone_url: str,
+    owner_id: str,
     since: date | None = None,
     until: date | None = None,
     session: Session | None = None,
 ) -> dict:
-    """Ingest commits for a single repo. Returns a result dict."""
+    """Ingest commits for a single repo. Commits inherit the repo's owner.
+    Returns a result dict."""
     from backend.config import REPO_CACHE_DIR
     from backend.git import ensure_repo
 
@@ -106,6 +131,7 @@ def _ingest_repo(
                         message=c.message,
                         repo=repo_name,
                         repo_id=repo_id,
+                        owner_id=owner_id,
                         ingested_at=now,
                     )
                 )
@@ -140,10 +166,12 @@ def _delete_expired_summaries() -> int:
 
 
 def _scheduler_tick() -> None:
-    """One pass of the background work: ingest every repo, then prune expired
-    share slugs. Runs in a thread (sync DB + git) off the event loop."""
+    """One pass of the background work: ingest every repo, prune expired share
+    slugs, and purge expired sessions. Runs in a thread (sync DB + git) off
+    the event loop."""
     _ingest_all_repos()
     _delete_expired_summaries()
+    purge_expired_sessions()
 
 
 async def _scheduler_loop(interval: int) -> None:
@@ -180,6 +208,17 @@ async def _lifespan(app: FastAPI):
 
     INGEST_INTERVAL is read fresh from the environment on every startup so
     tests can flip it without reloading the config module."""
+    if config.AUTH_MODE == "multi_user":
+        with session_scope() as s:
+            token = ensure_bootstrap_invite(s)
+        if token:
+            log.warning(
+                "No admin account exists. Bootstrap an admin by redeeming this "
+                "invite for %s:  standup --redeem-invite %s",
+                config.BOOTSTRAP_OWNER_EMAIL,
+                token,
+            )
+
     interval = int(os.environ.get("INGEST_INTERVAL", "300"))
     task: asyncio.Task | None = None
     if interval > 0:
@@ -228,6 +267,13 @@ def _repo_to_dict(row: RepoRow) -> dict:
     }
 
 
+def _owned_repo(session: Session, repo_id: int, owner_id: str) -> RepoRow | None:
+    """Fetch a repo by id only if `owner_id` owns it. Returns None otherwise,
+    so callers turn cross-owner access into a 404."""
+    repo = session.get(RepoRow, repo_id)
+    return repo if repo is not None and repo.owner_id == owner_id else None
+
+
 def _row_to_dict(row: CommitRow) -> dict:
     """Convert a CommitRow to a dictionary."""
     return {
@@ -248,11 +294,13 @@ def _query_commits(
     repo: str | None,
     limit: int | None,
     offset: int,
+    owner_id: str,
     session: Session | None = None,
 ) -> tuple[int, list[dict]]:
-    """Run the filtered commits query. limit=None returns all matching rows."""
+    """Run the filtered commits query, scoped to `owner_id`. limit=None returns
+    all matching rows."""
     with session_scope(session) as s:
-        q = select(CommitRow)
+        q = select(CommitRow).where(CommitRow.owner_id == owner_id)
         if since:
             q = q.where(CommitRow.date >= since)
         if until:
@@ -260,7 +308,9 @@ def _query_commits(
         if author:
             q = q.where(CommitRow.author.ilike(f"%{_escape_like(author)}%", escape="\\"))
         if repo:
-            repo_row = s.scalar(select(RepoRow).where(RepoRow.name == repo))
+            repo_row = s.scalar(
+                select(RepoRow).where(RepoRow.name == repo, RepoRow.owner_id == owner_id)
+            )
             if repo_row is None:
                 return 0, []
             q = q.where(CommitRow.repo_id == repo_row.id)
@@ -300,11 +350,20 @@ async def _check_providers() -> dict[str, str]:
 
 
 @app.get("/health/deep")
-async def health_deep(session: Session = Depends(get_db)):
+async def health_deep(
+    session: Session = Depends(get_db),
+    user: UserRow | None = Depends(get_optional_user),
+):
     """Deep health for a real uptime check: DB connectivity, a remote-reachable
     probe against one registered repo, and provider-key reachability. Returns
     503 if any *checked* component is down (no_repos / missing_key are not
-    failures), else 200."""
+    failures), else 200.
+
+    The git probe is scoped to a repo the *caller* owns and the response never
+    names a specific repo, so an exposed multi_user deployment can't be used to
+    enumerate other users' repos via /health/deep (issue #64). An anonymous
+    caller in multi_user mode gets `git: no_repos` — the probe is skipped
+    rather than run against an arbitrary user's repo."""
     components: dict[str, object] = {}
     healthy = True
 
@@ -315,7 +374,11 @@ async def health_deep(session: Session = Depends(get_db)):
         components["db"] = "error"
         healthy = False
 
-    repo = session.scalar(select(RepoRow).limit(1))
+    repo = None
+    if user is not None:
+        repo = session.scalar(
+            select(RepoRow).where(RepoRow.owner_id == user.id).limit(1)
+        )
     if repo is None:
         components["git"] = "no_repos"
     else:
@@ -333,41 +396,178 @@ async def health_deep(session: Session = Depends(get_db)):
     if any(state == "unreachable" for state in providers.values()):
         healthy = False
 
-    return JSONResponse(status_code=200 if healthy else 503, content=components)
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={"status": "ok" if healthy else "degraded", "components": components},
+    )
 
 
 @app.get("/providers")
-def providers():
+def providers(current_user: UserRow = Depends(get_current_user)):
     """List summary providers, their default model, and whether each is
-    configured. A client (UI/CLI) can use this to let the user pick one."""
+    configured. A client (UI/CLI) can use this to let the user pick one.
+
+    In multi_user mode this is admin-only: provider-key presence is an
+    information-disclosure surface on an exposed deployment, and per-user
+    provider keys arrive in slice 2, so a non-admin has no business reading
+    the global status (issue #65). In off/single_user mode it's open as
+    before."""
+    if config.AUTH_MODE == "multi_user" and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
     return {"default": summarizer.default_provider(), "providers": summarizer.provider_status()}
 
 
-def _get_prompt_setting(session: Session, repo_id: int | None) -> PromptSettingsRow | None:
-    """The settings row owned by `repo_id` (or the global row for None). No
-    fallback — returns None when this exact scope has no row yet."""
-    return session.scalar(select(PromptSettingsRow).where(PromptSettingsRow.repo_id == repo_id))
+# --- Auth (multi_user only) -------------------------------------------------
+# The login/logout/redeem flow only exists in multi_user mode. In off and
+# single_user mode there's no login concept, so these routes 404 — the auth
+# machinery is still exercised by single_user (sessions, hashing) but the user
+# never reaches these handlers.
+
+
+def _require_multi_user() -> None:
+    if config.AUTH_MODE != "multi_user":
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+def _user_to_dict(user: UserRow) -> dict:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "display_name": user.display_name,
+        "is_admin": user.is_admin,
+    }
+
+
+@app.post("/auth/login")
+def auth_login(
+    req: LoginRequest,
+    request: Request,
+    response: Response,
+    session: Session = Depends(get_db),
+):
+    """Verify credentials, open a session, set the hardened cookie. A bad email
+    or password is an indistinguishable 401 (no account enumeration)."""
+    _require_multi_user()
+    user = session.scalar(select(UserRow).where(UserRow.email == normalize_email(req.email)))
+    if (
+        user is None
+        or not user.is_active
+        or user.password_hash is None
+        or not verify_password(req.password, user.password_hash)
+    ):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    sess = create_session(
+        user.id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        session=session,
+    )
+    set_session_cookie(response, sess.id)
+    user.last_login_at = datetime.now(UTC)
+    session.commit()
+    return _user_to_dict(user)
+
+
+@app.post("/auth/logout")
+def auth_logout(
+    request: Request,
+    response: Response,
+    session: Session = Depends(get_db),
+):
+    """Revoke the current session and clear the cookie. Idempotent — logging
+    out without a session is still a 200."""
+    _require_multi_user()
+    sid = request.cookies.get(config.SESSION_COOKIE_NAME)
+    if sid:
+        revoke_session(sid, session=session)
+    clear_session_cookie(response)
+    return {"status": "logged out"}
+
+
+@app.post("/auth/redeem-invite", status_code=201)
+def auth_redeem_invite(
+    req: RedeemInviteRequest,
+    request: Request,
+    response: Response,
+    session: Session = Depends(get_db),
+):
+    """Claim a single-use invite: create the account, set its password, mark
+    the invite used, and log the new user straight in (sets the session
+    cookie). This is the no-auth bootstrap path the CLI drives."""
+    _require_multi_user()
+    invite = session.scalar(select(InviteRow).where(InviteRow.token == req.token))
+    now = datetime.now(UTC)
+    if invite is None or invite.used_at is not None or _as_utc(invite.expires_at) <= now:
+        raise HTTPException(status_code=400, detail="Invalid or expired invite")
+
+    email = invite.email or (normalize_email(req.email) if req.email else None)
+    if not email:
+        raise HTTPException(status_code=400, detail="This invite requires an email")
+    if session.scalar(select(UserRow).where(UserRow.email == normalize_email(email))):
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+
+    user = create_user(
+        session,
+        email=email,
+        password=req.password,
+        display_name=req.display_name or "",
+        is_admin=(invite.role == "admin"),
+    )
+    invite.used_at = now
+    invite.used_by = user.id
+    sess = create_session(
+        user.id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        session=session,
+    )
+    user.last_login_at = now
+    session.commit()
+    set_session_cookie(response, sess.id)
+    return _user_to_dict(user)
+
+
+@app.get("/auth/me")
+def auth_me(current_user: UserRow = Depends(get_current_user)):
+    """The current user, for the SPA's 'logged in as' indicator and to let the
+    CLI verify a stored session is still valid."""
+    return _user_to_dict(current_user)
+
+
+def _get_prompt_setting(
+    session: Session, repo_id: int | None, owner_id: str
+) -> PromptSettingsRow | None:
+    """The settings row for `owner_id` scoped to `repo_id` (or the owner's
+    global row for None). No fallback — returns None when this exact scope has
+    no row yet."""
+    return session.scalar(
+        select(PromptSettingsRow).where(
+            PromptSettingsRow.repo_id == repo_id,
+            PromptSettingsRow.owner_id == owner_id,
+        )
+    )
 
 
 def _get_or_create_prompt_setting(
-    session: Session | None = None, repo_id: int | None = None
+    owner_id: str, session: Session | None = None, repo_id: int | None = None
 ) -> PromptSettingsRow:
     with session_scope(session) as s:
-        row = _get_prompt_setting(s, repo_id)
+        row = _get_prompt_setting(s, repo_id, owner_id)
         if row is None:
-            row = PromptSettingsRow(repo_id=repo_id)
+            row = PromptSettingsRow(repo_id=repo_id, owner_id=owner_id)
             s.add(row)
             s.commit()
             s.refresh(row)
         return row
 
 
-def _resolve_settings_dict(session: Session, repo_id: int | None) -> dict:
-    """Settings that apply to `repo_id`: its own row if it has one, else the
-    global default. This is the lookup the summarizer uses per repo."""
-    row = _get_prompt_setting(session, repo_id) if repo_id is not None else None
+def _resolve_settings_dict(session: Session, repo_id: int | None, owner_id: str) -> dict:
+    """Settings that apply to `repo_id` for `owner_id`: its own row if it has
+    one, else the owner's global default. This is the lookup the summarizer
+    uses per repo."""
+    row = _get_prompt_setting(session, repo_id, owner_id) if repo_id is not None else None
     if row is None:
-        row = _get_or_create_prompt_setting(session, repo_id=None)
+        row = _get_or_create_prompt_setting(owner_id, session, repo_id=None)
     return _settings_row_to_dict(row)
 
 
@@ -385,13 +585,17 @@ def _settings_row_to_dict(row: PromptSettingsRow) -> dict:
 
 
 @app.get("/settings/prompt")
-def get_prompt_settings(repo_id: int | None = None, session: Session = Depends(get_db)):
+def get_prompt_settings(
+    repo_id: int | None = None,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
     """Return the prompt settings for `repo_id`. If that repo has no row of its
     own, return the global default (its `repo_id` will be null, signalling the
     UI that the values are inherited rather than repo-specific)."""
-    row = _get_prompt_setting(session, repo_id) if repo_id is not None else None
+    row = _get_prompt_setting(session, repo_id, current_user.id) if repo_id is not None else None
     if row is None:
-        row = _get_or_create_prompt_setting(session, repo_id=None)
+        row = _get_or_create_prompt_setting(current_user.id, session, repo_id=None)
     return _settings_row_to_dict(row)
 
 
@@ -400,13 +604,14 @@ def update_prompt_settings(
     update: PromptSettingsUpdate,
     repo_id: int | None = None,
     session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
 ):
-    if repo_id is not None and session.get(RepoRow, repo_id) is None:
+    if repo_id is not None and _owned_repo(session, repo_id, current_user.id) is None:
         raise HTTPException(status_code=404, detail="Repo not found")
 
-    row = _get_prompt_setting(session, repo_id)
+    row = _get_prompt_setting(session, repo_id, current_user.id)
     if row is None:
-        row = PromptSettingsRow(repo_id=repo_id)
+        row = PromptSettingsRow(repo_id=repo_id, owner_id=current_user.id)
         session.add(row)
 
     update_data = update.model_dump(exclude_none=True)
@@ -428,8 +633,11 @@ def list_commits(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
 ):
-    total, commits = _query_commits(since, until, author, repo, limit, offset, session=session)
+    total, commits = _query_commits(
+        since, until, author, repo, limit, offset, current_user.id, session=session
+    )
     return {"total": total, "commits": commits}
 
 
@@ -438,14 +646,23 @@ def _looks_like_hash(value: str) -> bool:
 
 
 @app.get("/commits/{hash}")
-def get_commit(hash: str, session: Session = Depends(get_db)):
+def get_commit(
+    hash: str,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
     if not _looks_like_hash(hash):
         raise HTTPException(
             status_code=400,
             detail="Hash must be hex and at least 7 characters",
         )
 
-    rows = session.scalars(select(CommitRow).where(CommitRow.hash.startswith(hash.lower()))).all()
+    rows = session.scalars(
+        select(CommitRow).where(
+            CommitRow.hash.startswith(hash.lower()),
+            CommitRow.owner_id == current_user.id,
+        )
+    ).all()
 
     if not rows:
         raise HTTPException(status_code=404, detail="Commit not found")
@@ -478,8 +695,11 @@ def _aggregate_commits(
     return by_repo, by_day, repo_commits
 
 
-def _repo_name_to_id(session: Session) -> dict[str, int]:
-    return {r.name: r.id for r in session.scalars(select(RepoRow)).all()}
+def _repo_name_to_id(session: Session, owner_id: str) -> dict[str, int]:
+    return {
+        r.name: r.id
+        for r in session.scalars(select(RepoRow).where(RepoRow.owner_id == owner_id)).all()
+    }
 
 
 def _check_ai_preconditions(request: Request, provider: str | None, total: int):
@@ -516,6 +736,7 @@ async def summary(
     combined: bool = False,
     commits: bool = False,
     session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
 ):
     """Commit summary for the period. With ai=true, returns one AI summary per
     repo (ai_summaries); the additional whole-log summary (ai_summary) costs an
@@ -528,7 +749,7 @@ async def summary(
     ingest scheduler (see _scheduler_loop) and the per-repo BackgroundTask
     on POST /repos. No git fetch happens here."""
     total, commit_rows = _query_commits(
-        since, until, author, repo, limit=None, offset=0, session=session
+        since, until, author, repo, limit=None, offset=0, owner_id=current_user.id, session=session
     )
     by_repo, by_day, repo_commits = _aggregate_commits(commit_rows)
     log_by_repo = {name: format_log(cs) for name, cs in repo_commits.items()}
@@ -539,10 +760,11 @@ async def summary(
     ai_summaries = None
     if ai:
         _check_ai_preconditions(request, provider, total)
-        name_to_id = _repo_name_to_id(session)
-        global_settings = _resolve_settings_dict(session, None)
+        name_to_id = _repo_name_to_id(session, current_user.id)
+        global_settings = _resolve_settings_dict(session, None, current_user.id)
         settings_by_repo = {
-            name: _resolve_settings_dict(session, name_to_id.get(name)) for name in log_by_repo
+            name: _resolve_settings_dict(session, name_to_id.get(name), current_user.id)
+            for name in log_by_repo
         }
         ai_summaries = await summarizer.generate_summary_per_repo(
             log_by_repo,
@@ -594,6 +816,7 @@ async def summary_stream(
     repo: str | None = None,
     provider: str | None = None,
     session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
 ):
     """Server-sent-events variant of /summary?ai=true. Emits a `meta` event
     (the same stats/log payload /summary returns) followed by per-repo `delta`
@@ -605,16 +828,17 @@ async def summary_stream(
     the request handler returns and the Depends-injected session is closed, so
     it must only touch the provider, never the DB."""
     total, commit_rows = _query_commits(
-        since, until, author, repo, limit=None, offset=0, session=session
+        since, until, author, repo, limit=None, offset=0, owner_id=current_user.id, session=session
     )
     _check_ai_preconditions(request, provider, total)
 
     by_repo, by_day, repo_commits = _aggregate_commits(commit_rows)
     log_by_repo = {name: format_log(cs) for name, cs in repo_commits.items()}
-    name_to_id = _repo_name_to_id(session)
-    global_settings = _resolve_settings_dict(session, None)
+    name_to_id = _repo_name_to_id(session, current_user.id)
+    global_settings = _resolve_settings_dict(session, None, current_user.id)
     settings_by_repo = {
-        name: _resolve_settings_dict(session, name_to_id.get(name)) for name in log_by_repo
+        name: _resolve_settings_dict(session, name_to_id.get(name), current_user.id)
+        for name in log_by_repo
     }
     resolved = summarizer.resolve_provider(provider)
 
@@ -660,13 +884,21 @@ async def summary_stream(
 
 
 @app.get("/repos")
-def list_repos(session: Session = Depends(get_db)):
-    rows = session.scalars(select(RepoRow)).all()
+def list_repos(
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    rows = session.scalars(select(RepoRow).where(RepoRow.owner_id == current_user.id)).all()
     return {"repos": [_repo_to_dict(r) for r in rows]}
 
 
 @app.post("/repos", status_code=201)
-def create_repo(req: RepoCreate, background: BackgroundTasks, session: Session = Depends(get_db)):
+def create_repo(
+    req: RepoCreate,
+    background: BackgroundTasks,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
     from backend.git import _repo_name_from_url, is_remote_url
 
     if not is_remote_url(req.url):
@@ -684,19 +916,24 @@ def create_repo(req: RepoCreate, background: BackgroundTasks, session: Session =
     repo = RepoRow(
         name=name,
         clone_url=req.url,
+        owner_id=current_user.id,
         added_at=datetime.now(UTC),
     )
     session.add(repo)
     session.commit()
     session.refresh(repo)
 
-    background.add_task(_ingest_repo, repo.id, name, req.url)
+    background.add_task(_ingest_repo, repo.id, name, req.url, current_user.id)
     return _repo_to_dict(repo)
 
 
 @app.delete("/repos/{repo_id}", status_code=204)
-def delete_repo(repo_id: int, session: Session = Depends(get_db)):
-    repo = session.get(RepoRow, repo_id)
+def delete_repo(
+    repo_id: int,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    repo = _owned_repo(session, repo_id, current_user.id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repo not found")
     session.delete(repo)
@@ -704,14 +941,20 @@ def delete_repo(repo_id: int, session: Session = Depends(get_db)):
 
 
 @app.post("/summaries", status_code=201)
-def create_share(req: ShareCreate, session: Session = Depends(get_db)):
+def create_share(
+    req: ShareCreate,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
     """Persist the parameters of a summary behind a short slug. The slug is the
-    only secret guarding it — resolving /summaries/{slug} re-runs the query. No
-    auth: the threat model is a single user behind Tailscale."""
+    only secret guarding it — resolving /summaries/{slug} re-runs the query.
+    The share records its creator (`owner_id`); read-side ownership enforcement
+    lands in slice 2 (issue #71)."""
     now = datetime.now(UTC)
     slug = secrets.token_urlsafe(8)
     row = SharedSummaryRow(
         slug=slug,
+        owner_id=current_user.id,
         params=req.model_dump(),
         created_at=now,
         expires_at=now + timedelta(days=SHARE_TTL_DAYS),
