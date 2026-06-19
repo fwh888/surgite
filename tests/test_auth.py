@@ -197,7 +197,9 @@ def test_redeem_pinned_invite_creates_user_and_logs_in(client, multi_user):
     assert r.json()["email"] == "newbie@example.com"
     assert r.json()["is_admin"] is False
     sid = r.headers["set-cookie"].split(f"{COOKIE}=", 1)[1].split(";", 1)[0]
-    assert client.get("/auth/me", headers=_cookie_header(sid)).json()["email"] == "newbie@example.com"
+    assert (
+        client.get("/auth/me", headers=_cookie_header(sid)).json()["email"] == "newbie@example.com"
+    )
 
 
 def test_redeem_admin_invite_grants_admin(client, multi_user):
@@ -211,9 +213,12 @@ def test_redeem_admin_invite_grants_admin(client, multi_user):
 def test_redeem_used_invite_rejected(client, multi_user):
     with get_session() as s:
         token = create_invite(s, email="once@example.com").token
-    assert client.post(
-        "/auth/redeem-invite", json={"token": token, "password": "first-pass-123"}
-    ).status_code == 201
+    assert (
+        client.post(
+            "/auth/redeem-invite", json={"token": token, "password": "first-pass-123"}
+        ).status_code
+        == 201
+    )
     # Second redemption of the same token fails.
     r = client.post("/auth/redeem-invite", json={"token": token, "password": "second-pass-12"})
     assert r.status_code == 400

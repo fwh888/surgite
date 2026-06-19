@@ -480,13 +480,19 @@ def test_expired_share_cleanup():
         owner_id = ensure_bootstrap_user(s).id
         s.add(
             SharedSummaryRow(
-                slug="old", owner_id=owner_id, params={}, created_at=now,
+                slug="old",
+                owner_id=owner_id,
+                params={},
+                created_at=now,
                 expires_at=now - timedelta(1),
             )
         )
         s.add(
             SharedSummaryRow(
-                slug="live", owner_id=owner_id, params={}, created_at=now,
+                slug="live",
+                owner_id=owner_id,
+                params={},
+                created_at=now,
                 expires_at=now + timedelta(1),
             )
         )

@@ -57,7 +57,7 @@ def verify_password(plain: str, hashed: str) -> bool:
     malformed hash — both are just a failed verification."""
     try:
         return _ph.verify(hashed, plain)
-    except (VerifyMismatchError, InvalidHashError):
+    except VerifyMismatchError, InvalidHashError:
         return False
 
 

@@ -376,9 +376,7 @@ async def health_deep(
 
     repo = None
     if user is not None:
-        repo = session.scalar(
-            select(RepoRow).where(RepoRow.owner_id == user.id).limit(1)
-        )
+        repo = session.scalar(select(RepoRow).where(RepoRow.owner_id == user.id).limit(1))
     if repo is None:
         components["git"] = "no_repos"
     else:

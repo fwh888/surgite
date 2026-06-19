@@ -136,7 +136,8 @@ def upgrade() -> None:
     for table in _OWNED_TABLES:
         op.add_column(table, sa.Column("owner_id", sa.String(), nullable=True))
         bind.execute(
-            sa.text(f"UPDATE {table} SET owner_id = :oid"), {"oid": bootstrap_id}  # noqa: S608
+            sa.text(f"UPDATE {table} SET owner_id = :oid"),
+            {"oid": bootstrap_id},  # noqa: S608
         )
         op.alter_column(table, "owner_id", nullable=False)
         op.create_foreign_key(
