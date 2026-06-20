@@ -26,7 +26,7 @@ from backend.auth import (
     revoke_session,
     verify_password,
 )
-from backend.db import SessionRow, get_session
+from backend.db import SessionRow, UserRow, get_session
 
 COOKIE = config.SESSION_COOKIE_NAME
 
@@ -349,3 +349,223 @@ def test_off_mode_no_bootstrap_invite():
 
     with get_session() as s:
         assert ensure_bootstrap_invite(s) is None
+
+
+# --- Password change (issue #77) --------------------------------------------
+
+
+def test_password_change_happy_path(client, multi_user):
+    uid = _make_user(email="chg@example.com", password="old-pass-1234")
+    sid = _make_session(uid)
+    r = client.put(
+        "/auth/password",
+        headers=_cookie_header(sid),
+        json={"current_password": "old-pass-1234", "new_password": "new-pass-5678"},
+    )
+    assert r.status_code == 204
+    # New password works on a fresh login.
+    r = client.post("/auth/login", json={"email": "chg@example.com", "password": "new-pass-5678"})
+    assert r.status_code == 200
+
+
+def test_password_change_wrong_current_returns_401(client, multi_user):
+    uid = _make_user(email="chg@example.com", password="right-old")
+    sid = _make_session(uid)
+    r = client.put(
+        "/auth/password",
+        headers=_cookie_header(sid),
+        json={"current_password": "WRONG", "new_password": "should-not-stick"},
+    )
+    assert r.status_code == 401
+    # Old password still works.
+    r = client.post("/auth/login", json={"email": "chg@example.com", "password": "right-old"})
+    assert r.status_code == 200
+
+
+def test_password_change_revokes_other_sessions(client, multi_user):
+    uid = _make_user(email="chg@example.com", password="old-pass-1234")
+    # The "other" session — created out-of-band, so the PUT request can
+    # identify the calling session by its cookie and revoke the rest.
+    other = _make_session(uid)
+    sid = _make_session(uid)
+    r = client.put(
+        "/auth/password",
+        headers=_cookie_header(sid),
+        json={"current_password": "old-pass-1234", "new_password": "new-pass-5678"},
+    )
+    assert r.status_code == 204
+    # The "other" session is gone.
+    with get_session() as s:
+        assert s.get(SessionRow, other) is None
+
+
+def test_password_change_keeps_current_session(client, multi_user):
+    uid = _make_user(email="chg@example.com", password="old-pass-1234")
+    sid = _make_session(uid)
+    r = client.put(
+        "/auth/password",
+        headers=_cookie_header(sid),
+        json={"current_password": "old-pass-1234", "new_password": "new-pass-5678"},
+    )
+    assert r.status_code == 204
+    # The same sid is still valid on a protected route.
+    assert client.get("/auth/me", headers=_cookie_header(sid)).status_code == 200
+
+
+def test_password_change_off_mode_returns_404(client):
+    # AUTH_MODE defaults to off here.
+    r = client.put("/auth/password", json={"current_password": "x", "new_password": "y"})
+    assert r.status_code == 404
+
+
+def test_password_change_single_user_mode_returns_404(client, monkeypatch):
+    monkeypatch.setattr(config, "AUTH_MODE", "single_user")
+    r = client.put("/auth/password", json={"current_password": "x", "new_password": "y"})
+    assert r.status_code == 404
+
+
+# --- Admin-mediated password reset (issue #77) ------------------------------
+
+
+def test_admin_reset_password_mints_token(client, multi_user):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    target = _make_user(email="victim@example.com", password="old-pass-1234")
+    r = client.post(
+        f"/admin/users/{target}/reset-password",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reset_token"].startswith("pr_")
+    assert "expires_at" in body
+
+
+def test_admin_reset_password_requires_admin(client, multi_user):
+    target = _make_user(email="victim@example.com", password="old-pass-1234")
+    attacker = _make_user(email="attacker@example.com")
+    r = client.post(
+        f"/admin/users/{target}/reset-password",
+        headers=_cookie_header(_make_session(attacker)),
+    )
+    assert r.status_code == 403
+
+
+def test_admin_reset_password_unknown_user_returns_404(client, multi_user):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    r = client.post(
+        "/admin/users/does-not-exist/reset-password",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    assert r.status_code == 404
+
+
+# --- Reset token redemption (issue #77) -------------------------------------
+
+
+def test_reset_token_redeem_sets_new_password(client, multi_user):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    target = _make_user(email="victim@example.com", password="old-pass-1234")
+    r = client.post(
+        f"/admin/users/{target}/reset-password",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    token = r.json()["reset_token"]
+    r = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": token, "new_password": "freshly-chosen-pw"},
+    )
+    assert r.status_code == 204
+    # New password works on a fresh login.
+    r = client.post(
+        "/auth/login", json={"email": "victim@example.com", "password": "freshly-chosen-pw"}
+    )
+    assert r.status_code == 200
+    # Old password is gone.
+    r = client.post(
+        "/auth/login", json={"email": "victim@example.com", "password": "old-pass-1234"}
+    )
+    assert r.status_code == 401
+
+
+def test_reset_token_redeem_revokes_all_sessions(client, multi_user):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    target = _make_user(email="victim@example.com", password="old-pass-1234")
+    # Two existing sessions before the reset.
+    keep = _make_session(target)
+    other = _make_session(target)
+    r = client.post(
+        f"/admin/users/{target}/reset-password",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    token = r.json()["reset_token"]
+    r = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": token, "new_password": "freshly-chosen-pw"},
+    )
+    assert r.status_code == 204
+    with get_session() as s:
+        # All sessions for the target user are gone, even the one we
+        # "kept" — reset is a full session wipe, not a partial one.
+        assert s.get(SessionRow, keep) is None
+        assert s.get(SessionRow, other) is None
+
+
+def test_reset_token_redeem_clears_lockout(client, multi_user):
+    from backend.auth import record_login_failure
+
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    target = _make_user(email="victim@example.com", password="old-pass-1234")
+    # Force a lockout.
+    with get_session() as s:
+        user = s.get(UserRow, target)
+        for _ in range(config.LOGIN_LOCKOUT_THRESHOLD):
+            record_login_failure(user, session=s)
+        assert user.locked_until is not None
+    # Mint and redeem a reset token.
+    r = client.post(
+        f"/admin/users/{target}/reset-password",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    token = r.json()["reset_token"]
+    r = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": token, "new_password": "freshly-chosen-pw"},
+    )
+    assert r.status_code == 204
+    # Login works with the new password (no more lockout).
+    r = client.post(
+        "/auth/login",
+        json={"email": "victim@example.com", "password": "freshly-chosen-pw"},
+    )
+    assert r.status_code == 200
+
+
+def test_reset_token_redeem_expired_returns_400(client, multi_user):
+    from datetime import timedelta
+
+    from backend.auth import mint_password_reset
+    from backend.db import PasswordResetRow
+
+    target = _make_user(email="victim@example.com", password="old-pass-1234")
+    token, _ = mint_password_reset(target)
+    # Force the row's expiry into the past.
+    with get_session() as s:
+        rid = token.split("_", 2)[1]
+        row = s.get(PasswordResetRow, rid)
+        assert row is not None
+        row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        s.commit()
+    r = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": token, "new_password": "should-not-stick"},
+    )
+    assert r.status_code == 400
+
+
+def test_reset_token_redeem_off_mode_returns_404(client):
+    # AUTH_MODE defaults to off here.
+    r = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "pr_a_a", "new_password": "x"},
+    )
+    assert r.status_code == 404

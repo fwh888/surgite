@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from backend import config, summarizer
 from backend.audit import audit
 from backend.auth import (
+    change_password,
     clear_session_cookie,
     create_invite,
     create_session,
@@ -29,10 +30,13 @@ from backend.auth import (
     get_optional_user,
     is_locked,
     issue_api_key,
+    mint_password_reset,
     normalize_email,
     purge_expired_sessions,
     record_login_failure,
     record_login_success,
+    redeem_password_reset,
+    revoke_all_sessions,
     revoke_api_key,
     revoke_session,
     set_session_cookie,
@@ -65,6 +69,8 @@ from backend.schemas import (
     ApiKeyCreate,
     InviteCreateRequest,
     LoginRequest,
+    PasswordChange,
+    PasswordResetConfirm,
     PromptSettingsUpdate,
     ProviderKeysUpdate,
     RedeemInviteRequest,
@@ -283,7 +289,14 @@ app.add_middleware(
 #    state-changing route, so the header requirement is invisible to
 #    it.
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-_CSRF_EXEMPT_PATHS = {"/auth/login", "/auth/redeem-invite", "/auth/logout", "/signup", "/login"}
+_CSRF_EXEMPT_PATHS = {
+    "/auth/login",
+    "/auth/redeem-invite",
+    "/auth/logout",
+    "/auth/password-reset/confirm",
+    "/signup",
+    "/login",
+}
 _CSRF_HEADER = "x-requested-with"
 _CSRF_HEADER_VALUE = "standup-web"
 
@@ -671,6 +684,92 @@ def auth_me(current_user: UserRow = Depends(get_current_user)):
     """The current user, for the SPA's 'logged in as' indicator and to let the
     CLI verify a stored session is still valid."""
     return _user_to_dict(current_user)
+
+
+# --- Password change (issue #77) --------------------------------------------
+
+
+@app.put("/auth/password")
+def auth_change_password(
+    req: PasswordChange,
+    request: Request,
+    response: Response,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Self-service password change. Verifies the current password, hashes
+    the new one, and revokes all of the user's *other* sessions (a stolen
+    cookie stops working). The current session is kept so the user isn't
+    logged out of the page that triggered the change. 401 on a wrong
+    current password; 404 in off/single_user mode."""
+    _require_multi_user()
+    if not verify_password(req.current_password, current_user.password_hash or ""):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    change_password(current_user.id, new_password=req.new_password)
+    sid = request.cookies.get(config.SESSION_COOKIE_NAME)
+    revoke_all_sessions(current_user.id, keep=sid)
+    audit(
+        "auth.password.change",
+        actor_id=current_user.id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return Response(status_code=204)
+
+
+# --- Password reset (issue #77) ---------------------------------------------
+# Admin mints a one-time token, delivers it out of band, the user redeems
+# it. 15-minute expiry; on success every session is revoked and the
+# lockout is cleared.
+
+
+@app.post("/admin/users/{user_id}/reset-password", status_code=201)
+def admin_reset_password(
+    user_id: str,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Mint a one-time password-reset token for ``user_id``. Admin-only.
+    Returns the token and its expiry; the admin delivers the token out
+    of band (the email-delivered story is a 0.6.0 follow-up). 404 if
+    the user doesn't exist."""
+    _require_admin(current_user)
+    target = session.get(UserRow, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    token, expires_at = mint_password_reset(target.id)
+    audit(
+        "admin.user.reset_password",
+        actor_id=current_user.id,
+        target_type="user",
+        target_id=user_id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return {"reset_token": token, "expires_at": expires_at.isoformat()}
+
+
+@app.post("/auth/password-reset/confirm", status_code=204)
+def auth_reset_password_confirm(
+    req: PasswordResetConfirm,
+    request: Request,
+):
+    """Redeem a reset token. Public (no session required) and in the CSRF
+    allowlist for the same reason as /auth/login — a freshly-loaded
+    redemption form has no session cookie to defend. On success every
+    session for the user is revoked and the lockout is cleared."""
+    _require_multi_user()
+    user_id = redeem_password_reset(req.token, new_password=req.new_password)
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    audit(
+        "auth.password.reset",
+        actor_id=user_id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return Response(status_code=204)
 
 
 # --- API keys (Bearer auth) --------------------------------------------------

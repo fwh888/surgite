@@ -83,3 +83,21 @@ class ProviderKeysUpdate(BaseModel):
     provider: str
     key: str | None = None
     clear: bool = False
+
+
+class PasswordChange(BaseModel):
+    """Self-service password change (issue #77). The user proves control
+    of the current password; on success every other session is revoked
+    and the current session is kept."""
+
+    current_password: str
+    new_password: str
+
+
+class PasswordResetConfirm(BaseModel):
+    """Redeem an admin-minted one-time reset token. 15-minute expiry,
+    one-time use; on success all of the user's sessions are revoked
+    and the lockout is cleared."""
+
+    token: str
+    new_password: str

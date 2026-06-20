@@ -233,6 +233,30 @@ class ProviderKeyRow(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PasswordResetRow(Base):
+    """A one-time password-reset token (issue #77). The admin mints a
+    token, delivers it out of band, the user redeems it at
+    ``POST /auth/password-reset/confirm``. The row stores only an
+    argon2id hash of the token (we look it up via the prefix index on
+    ``id``, which is a short random identifier prefixed to the token
+    the user actually receives — see ``backend.auth.mint_password_reset``).
+    Used rows are kept with ``used_at`` set for audit; the lookup
+    rejects them on read.
+    """
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+
+
 class AuditLogRow(Base):
     """An append-only event log. `actor_id` is nullable so pre-auth events
     (login failures, invite redemptions) can be recorded against an
