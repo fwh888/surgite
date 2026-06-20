@@ -37,7 +37,16 @@ def multi_user(monkeypatch):
 
 
 def _cookie_header(sid: str) -> dict:
-    return {"Cookie": f"{COOKIE}={sid}"}
+    """Headers that carry a session cookie for an authenticated request.
+
+    In multi_user mode the SPA also sends ``X-Requested-With: standup-web``
+    on every state-changing request (CSRF defence in depth, plan #66).
+    The test client mirrors that here so the auth+CSRF combination is
+    exercised end-to-end."""
+    return {
+        "Cookie": f"{COOKIE}={sid}",
+        "X-Requested-With": "standup-web",
+    }
 
 
 def _make_user(email="a@example.com", password="pw-correct-horse", is_admin=False):

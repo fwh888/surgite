@@ -18,24 +18,35 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend import config, summarizer
+from backend.audit import audit
 from backend.auth import (
     clear_session_cookie,
+    create_invite,
     create_session,
     create_user,
     ensure_bootstrap_invite,
     get_current_user,
     get_optional_user,
+    is_locked,
+    issue_api_key,
     normalize_email,
     purge_expired_sessions,
+    record_login_failure,
+    record_login_success,
+    revoke_api_key,
     revoke_session,
     set_session_cookie,
+    unlock_user,
     verify_password,
 )
 from backend.config import SHARE_TTL_DAYS
 from backend.db import (
+    ApiKeyRow,
+    AuditLogRow,
     CommitRow,
     InviteRow,
     PromptSettingsRow,
+    ProviderKeyRow,
     RepoRow,
     SharedSummaryRow,
     UserRow,
@@ -46,14 +57,21 @@ from backend.formatter import format_log
 from backend.git import get_raw_log, ls_remote, parse_log
 from backend.logging_config import configure_logging
 from backend.models import Commit
-from backend.rate_limit import check_rate_limit
+from backend.rate_limit import (
+    check_ip_outer_rate_limit,
+    check_summary_user_limit,
+)
 from backend.schemas import (
+    ApiKeyCreate,
+    InviteCreateRequest,
     LoginRequest,
     PromptSettingsUpdate,
+    ProviderKeysUpdate,
     RedeemInviteRequest,
     RepoCreate,
     ShareCreate,
 )
+from backend.secrets import encrypt
 from backend.summarizer import ProviderError
 
 configure_logging()
@@ -247,6 +265,45 @@ app.add_middleware(
 )
 
 
+# CSRF defence in depth (slice 2 plan #66). The session cookie is
+# ``SameSite=Lax`` so the browser won't send it on cross-site POSTs; this
+# adds a header check on top so a same-site XHR can't get away with a
+# missing intent signal either.
+#
+# Rules:
+#  - The check is only active in multi_user mode (no session cookie in
+#    off/single_user; the test suite would burn cycles on noise).
+#  - Safe methods (GET/HEAD/OPTIONS) and a small allowlist (login,
+#    logout, redeem-invite, health) are exempt — login and redeem
+#    are pre-session endpoints where the cookie doesn't exist yet,
+#    and the SameSite=Lax cookie already provides the cross-site
+#    protection.
+#  - The SPA sends ``X-Requested-With: standup-web`` on every state-
+#    changing request. The CLI uses Bearer auth and never hits a
+#    state-changing route, so the header requirement is invisible to
+#    it.
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_CSRF_EXEMPT_PATHS = {"/auth/login", "/auth/redeem-invite", "/auth/logout"}
+_CSRF_HEADER = "x-requested-with"
+_CSRF_HEADER_VALUE = "standup-web"
+
+
+@app.middleware("http")
+async def _csrf_middleware(request: Request, call_next):
+    if (
+        config.AUTH_MODE == "multi_user"
+        and request.method in _UNSAFE_METHODS
+        and request.url.path not in _CSRF_EXEMPT_PATHS
+        and not request.url.path.startswith("/static/")
+    ):
+        if request.headers.get(_CSRF_HEADER) != _CSRF_HEADER_VALUE:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Missing or invalid X-Requested-With header"},
+            )
+    return await call_next(request)
+
+
 @app.exception_handler(SQLAlchemyError)
 async def _sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
     return JSONResponse(status_code=503, content={"detail": "Database unavailable"})
@@ -406,12 +463,18 @@ def providers(current_user: UserRow = Depends(get_current_user)):
     configured. A client (UI/CLI) can use this to let the user pick one.
 
     In multi_user mode this is admin-only: provider-key presence is an
-    information-disclosure surface on an exposed deployment, and per-user
-    provider keys arrive in slice 2, so a non-admin has no business reading
-    the global status (issue #65). In off/single_user mode it's open as
-    before."""
+    information-disclosure surface on an exposed deployment. The status
+    shown is the *calling admin's* per-user view (their own
+    ``provider_keys`` rows + the env-var fallback), so the admin sees
+    what they personally can use. In off/single_user mode it's the
+    env-var view and is open as before (slice 2 plan #73)."""
     if config.AUTH_MODE == "multi_user" and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin only")
+    if config.AUTH_MODE == "multi_user":
+        return {
+            "default": summarizer.default_provider(),
+            "providers": summarizer.provider_status_for(current_user.id),
+        }
     return {"default": summarizer.default_provider(), "providers": summarizer.provider_status()}
 
 
@@ -443,26 +506,69 @@ def auth_login(
     response: Response,
     session: Session = Depends(get_db),
 ):
-    """Verify credentials, open a session, set the hardened cookie. A bad email
-    or password is an indistinguishable 401 (no account enumeration)."""
+    """Verify credentials, open a session, set the hardened cookie. A bad
+    email or password is an indistinguishable 401 (no account enumeration).
+    A locked account is a 423 with a Retry-After header.
+
+    Lockout (slice 2 plan #69): ``LOGIN_LOCKOUT_THRESHOLD`` consecutive
+    failures trip a ``LOGIN_LOCKOUT_DURATION_MINUTES``-minute lockout
+    for the user. The counter is reset on success. A locked user sees
+    the same 401 a wrong-password user does (no lockout-state leak)."""
     _require_multi_user()
+    ip = request.client.host if request.client else None
     user = session.scalar(select(UserRow).where(UserRow.email == normalize_email(req.email)))
-    if (
+    bad = (
         user is None
         or not user.is_active
         or user.password_hash is None
         or not verify_password(req.password, user.password_hash)
-    ):
+    )
+    if bad:
+        if user is not None and user.password_hash is not None and user.is_active:
+            # Only count a failure if the user exists with a password and
+            # is active — an unknown-email attempt is a 401 with no
+            # counter to bump (we have no user to lock out).
+            record_login_failure(user, session=session)
+        audit(
+            "auth.login.fail",
+            actor_id=user.id if user else None,
+            ip=ip,
+            user_agent=request.headers.get("user-agent"),
+            metadata={"email": normalize_email(req.email)},
+        )
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    # `bad` was False, so `user` is a real active user with a password hash.
+    assert user is not None
+    if is_locked(user):
+        assert user.locked_until is not None  # is_locked returned True
+        retry_after = max(1, int((_as_utc(user.locked_until) - datetime.now(UTC)).total_seconds()))
+        audit(
+            "auth.login.locked",
+            actor_id=user.id,
+            ip=ip,
+            user_agent=request.headers.get("user-agent"),
+        )
+        raise HTTPException(
+            status_code=423,
+            detail="Account temporarily locked. Try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
     sess = create_session(
         user.id,
-        ip=request.client.host if request.client else None,
+        ip=ip,
         user_agent=request.headers.get("user-agent"),
         session=session,
     )
     set_session_cookie(response, sess.id)
     user.last_login_at = datetime.now(UTC)
+    record_login_success(user, session=session)
     session.commit()
+    audit(
+        "auth.login.success",
+        actor_id=user.id,
+        ip=ip,
+        user_agent=request.headers.get("user-agent"),
+    )
     return _user_to_dict(user)
 
 
@@ -479,6 +585,11 @@ def auth_logout(
     if sid:
         revoke_session(sid, session=session)
     clear_session_cookie(response)
+    audit(
+        "auth.logout",
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"status": "logged out"}
 
 
@@ -493,15 +604,28 @@ def auth_redeem_invite(
     the invite used, and log the new user straight in (sets the session
     cookie). This is the no-auth bootstrap path the CLI drives."""
     _require_multi_user()
+    ip = request.client.host if request.client else None
     invite = session.scalar(select(InviteRow).where(InviteRow.token == req.token))
     now = datetime.now(UTC)
     if invite is None or invite.used_at is not None or _as_utc(invite.expires_at) <= now:
+        audit(
+            "auth.invite.fail",
+            ip=ip,
+            user_agent=request.headers.get("user-agent"),
+            metadata={"reason": "invalid_or_expired"},
+        )
         raise HTTPException(status_code=400, detail="Invalid or expired invite")
 
     email = invite.email or (normalize_email(req.email) if req.email else None)
     if not email:
         raise HTTPException(status_code=400, detail="This invite requires an email")
     if session.scalar(select(UserRow).where(UserRow.email == normalize_email(email))):
+        audit(
+            "auth.invite.fail",
+            ip=ip,
+            user_agent=request.headers.get("user-agent"),
+            metadata={"reason": "email_taken", "email": email},
+        )
         raise HTTPException(status_code=409, detail="An account with this email already exists")
 
     user = create_user(
@@ -515,13 +639,22 @@ def auth_redeem_invite(
     invite.used_by = user.id
     sess = create_session(
         user.id,
-        ip=request.client.host if request.client else None,
+        ip=ip,
         user_agent=request.headers.get("user-agent"),
         session=session,
     )
     user.last_login_at = now
     session.commit()
     set_session_cookie(response, sess.id)
+    audit(
+        "auth.invite.redeem",
+        actor_id=user.id,
+        target_type="invite",
+        target_id=invite.id,
+        ip=ip,
+        user_agent=request.headers.get("user-agent"),
+        metadata={"role": invite.role},
+    )
     return _user_to_dict(user)
 
 
@@ -530,6 +663,314 @@ def auth_me(current_user: UserRow = Depends(get_current_user)):
     """The current user, for the SPA's 'logged in as' indicator and to let the
     CLI verify a stored session is still valid."""
     return _user_to_dict(current_user)
+
+
+# --- API keys (Bearer auth) --------------------------------------------------
+# Per-user long-lived keys for the CLI (slice 2 plan #65). The full key
+# material is shown exactly once on creation; only the argon2id hash is
+# persisted. Issue is throttled at 10/day per user (LOGIN_LOCKOUT-style
+# counter on a small KeyIssuanceRow, but the plan says "per-user rate
+# limit on key issuance"; we use a simple per-user counter in api_keys
+# and rely on the day-old windowing being done in the API call.)
+
+
+def _api_key_to_dict(row: ApiKeyRow) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "prefix": row.prefix,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
+        "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+        "revoked_at": row.revoked_at.isoformat() if row.revoked_at else None,
+    }
+
+
+@app.post("/auth/api-keys", status_code=201)
+def create_api_key(
+    req: ApiKeyCreate,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Mint a new per-user API key (slice 2 plan #65). The full key is
+    returned in the response and never again — callers must store it
+    in their secret manager immediately. Rate limited to
+    ``API_KEY_ISSUE_LIMIT`` per user per ``API_KEY_ISSUE_WINDOW_HOURS``."""
+    _require_multi_user()
+    recent = session.scalar(
+        select(func.count())
+        .select_from(ApiKeyRow)
+        .where(
+            ApiKeyRow.user_id == current_user.id,
+            ApiKeyRow.created_at
+            >= datetime.now(UTC) - timedelta(hours=config.API_KEY_ISSUE_WINDOW_HOURS),
+        )
+    )
+    if (recent or 0) >= config.API_KEY_ISSUE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"API key issuance limit: max "
+                f"{config.API_KEY_ISSUE_LIMIT} per "
+                f"{config.API_KEY_ISSUE_WINDOW_HOURS}h per user"
+            ),
+            headers={"Retry-After": str(config.API_KEY_ISSUE_WINDOW_HOURS * 3600)},
+        )
+    full, kid = issue_api_key(current_user.id, name=req.name, expires_at=req.expires_at)
+    audit(
+        "auth.api_key.create",
+        actor_id=current_user.id,
+        target_type="api_key",
+        target_id=kid,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        metadata={"name": req.name},
+    )
+    return {"id": kid, "name": req.name, "key": full}
+
+
+@app.get("/auth/api-keys")
+def list_api_keys(
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """List the caller's API keys. The hashed key material is never
+    returned — only metadata (id, name, prefix, timestamps, revoked)."""
+    _require_multi_user()
+    rows = session.scalars(
+        select(ApiKeyRow)
+        .where(ApiKeyRow.user_id == current_user.id)
+        .order_by(ApiKeyRow.created_at.desc())
+    ).all()
+    return {"keys": [_api_key_to_dict(r) for r in rows]}
+
+
+@app.delete("/auth/api-keys/{key_id}", status_code=204)
+def revoke_api_key_endpoint(
+    key_id: str,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Revoke a key. Idempotent (already-revoked or unknown id is a 204)."""
+    _require_multi_user()
+    if revoke_api_key(key_id, user_id=current_user.id):
+        audit(
+            "auth.api_key.revoke",
+            actor_id=current_user.id,
+            target_type="api_key",
+            target_id=key_id,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    return Response(status_code=204)
+
+
+# --- Admin: user unlock (plan #69) ------------------------------------------
+
+
+def _require_admin(user: UserRow) -> None:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+
+@app.post("/admin/users/{user_id}/unlock", status_code=204)
+def admin_unlock_user(
+    user_id: str,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Clear the lockout and failure counter for `user_id` (plan #69).
+    Admin only. 204 on success, 404 if the user doesn't exist."""
+    _require_admin(current_user)
+    target = session.get(UserRow, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    unlock_user(target, session=session)
+    audit(
+        "admin.user.unlock",
+        actor_id=current_user.id,
+        target_type="user",
+        target_id=user_id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return Response(status_code=204)
+
+
+# --- Admin: invites (plan #74) ----------------------------------------------
+
+
+@app.post("/admin/invites", status_code=201)
+def admin_create_invite(
+    req: InviteCreateRequest,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Issue a new invite. Admin-only (plan #74). The redeem token is
+    returned in the response so the admin can deliver it out of band;
+    the plan defers the email story to 0.6.0."""
+    _require_admin(current_user)
+    if req.role not in ("user", "admin"):
+        raise HTTPException(status_code=400, detail="role must be 'user' or 'admin'")
+    if req.ttl_days <= 0 or req.ttl_days > 90:
+        raise HTTPException(status_code=400, detail="ttl_days must be between 1 and 90")
+    invite = create_invite(
+        session,
+        email=req.email,
+        role=req.role,
+        created_by=current_user.id,
+        ttl_days=req.ttl_days,
+    )
+    audit(
+        "admin.invite.create",
+        actor_id=current_user.id,
+        target_type="invite",
+        target_id=invite.id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        metadata={"role": req.role, "email": req.email},
+    )
+    return {
+        "id": invite.id,
+        "token": invite.token,
+        "email": invite.email,
+        "role": invite.role,
+        "expires_at": invite.expires_at.isoformat(),
+    }
+
+
+# --- Admin: audit log (plan #75) --------------------------------------------
+
+
+@app.get("/admin/audit")
+def admin_list_audit(
+    since: datetime | None = None,
+    action: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Paginated read of the audit log (plan #75). Admin-only. Filters:
+    `since` (inclusive on created_at), `action` (exact match). Newest
+    first."""
+    _require_admin(current_user)
+    q = select(AuditLogRow)
+    if since is not None:
+        q = q.where(AuditLogRow.created_at >= since)
+    if action is not None:
+        q = q.where(AuditLogRow.action == action)
+    total = session.scalar(select(func.count()).select_from(q.subquery())) or 0
+    q = q.order_by(AuditLogRow.created_at.desc()).offset(offset).limit(limit)
+    rows = session.scalars(q).all()
+    return {
+        "total": total,
+        "events": [
+            {
+                "id": r.id,
+                "actor_id": r.actor_id,
+                "action": r.action,
+                "target_type": r.target_type,
+                "target_id": r.target_id,
+                "ip": r.ip,
+                "user_agent": r.user_agent,
+                "metadata": r.metadata_,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+# --- Per-user provider keys (plan #73) --------------------------------------
+
+
+def _provider_key_to_dict(row: ProviderKeyRow) -> dict:
+    return {
+        "provider": row.provider,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "revoked_at": row.revoked_at.isoformat() if row.revoked_at else None,
+    }
+
+
+@app.get("/settings/provider-keys")
+def get_provider_keys(
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Which providers the caller has configured. The raw key material is
+    never returned (plan #73) — only the provider name and timestamps."""
+    _require_multi_user()
+    rows = session.scalars(
+        select(ProviderKeyRow)
+        .where(ProviderKeyRow.user_id == current_user.id)
+        .order_by(ProviderKeyRow.provider)
+    ).all()
+    return {"keys": [_provider_key_to_dict(r) for r in rows]}
+
+
+@app.put("/settings/provider-keys")
+def upsert_provider_key(
+    req: ProviderKeysUpdate,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Set (or clear) a per-user provider key (plan #73). The raw key is
+    encrypted at rest with Fernet; the master key is the SHA-256 of
+    ``SECRETS_ENCRYPTION_KEY`` (see ``backend.secrets``). The response
+    is just a confirmation — the key material is never echoed back."""
+    _require_multi_user()
+    if req.provider not in summarizer.PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider {req.provider!r}; choose from {', '.join(summarizer.PROVIDERS)}",
+        )
+    existing = session.scalar(
+        select(ProviderKeyRow).where(
+            ProviderKeyRow.user_id == current_user.id,
+            ProviderKeyRow.provider == req.provider,
+        )
+    )
+    if req.clear:
+        if existing is not None and existing.revoked_at is None:
+            existing.revoked_at = datetime.now(UTC)
+            session.commit()
+            audit(
+                "settings.provider_key.clear",
+                actor_id=current_user.id,
+                target_type="provider_key",
+                target_id=req.provider,
+                ip=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"),
+            )
+        return {"configured": False}
+    if not req.key:
+        raise HTTPException(status_code=400, detail="key is required unless clear=true")
+    if existing is None:
+        existing = ProviderKeyRow(
+            user_id=current_user.id,
+            provider=req.provider,
+            encrypted_key=encrypt(req.key),
+        )
+        session.add(existing)
+    else:
+        existing.encrypted_key = encrypt(req.key)
+        existing.revoked_at = None
+    session.commit()
+    audit(
+        "settings.provider_key.set",
+        actor_id=current_user.id,
+        target_type="provider_key",
+        target_id=req.provider,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return {"configured": True}
 
 
 def _get_prompt_setting(
@@ -700,11 +1141,19 @@ def _repo_name_to_id(session: Session, owner_id: str) -> dict[str, int]:
     }
 
 
-def _check_ai_preconditions(request: Request, provider: str | None, total: int):
-    """Shared gate for the AI paths: rate limit, commit cap, provider/key
-    validity. Raises the appropriate HTTPException; returns the resolved
-    provider on success."""
-    check_rate_limit(request)
+def _check_ai_preconditions(request: Request, provider: str | None, total: int, *, user_id: str):
+    """Shared gate for the AI paths: per-user + per-IP-outer rate limit
+    (slice 2 plan #68). The per-user 5/60s bucket is the primary throttle —
+    one user can't burn the LLM budget for everyone. The 100/60s per-IP
+    outer is the backstop for the "fresh signup spam" case (an attacker
+    cycling accounts can't share a per-user bucket because they have no
+    user yet). The 0.4.0 per-IP 5/60s ``check_rate_limit`` is no longer
+    called here — it overlapped the per-user limit on the same key and
+    fired spuriously after the second user request (slice 2 plan #68
+    documents this consolidation). Raises the appropriate HTTPException;
+    returns the resolved provider on success."""
+    check_summary_user_limit(request, user_id=user_id)
+    check_ip_outer_rate_limit(request)
     if total > AI_SUMMARY_MAX_COMMITS:
         raise HTTPException(
             status_code=413,
@@ -717,8 +1166,13 @@ def _check_ai_preconditions(request: Request, provider: str | None, total: int):
         resolved = summarizer.resolve_provider(provider)
     except ProviderError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    if resolved.api_key is None:
-        raise HTTPException(status_code=400, detail=f"{resolved.key_env} is not set")
+    # _resolve_key handles the per-user DB row vs env-var fallback.
+    try:
+        from backend.summarizer import _resolve_key
+
+        _resolve_key(resolved, user_id)
+    except ProviderError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return resolved
 
 
@@ -757,7 +1211,7 @@ async def summary(
     ai_model = None
     ai_summaries = None
     if ai:
-        _check_ai_preconditions(request, provider, total)
+        _check_ai_preconditions(request, provider, total, user_id=current_user.id)
         name_to_id = _repo_name_to_id(session, current_user.id)
         global_settings = _resolve_settings_dict(session, None, current_user.id)
         settings_by_repo = {
@@ -769,12 +1223,16 @@ async def summary(
             provider=provider,
             settings=global_settings,
             settings_by_repo=settings_by_repo,
+            user_id=current_user.id,
         )
         if combined:
             all_commit_objs = [c for cs in repo_commits.values() for c in cs]
             try:
                 result = await summarizer.generate_summary(
-                    format_log(all_commit_objs), provider=provider, settings=global_settings
+                    format_log(all_commit_objs),
+                    provider=provider,
+                    settings=global_settings,
+                    user_id=current_user.id,
                 )
             except ProviderError as e:
                 raise HTTPException(status_code=400, detail=str(e)) from e
@@ -828,7 +1286,7 @@ async def summary_stream(
     total, commit_rows = _query_commits(
         since, until, author, repo, limit=None, offset=0, owner_id=current_user.id, session=session
     )
-    _check_ai_preconditions(request, provider, total)
+    _check_ai_preconditions(request, provider, total, user_id=current_user.id)
 
     by_repo, by_day, repo_commits = _aggregate_commits(commit_rows)
     log_by_repo = {name: format_log(cs) for name, cs in repo_commits.items()}
@@ -863,6 +1321,7 @@ async def summary_stream(
                         provider=provider,
                         settings=settings_by_repo.get(name, global_settings),
                         client=client,
+                        user_id=current_user.id,
                     ):
                         yield _sse("delta", {"repo": name, "text": chunk})
                     yield _sse(
@@ -894,11 +1353,19 @@ def list_repos(
 def create_repo(
     req: RepoCreate,
     background: BackgroundTasks,
+    request: Request,
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
+    """Register a new repo. In multi_user mode with
+    ``REPO_ADD_GLOBAL_ONLY=true`` only admins can add (slice 2 plan #67) —
+    the clone-url path is a code-execution surface and the operator
+    probably wants to gate it. The default is open to every authenticated
+    user (the 0.4.0 UX)."""
     from backend.git import _repo_name_from_url, is_remote_url
 
+    if config.REPO_ADD_GLOBAL_ONLY and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can add repos")
     if not is_remote_url(req.url):
         raise HTTPException(
             status_code=400,
@@ -922,6 +1389,15 @@ def create_repo(
     session.refresh(repo)
 
     background.add_task(_ingest_repo, repo.id, name, req.url, current_user.id)
+    audit(
+        "repo.create",
+        actor_id=current_user.id,
+        target_type="repo",
+        target_id=str(repo.id),
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        metadata={"name": name, "clone_url": req.url},
+    )
     return _repo_to_dict(repo)
 
 
@@ -979,11 +1455,21 @@ def _as_utc(dt: datetime) -> datetime:
 
 
 @app.get("/summaries/{slug}")
-def get_share(slug: str, session: Session = Depends(get_db)):
-    """Resolve a slug to its stored summary params. 404 for unknown or expired
-    slugs (the read path enforces expiry independently of the cleanup sweep)."""
+def get_share(
+    slug: str,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Resolve a slug to its stored summary params. 404 for unknown,
+    expired, OR not-owned-by-the-caller slugs (slice 2 plan #71). The
+    404-not-403 is deliberate: a 403 would tell an attacker "this slug
+    exists, you just can't see it", which is an enumeration vector."""
     row = session.get(SharedSummaryRow, slug)
-    if row is None or _as_utc(row.expires_at) <= datetime.now(UTC):
+    if (
+        row is None
+        or _as_utc(row.expires_at) <= datetime.now(UTC)
+        or row.owner_id != current_user.id
+    ):
         raise HTTPException(status_code=404, detail="Share not found or expired")
     return _share_to_dict(row)
 

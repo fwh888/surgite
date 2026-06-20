@@ -53,6 +53,10 @@ class UserRow(Base):
         default=lambda: datetime.now(UTC),
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Lockout (slice 2, plan #69): consecutive failed logins trip a per-user
+    # lockout window. `failed_login_count` is reset to 0 on a successful login.
+    failed_login_count: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class SessionRow(Base):
@@ -167,7 +171,9 @@ class PromptSettingsRow(Base):
 class SharedSummaryRow(Base):
     """A saved, shareable summary query. The slug is the only secret; resolving
     it re-runs the stored params. Expired rows are swept by the scheduler and
-    rejected on read (see backend.api)."""
+    rejected on read (see backend.api). In multi_user mode, resolution is
+    owner-scoped (a non-owner gets 404 to avoid slug existence leak; see
+    slice 2 plan #71)."""
 
     __tablename__ = "shared_summaries"
 
@@ -179,6 +185,77 @@ class SharedSummaryRow(Base):
         default=lambda: datetime.now(UTC),
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ApiKeyRow(Base):
+    """A per-user, long-lived API key (Bearer token) for the CLI. `prefix` is
+    the first 8 chars of the key (used as a fast lookup index — the
+    `Authorization: Bearer *** header carries the full key, and we verify
+    the rest against the argon2id `key_hash`). Revoking sets `revoked_at`;
+    the row stays for audit (slice 2 plan #65)."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String)
+    prefix: Mapped[str] = mapped_column(String, unique=True, index=True)
+    key_hash: Mapped[str] = mapped_column(String)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProviderKeyRow(Base):
+    """A per-user LLM provider API key, Fernet-encrypted at rest. `provider`
+    is the lowercase name (`anthropic`, `groq`, `deepseek`). The raw key is
+    never returned by the API; the master key comes from
+    `SECRETS_ENCRYPTION_KEY` (see backend/secrets.py). Revoking sets
+    `revoked_at`; the row stays for audit (slice 2 plan #73)."""
+
+    __tablename__ = "provider_keys"
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_provider_keys_user_provider"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String)
+    encrypted_key: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuditLogRow(Base):
+    """An append-only event log. `actor_id` is nullable so pre-auth events
+    (login failures, invite redemptions) can be recorded against an
+    unauthenticated request. `metadata` is JSONB on Postgres for
+    indexable search (slice 2 plan #75)."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    actor_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String, index=True)
+    target_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String, nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String, nullable=True)
+    metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        index=True,
+    )
 
 
 def get_session():

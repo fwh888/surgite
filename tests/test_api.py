@@ -134,7 +134,7 @@ def test_summary_ai_unknown_provider_returns_400(client, add_commit):
 
 
 def _fake_generate(calls):
-    async def fake(commit_log, provider=None, model=None, settings=None, client=None):
+    async def fake(commit_log, provider=None, model=None, settings=None, client=None, user_id=None):
         calls.append(commit_log)
         return {"summary": "## Features\n- shipped it", "provider": "groq", "model": "x"}
 
@@ -545,7 +545,7 @@ def test_summary_stream_emits_meta_deltas_and_done(client, add_commit, monkeypat
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
     from backend import summarizer
 
-    async def fake_stream(log_text, provider=None, settings=None, client=None):
+    async def fake_stream(log_text, provider=None, settings=None, client=None, user_id=None):
         yield "Hello "
         yield "world"
 

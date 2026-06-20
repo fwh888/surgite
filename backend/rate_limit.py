@@ -1,16 +1,26 @@
-"""Per-IP token-bucket rate limit for /summary?ai=true.
+"""Per-IP token-bucket rate limit (slice 1) plus the slice 2 per-user /
+multi-bucket rate limits (plan #68).
 
-The summarizer is the only endpoint that can rack up real cost (network
-fetch + N LLM round-trips per request), so it's the only thing this guard
-protects. Cheap read endpoints are intentionally unmetered.
+Three limits live here:
 
-Implementation: hand-rolled in-memory bucket keyed on client IP. No external
-dep — `slowapi` would pull in `limits` + a redis client we don't otherwise
-need, and the project's lean-principles list prefers one fewer transitive.
-Process-local is fine: a restart resets the bucket, which is exactly the
-lenient behaviour we want for an accidental button-mash guard, not a
-hardening boundary. For real abuse protection, sit this behind Traefik +
-fail2ban as the project docs already recommend.
+  - ``check_rate_limit(request)`` — the original per-IP 5/60s guard. Kept as
+    a *coarse outer* check on the AI summary endpoints (still per IP, but
+    in practice it rarely trips because the per-user limit fires first).
+  - ``check_user_rate_limit(user, request, *, requests, window, name)`` —
+    a per-user token bucket. Used by the AI summary and login endpoints.
+    Keyed on (user_id, name) so a single user can have separate budgets
+    for "/summary" and "/auth/login".
+  - ``check_ip_outer_rate_limit(request)`` — a separate, much larger
+    per-IP bucket (100/60s default) for the "fresh signup, spam" case
+    where a per-user limit doesn't catch a single attacker cycling
+    accounts. Wired into the AI summary endpoints as a backstop.
+
+All three are hand-rolled in-memory token buckets keyed on
+``(client_ip)`` or ``(user_id, name)``. Process-local is fine: a restart
+resets the bucket, which is the lenient behaviour we want for an
+accidental button-mash guard, not a hardening boundary. For real abuse
+protection, sit this behind Traefik + fail2ban as the project docs
+already recommend.
 """
 
 import os
@@ -24,8 +34,19 @@ from fastapi import HTTPException, Request
 _LIMIT = int(os.environ.get("RATE_LIMIT_REQUESTS", "5"))
 _WINDOW = int(os.environ.get("RATE_LIMIT_WINDOW_SECONDS", "60"))
 
+# Per-user + per-IP-outer buckets. Defaults match the plan (plan #68):
+#   summary:  5 / 60s per user, 100 / 60s per IP outer
+# Login throttling is the lockout story (plan #69), not a separate rate
+# limit; the per-IP outer guard is the only extra layer on /auth/login.
+_SUMMARY_USER_REQUESTS = int(os.environ.get("SUMMARY_RATE_LIMIT_REQUESTS", "5"))
+_SUMMARY_USER_WINDOW = int(os.environ.get("SUMMARY_RATE_LIMIT_WINDOW_SECONDS", "60"))
+_SUMMARY_IP_REQUESTS = int(os.environ.get("IP_OUTER_RATE_LIMIT_REQUESTS", "100"))
+_SUMMARY_IP_WINDOW = int(os.environ.get("IP_OUTER_RATE_LIMIT_WINDOW_SECONDS", "60"))
+
 # (client_ip) -> deque of request timestamps (epoch seconds).
-_buckets: dict[str, deque[float]] = defaultdict(deque)
+_ip_buckets: dict[str, deque[float]] = defaultdict(deque)
+# ((user_id, name)) -> deque
+_user_buckets: dict[tuple[str, str], deque[float]] = defaultdict(deque)
 _lock = threading.Lock()
 
 
@@ -40,33 +61,71 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def check_rate_limit(request: Request) -> None:
-    """Allow up to `_LIMIT` requests per `_WINDOW` seconds per client IP.
-    Raises 429 (with a `Retry-After` header via HTTPException) when exceeded.
-    The eviction sweep is O(1) amortised: each call prunes the bucket's
-    expired entries, and a bucket is cleared entirely once it empties."""
+def _check_bucket(bucket: deque, limit: int, window: int, label: str) -> None:
+    """Shared token-bucket implementation. Raises 429 with Retry-After when
+    the bucket is over `limit` inside the last `window` seconds."""
     now = time.monotonic()
-    cutoff = now - _WINDOW
+    cutoff = now - window
+    while bucket and bucket[0] < cutoff:
+        bucket.popleft()
+    if len(bucket) >= limit:
+        retry_after = max(1, int(window - (now - bucket[0])))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: max {limit} / {window}s per {label}",
+            headers={"Retry-After": str(retry_after)},
+        )
+    bucket.append(now)
+
+
+def _drop_empty_ip_bucket(ip: str) -> None:
+    """Avoid unbounded growth of the IP-bucket dict for one-shot visitors.
+    Caller holds ``_lock``."""
+    bucket = _ip_buckets.get(ip)
+    if bucket is not None and not bucket:
+        del _ip_buckets[ip]
+
+
+def check_rate_limit(request: Request) -> None:
+    """Backward-compatible per-IP 5/60s guard. Retained as a coarse outer
+    check on the AI summary endpoints; the per-user limit fires first in
+    practice, so this is the second line of defence."""
+    with _lock:
+        _check_bucket(_ip_buckets[_client_ip(request)], _LIMIT, _WINDOW, "IP")
+        _drop_empty_ip_bucket(_client_ip(request))
+
+
+def check_user_rate_limit(
+    request: Request, *, user_id: str, limit: int, window: int, name: str
+) -> None:
+    """Per-user token bucket. ``name`` distinguishes different buckets for
+    the same user (e.g. ``"summary"`` vs ``"login"``)."""
+    with _lock:
+        _check_bucket(_user_buckets[(user_id, name)], limit, window, f"user:{name}")
+
+
+def check_ip_outer_rate_limit(request: Request) -> None:
+    """A larger per-IP bucket (100/60s default) as a backstop. Fires after
+    the per-user limit on the AI summary endpoints."""
     ip = _client_ip(request)
     with _lock:
-        bucket = _buckets[ip]
-        while bucket and bucket[0] < cutoff:
-            bucket.popleft()
-        if len(bucket) >= _LIMIT:
-            retry_after = max(1, int(_WINDOW - (now - bucket[0])))
-            raise HTTPException(
-                status_code=429,
-                detail=f"Rate limit exceeded: max {_LIMIT} / {_WINDOW}s per IP",
-                headers={"Retry-After": str(retry_after)},
-            )
-        bucket.append(now)
-        if not bucket:
-            # Drop the empty deque so the dict doesn't grow unbounded for
-            # one-shot visitors.
-            del _buckets[ip]
+        _check_bucket(_ip_buckets[ip], _SUMMARY_IP_REQUESTS, _SUMMARY_IP_WINDOW, "IP")
+        _drop_empty_ip_bucket(ip)
+
+
+# Convenience preset that matches the documented default (plan #68).
+def check_summary_user_limit(request: Request, *, user_id: str) -> None:
+    check_user_rate_limit(
+        request,
+        user_id=user_id,
+        limit=_SUMMARY_USER_REQUESTS,
+        window=_SUMMARY_USER_WINDOW,
+        name="summary",
+    )
 
 
 def _reset_for_tests() -> None:
     """Clear all buckets. Tests use this to avoid cross-test pollution."""
     with _lock:
-        _buckets.clear()
+        _ip_buckets.clear()
+        _user_buckets.clear()

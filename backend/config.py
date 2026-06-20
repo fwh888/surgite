@@ -57,3 +57,30 @@ SESSION_CLEANUP_INTERVAL = int(os.environ.get("SESSION_CLEANUP_INTERVAL", "3600"
 # because __Host- cookies are rejected by browsers over http://.
 DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
 SESSION_COOKIE_NAME = "standup_session" if DEBUG else "__Host-standup_session"
+# Master key for at-rest provider-key encryption. Generated on first run if
+# unset and saved to .secrets_key with chmod 600 (see backend.secrets); the
+# operator is told to back it up. Rotation: scripts/rotate-secrets.sh.
+SECRETS_ENCRYPTION_KEY = os.environ.get("SECRETS_ENCRYPTION_KEY", "")
+# When true, only admins can POST /repos (slice 2 plan #67). Default false so
+# the existing "every authenticated user can add a repo" UX is preserved.
+REPO_ADD_GLOBAL_ONLY = os.environ.get("REPO_ADD_GLOBAL_ONLY", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# Lockout policy (slice 2 plan #69). 10 fails / 15 min -> 15 min lockout, per
+# (email, ip). Tunable so tests can lower the window without waiting.
+LOGIN_LOCKOUT_THRESHOLD = int(os.environ.get("LOGIN_LOCKOUT_THRESHOLD", "10"))
+LOGIN_LOCKOUT_WINDOW_MINUTES = int(os.environ.get("LOGIN_LOCKOUT_WINDOW_MINUTES", "15"))
+LOGIN_LOCKOUT_DURATION_MINUTES = int(os.environ.get("LOGIN_LOCKOUT_DURATION_MINUTES", "15"))
+# Per-user rate limits (slice 2 plan #68). Replace the per-IP limit on
+# /summary?ai=true and /summary/stream. Per-IP outer guard catches the
+# "fresh signup, spam" case.
+SUMMARY_RATE_LIMIT_REQUESTS = int(os.environ.get("SUMMARY_RATE_LIMIT_REQUESTS", "5"))
+SUMMARY_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("SUMMARY_RATE_LIMIT_WINDOW_SECONDS", "60"))
+IP_OUTER_RATE_LIMIT_REQUESTS = int(os.environ.get("IP_OUTER_RATE_LIMIT_REQUESTS", "100"))
+IP_OUTER_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("IP_OUTER_RATE_LIMIT_WINDOW_SECONDS", "60"))
+# Per-user API key issuance throttle (slice 2 plan #65). 10 keys per 24h
+# per user is generous for normal use and catches a runaway script.
+API_KEY_ISSUE_LIMIT = int(os.environ.get("API_KEY_ISSUE_LIMIT", "10"))
+API_KEY_ISSUE_WINDOW_HOURS = int(os.environ.get("API_KEY_ISSUE_WINDOW_HOURS", "24"))

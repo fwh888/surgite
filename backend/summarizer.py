@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import httpx
+from sqlalchemy import select
 
 # Per-call HTTP timeout. Generous: a cold provider + a long commit log can take
 # a while to summarize. Overridable per call so the streaming path can use a
@@ -97,11 +98,15 @@ def resolve_provider(name: str | None) -> Provider:
     return provider
 
 
-def _require_key(provider: Provider) -> str:
-    key = provider.api_key
-    if key is None:
+def _require_key(provider: Provider, key: str | None = None) -> str:
+    """Return the API key for `provider`. `key` overrides the env var lookup
+    (used in multi_user mode to pass a per-user key from the DB)."""
+    if key:
+        return key
+    env_key = provider.api_key
+    if env_key is None:
         raise ProviderError(f"{provider.key_env} is not set")
-    return key
+    return env_key
 
 
 def provider_status() -> list[dict]:
@@ -117,6 +122,69 @@ def provider_status() -> list[dict]:
         }
         for p in PROVIDERS.values()
     ]
+
+
+def provider_status_for(user_id: str) -> list[dict]:
+    """Per-user provider status (slice 2 plan #73). A provider is
+    ``available`` for this user if either their per-user DB row has a
+    non-revoked key OR the env-var fallback is set. The single-user fallback
+    is the env-var lookup (so a homelab operator who set
+    ``ANTHROPIC_API_KEY=*** on the host still gets a working summary
+    without configuring per-user keys)."""
+    default = default_provider()
+    out: list[dict] = []
+    for p in PROVIDERS.values():
+        out.append(
+            {
+                "name": p.name,
+                "model": p.model(),
+                "available": p.api_key is not None or _user_has_active_key(user_id, p.name),
+                "default": p.name == default,
+            }
+        )
+    return out
+
+
+def _user_has_active_key(user_id: str, provider_name: str) -> bool:
+    """True iff the user has a non-revoked provider_keys row for
+    `provider_name`."""
+    try:
+        from backend.db import ProviderKeyRow, get_session
+    except ImportError:
+        return False
+    with get_session() as s:
+        row = s.scalar(
+            select(ProviderKeyRow).where(
+                ProviderKeyRow.user_id == user_id,
+                ProviderKeyRow.provider == provider_name,
+                ProviderKeyRow.revoked_at.is_(None),
+            )
+        )
+        return row is not None
+
+
+def user_provider_key(user_id: str, provider_name: str) -> str | None:
+    """The active per-user provider key (decrypted), or None. Callers
+    fall back to the env-var key when this is None."""
+    try:
+        from backend.db import ProviderKeyRow, get_session
+        from backend.secrets import decrypt
+    except ImportError:
+        return None
+    with get_session() as s:
+        row = s.scalar(
+            select(ProviderKeyRow).where(
+                ProviderKeyRow.user_id == user_id,
+                ProviderKeyRow.provider == provider_name,
+                ProviderKeyRow.revoked_at.is_(None),
+            )
+        )
+        if row is None:
+            return None
+        try:
+            return decrypt(row.encrypted_key)
+        except ValueError:
+            return None
 
 
 def _build_system_prompt(settings: dict | None = None) -> str:
@@ -241,22 +309,35 @@ async def _post_json(
     return _extract_text(provider, resp.json())
 
 
+def _resolve_key(resolved: Provider, user_id: str | None) -> str:
+    """The API key for `resolved`, preferring a per-user DB row in multi_user
+    mode and falling back to the env-var key in single_user / off mode
+    (or when the user has no row for this provider)."""
+    if user_id is not None:
+        per_user = user_provider_key(user_id, resolved.name)
+        if per_user is not None:
+            return per_user
+    return _require_key(resolved)
+
+
 async def generate_summary(
     commit_log: str,
     provider: str | None = None,
     model: str | None = None,
     settings: dict | None = None,
     client: httpx.AsyncClient | None = None,
+    user_id: str | None = None,
 ) -> dict:
     """Summarize a formatted commit log with the chosen (or default) provider.
 
     Returns the summary plus the provider and model actually used. Raises
     ProviderError if the provider is unknown or its key is missing; lets
     httpx errors propagate so callers can map them to a 502. Pass `client` to
-    share a connection pool across a concurrent fan-out.
-    """
+    share a connection pool across a concurrent fan-out. `user_id` selects
+    the per-user provider key in multi_user mode (falls back to the env-var
+    key when the user has no row)."""
     resolved = resolve_provider(provider)
-    api_key = _require_key(resolved)
+    api_key = _resolve_key(resolved, user_id)
     chosen_model = resolved.model(model)
     system = _build_system_prompt(settings)
 
@@ -274,6 +355,7 @@ async def generate_summary_per_repo(
     provider: str | None = None,
     settings: dict | None = None,
     settings_by_repo: dict[str, dict] | None = None,
+    user_id: str | None = None,
 ) -> dict[str, dict[str, str]]:
     """Generate one AI summary per repo, calling the provider concurrently over
     a single shared connection pool. Returns {repo_name: {summary, provider,
@@ -281,7 +363,8 @@ async def generate_summary_per_repo(
     exceeding _MAX_PARALLEL_SUMMARIES in-flight calls.
 
     Per-repo prompt overrides go in `settings_by_repo` (keyed by repo name);
-    `settings` is the fallback for any repo without its own entry."""
+    `settings` is the fallback for any repo without its own entry. `user_id`
+    selects the per-user provider key in multi_user mode (slice 2 plan #73)."""
     pending = {name: log for name, log in log_by_repo.items() if log.strip()}
     by_repo = settings_by_repo or {}
     summaries: dict[str, dict[str, str]] = {}
@@ -297,6 +380,7 @@ async def generate_summary_per_repo(
                         provider=provider,
                         settings=by_repo.get(name, settings),
                         client=client,
+                        user_id=user_id,
                     )
                 except ProviderError as e:
                     return {"summary": f"Error: {e}", "provider": "", "model": ""}
@@ -319,13 +403,15 @@ async def stream_summary(
     model: str | None = None,
     settings: dict | None = None,
     client: httpx.AsyncClient | None = None,
+    user_id: str | None = None,
 ) -> AsyncIterator[str]:
     """Yield text deltas as the provider streams its summary. Resolves the
     provider and key up front (raising ProviderError before any I/O), then
     opens a streaming request and yields each text fragment. httpx errors
-    propagate to the caller, which maps them to an SSE `error` event."""
+    propagate to the caller, which maps them to an SSE `error` event.
+    `user_id` selects the per-user provider key in multi_user mode (plan #73)."""
     resolved = resolve_provider(provider)
-    api_key = _require_key(resolved)
+    api_key = _resolve_key(resolved, user_id)
     chosen_model = resolved.model(model)
     system = _build_system_prompt(settings)
 

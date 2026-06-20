@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   storing a 0600 session at `$XDG_CONFIG_HOME/standup/session`.
 - `scripts/upgrade-from-0.4.sh` and `docs/migrations/0.4.0-to-0.5.0.md` for the
   single-operator upgrade path.
+- **Security slice (0.5.0 slice 2).**
+  - Per-user API keys (`POST/GET/DELETE /auth/api-keys`) with argon2id
+    hashes and Bearer-token auth on `get_current_user`.
+  - CSRF defence in depth: `X-Requested-With: standup-web` required on
+    non-safe requests in multi_user mode.
+  - Per-user rate limit (5/60s) on `/summary?ai=true` and
+    `/summary/stream`, with a 100/60s per-IP outer backstop.
+  - Account lockout (10 fails / 15 min → 15 min lockout per user) with
+    `POST /admin/users/{id}/unlock` for recovery.
+  - Per-user provider keys (Fernet-encrypted at rest, master key from
+    `SECRETS_ENCRYPTION_KEY` or auto-generated `.secrets_key`).
+  - Admin-only `/admin/invites` (issue, redeem out of band) and
+    `/admin/audit` (paginated audit log).
+  - User-scoped `GET /summaries/{slug}` (404 not 403 cross-user).
+  - `REPO_ADD_GLOBAL_ONLY=true` gates `POST /repos` to admins.
+  - `docs/security.md` (threat model, rate-limit table, ops checklist).
+  - `scripts/rotate-secrets.sh` (in-place re-encryption under a new
+    master).
 
 ### Changed
 
