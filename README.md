@@ -1,22 +1,23 @@
 # standup-gen
 
-Self-hostable, multi-user standup summaries from your git history.
+Standup summaries from your git history — in the browser, in the terminal, or as a shareable link.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 <!-- TODO slice 4: add a build-status badge once the forgejo workflow runs on a public host -->
 
-standup-gen reads your git history and writes your standup. Local CLI for a
-quick daily summary, FastAPI + Postgres for a team. Self-host the whole thing
-on a $4/month VPS. First-party auth, no third-party tracking.
+The web app gives your team a shared dashboard: per-user repos, per-user prompt
+settings, AI-written summaries, and shareable links to specific summary views.
+The CLI does the same for a local repo, no server needed. First-party auth,
+no third-party tracking.
 
-Lean principles: one binary, no SPA framework, no slowapi, no Celery, no Redis.
-Reads like a script.
+Lean principles: ~15 Python source files, one binary, no SPA framework, no
+slowapi, no Celery, no Redis. Reads like a script.
 
 ## Quickstart
 
 Two paths. Pick one.
 
-**Self-host the web app** — three commands, full team UI:
+**The web app** — three commands, full team dashboard:
 
 ```bash
 git clone https://codeberg.org/ncoleman/standup-gen.git
@@ -40,17 +41,31 @@ Add `--summarize` to get AI-written prose (set `ANTHROPIC_API_KEY` first).
 
 ## Screenshots
 
-<!-- TODO slice 4: add demo GIF and screenshots of /admin/users, the summary panel, and the share view -->
+<!-- TODO slice 4: add demo GIF and screenshots of the dashboard, the summary panel, and a share view -->
 
-The demo GIF lands in 0.5.1; until then, see [`docs/self-host.md`](docs/self-host.md)
-for the deployment story.
+The demo GIF lands in 0.5.1; until then, [`docs/self-host.md`](docs/self-host.md)
+has the deployment story and the feature walkthrough.
+
+## What you get
+
+- **Web dashboard** — per-user repos, prompt settings, summary history, share
+  links, admin user management (`/admin/users`). Email + password login with
+  `__Host-` session cookies.
+- **CLI** — `standup /path/to/repo` for a local one-off, `standup --registered
+  <name>` to pull from a running API, `standup --login` to authenticate,
+  `standup --summarize` for AI-written prose.
+- **Per-user provider keys** — each user brings their own Anthropic / Groq /
+  DeepSeek key. Fernet-encrypted at rest, never returned by the API.
+- **Shareable summary links** — `POST /summaries` mints a `/s/{slug}` URL that
+  re-runs a saved query in a read-only view. Owner-scoped in multi-user mode.
 
 ## Why?
 
-- **Self-hostable** — your data, your VPS, your auth. No SaaS account, no
-  vendor lock-in.
 - **Multi-user** — email + password login, per-user repos and summaries,
-  per-user provider keys. (This is the 0.5.0 headline.)
+  per-user provider keys. (The 0.5.0 headline.)
+- **Self-hostable** — your data, your auth, your machine. No SaaS account, no
+  vendor lock-in. Runs on a homelab box, a small VM, a Raspberry Pi, or a
+  Kubernetes cluster — same code path.
 - **No telemetry** — first-party auth, no analytics, no phone-home.
 - **Lean** — FastAPI + Postgres + SvelteKit, the whole thing reads
   top-to-bottom.
