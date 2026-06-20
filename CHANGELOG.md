@@ -5,12 +5,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-06-20
 
-0.5.0 is the auth + multi-user release. After 0.5.0, the remaining work for
-1.0.0 is multi-tenant features (orgs, billing, SSO) and the API stability
-promise. The 1.0.0 release will be cut when 0.6.0 and 0.7.0 (or whichever
-follows) close out the multi-tenant and stability work.
+The auth + multi-user release. After 0.5.0 the project is safe to expose to
+people who aren't the operator: first-party sessions, per-user data isolation,
+admin-mediated invites and password reset, Fernet-encrypted per-user provider
+keys, and a complete self-hosting guide. The data-isolation plumbing landed
+in slice 1, the security controls in slice 2, and the user-visible UX in
+slice 3. The remaining work for 1.0.0 is multi-tenant features (orgs,
+billing, SSO) and the API stability promise — both well-scoped, neither
+requiring an auth rewrite.
 
 ### Added
 
