@@ -248,6 +248,23 @@ export const createShare = (params: SummaryParams) =>
 export const fetchShare = (slug: string) =>
 	request<SharedSummary>(`/summaries/${encodeURIComponent(slug)}`);
 
+export interface MySummary {
+	slug: string;
+	params: SummaryParams;
+	created_at: string | null;
+	expires_at: string | null;
+}
+
+export function fetchMySummaries(params: { limit?: number; offset?: number } = {}) {
+	const q = new URLSearchParams();
+	if (params.limit != null) q.set('limit', String(params.limit));
+	if (params.offset) q.set('offset', String(params.offset));
+	const qs = q.toString();
+	return request<{ total: number; summaries: MySummary[] }>(
+		`/summaries/mine${qs ? `?${qs}` : ''}`
+	);
+}
+
 // --- streaming AI summaries (SSE) ---
 
 export interface StreamMeta {

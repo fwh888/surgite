@@ -157,3 +157,41 @@ describe('admin endpoints (issue #76)', () => {
 		expect(JSON.parse(init.body as string)).toEqual({ role: 'admin', ttl_days: 14 });
 	});
 });
+
+describe('fetchMySummaries (issue #78)', () => {
+	it('GETs /summaries/mine with no query params by default', async () => {
+		const { fetchMySummaries } = await import('./api');
+		fetchSpy.mockResolvedValueOnce(okBody({ total: 0, summaries: [] }));
+		const out = await fetchMySummaries();
+		const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('http://api.test/summaries/mine');
+		expect(init.method).toBeUndefined();
+		expect(out.total).toBe(0);
+	});
+
+	it('passes limit and offset as query params when provided', async () => {
+		const { fetchMySummaries } = await import('./api');
+		fetchSpy.mockResolvedValueOnce(okBody({ total: 5, summaries: [] }));
+		await fetchMySummaries({ limit: 10, offset: 20 });
+		const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('http://api.test/summaries/mine?limit=10&offset=20');
+	});
+});
+
+describe('logout (issue #78)', () => {
+	it('POSTs to /auth/logout and returns void on 204', async () => {
+		const { logout } = await import('./api');
+		fetchSpy.mockResolvedValueOnce({
+			ok: true,
+			status: 204,
+			statusText: '',
+			headers: new Headers()
+		} as Response);
+		await expect(logout()).resolves.toBeUndefined();
+		const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('http://api.test/auth/logout');
+		expect(init.method).toBe('POST');
+		const headers = init.headers as Record<string, string>;
+		expect(headers['X-Requested-With']).toBe('standup-web');
+	});
+});

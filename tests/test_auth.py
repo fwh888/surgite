@@ -679,3 +679,87 @@ def test_admin_activate_unknown_404(client, multi_user):
         headers=_cookie_header(_make_session(admin)),
     )
     assert r.status_code == 404
+
+
+# --- /summaries/mine (issue #78) ---
+
+
+def test_summaries_mine_returns_only_caller_shares(client, multi_user):
+    from backend.auth import create_session
+
+    alice = _make_user(email="alice@example.com", password="alice-pass-1234")
+    bob = _make_user(email="bob@example.com", password="bob-pass-1234567")
+    alice_sid = create_session(alice).id
+    bob_sid = create_session(bob).id
+    for _ in range(2):
+        client.post(
+            "/summaries",
+            json={"repo": "alice-repo", "since": "2026-05-01"},
+            headers=_cookie_header(alice_sid),
+        )
+    client.post(
+        "/summaries",
+        json={"repo": "bob-repo", "since": "2026-05-01"},
+        headers=_cookie_header(bob_sid),
+    )
+
+    alice_out = client.get("/summaries/mine", headers=_cookie_header(alice_sid)).json()
+    bob_out = client.get("/summaries/mine", headers=_cookie_header(bob_sid)).json()
+    assert alice_out["total"] == 2
+    assert bob_out["total"] == 1
+    assert all(s["params"]["repo"] == "alice-repo" for s in alice_out["summaries"])
+    assert bob_out["summaries"][0]["params"]["repo"] == "bob-repo"
+
+
+def test_summaries_mine_pagination(client, multi_user):
+    from backend.auth import create_session
+
+    uid = _make_user(email="pag@example.com", password="paginate-pass-1234")
+    sid = create_session(uid).id
+    for i in range(5):
+        client.post(
+            "/summaries",
+            json={"repo": f"r{i}", "since": "2026-05-01"},
+            headers=_cookie_header(sid),
+        )
+
+    page1 = client.get("/summaries/mine?limit=2&offset=0", headers=_cookie_header(sid)).json()
+    page2 = client.get("/summaries/mine?limit=2&offset=2", headers=_cookie_header(sid)).json()
+    assert page1["total"] == 5
+    assert page2["total"] == 5
+    assert len(page1["summaries"]) == 2
+    assert len(page2["summaries"]) == 2
+    slugs1 = {s["slug"] for s in page1["summaries"]}
+    slugs2 = {s["slug"] for s in page2["summaries"]}
+    assert slugs1.isdisjoint(slugs2)
+
+
+def test_summaries_mine_excludes_expired(client, multi_user):
+    from datetime import UTC, datetime, timedelta
+
+    from backend.auth import create_session
+    from backend.db import SharedSummaryRow, get_session
+
+    uid = _make_user(email="exp@example.com", password="expire-pass-12345")
+    sid = create_session(uid).id
+    live_slug = client.post("/summaries", json={"repo": "r"}, headers=_cookie_header(sid)).json()[
+        "slug"
+    ]
+    with get_session() as s:
+        s.add(
+            SharedSummaryRow(
+                slug="expired-1",
+                owner_id=uid,
+                params={"repo": "stale"},
+                created_at=datetime.now(UTC) - timedelta(days=30),
+                expires_at=datetime.now(UTC) - timedelta(seconds=1),
+            )
+        )
+        s.commit()
+    out = client.get("/summaries/mine", headers=_cookie_header(sid)).json()
+    slugs = {row["slug"] for row in out["summaries"]}
+    assert slugs == {live_slug}
+
+
+def test_summaries_mine_requires_auth_in_multi_user(client, multi_user):
+    assert client.get("/summaries/mine").status_code == 401

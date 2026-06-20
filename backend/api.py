@@ -1661,6 +1661,27 @@ def _as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
+@app.get("/summaries/mine")
+def list_my_shares(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """The caller's saved shares, newest first. Expired shares are
+    excluded — they're not resolvable, so showing them is dead UI."""
+    now = datetime.now(UTC)
+    base = select(SharedSummaryRow).where(
+        SharedSummaryRow.owner_id == current_user.id,
+        SharedSummaryRow.expires_at > now,
+    )
+    total = session.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = session.scalars(
+        base.order_by(SharedSummaryRow.created_at.desc()).offset(offset).limit(limit)
+    ).all()
+    return {"total": total, "summaries": [_share_to_dict(r) for r in rows]}
+
+
 @app.get("/summaries/{slug}")
 def get_share(
     slug: str,
