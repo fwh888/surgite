@@ -31,7 +31,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend import config
-from backend.db import ApiKeyRow, InviteRow, SessionRow, UserRow, get_db, session_scope
+from backend.db import (
+    ApiKeyRow,
+    InviteRow,
+    PasswordResetRow,
+    SessionRow,
+    UserRow,
+    get_db,
+    session_scope,
+)
 
 log = logging.getLogger(__name__)
 
@@ -351,6 +359,119 @@ def purge_expired_sessions() -> int:
             s.delete(row)
         s.commit()
         return len(rows)
+
+
+def revoke_all_sessions(user_id: str, *, keep: str | None = None) -> int:
+    """Revoke every session for ``user_id``. Optionally keep the session
+    with id ``keep`` (used by PUT /auth/password so the user isn't logged
+    out mid-change). Returns the number of rows deleted."""
+    with session_scope() as s:
+        q = select(SessionRow).where(SessionRow.user_id == user_id)
+        if keep is not None:
+            q = q.where(SessionRow.id != keep)
+        rows = s.scalars(q).all()
+        for row in rows:
+            s.delete(row)
+        s.commit()
+        return len(rows)
+
+
+# --- Password change (issue #77) --------------------------------------------
+
+
+def change_password(user_id: str, *, new_password: str) -> None:
+    """Hash ``new_password`` and store it on user ``user_id``. The
+    caller is responsible for revoking the user's other sessions
+    (see ``revoke_all_sessions``) — keeping that step at the call
+    site documents *which* sessions are kept (the calling one)
+    right next to the policy decision. We re-fetch the user inside
+    our own scope so the caller's request session is untouched."""
+    with session_scope() as s:
+        user = s.get(UserRow, user_id)
+        if user is None:
+            return
+        user.password_hash = hash_password(new_password)
+        s.commit()
+
+
+# --- Password reset tokens (issue #77) --------------------------------------
+# 15-minute expiry; one-time use. The full token is ``pr_<id>_<secret>``;
+# we keep only the argon2id hash and the 8-char ``id`` for the lookup
+# index, same as the api_keys design.
+
+_PASSWORD_RESET_TTL_MINUTES = 15
+_PASSWORD_RESET_ID_LEN = 8
+_PASSWORD_RESET_SECRET_BYTES = 32
+
+
+def _generate_reset_token() -> tuple[str, str]:
+    """Mint a new (full_token, id) pair. The full token is what the
+    admin shows the user once; the id is the lookup index."""
+    rid = secrets.token_urlsafe(_API_KEY_PREFIX_BYTES)[:_PASSWORD_RESET_ID_LEN]
+    secret = secrets.token_urlsafe(_PASSWORD_RESET_SECRET_BYTES)
+    return f"pr_{rid}_{secret}", rid
+
+
+def mint_password_reset(user_id: str) -> tuple[str, datetime]:
+    """Create a new reset token for ``user_id``. Returns the (full_token,
+    expires_at) pair; the admin delivers the token to the user. The
+    full token is argon2id-hashed before persistence; only the id
+    prefix and the hash hit the DB."""
+    full, rid = _generate_reset_token()
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(minutes=_PASSWORD_RESET_TTL_MINUTES)
+    with session_scope() as s:
+        s.add(
+            PasswordResetRow(
+                id=rid,
+                user_id=user_id,
+                token_hash=hash_password(full),
+                expires_at=expires_at,
+                created_at=now,
+            )
+        )
+        s.commit()
+    return full, expires_at
+
+
+def redeem_password_reset(token: str, *, new_password: str) -> str | None:
+    """Validate ``token``, set ``new_password`` on the user, revoke all
+    of the user's sessions, and clear the lockout. Returns the user id
+    on success, None if the token is unknown / expired / used / the
+    user is inactive.
+
+    The token format is ``pr_<id>_<secret>``; we look up by the 6-char
+    ``id`` (the lookup index) and verify the full token against the
+    argon2id hash, exactly like api_keys."""
+    if not token or not token.startswith("pr_"):
+        return None
+    parts = token.split("_", 2)
+    if len(parts) != 3:
+        return None
+    rid = parts[1]
+    now = datetime.now(UTC)
+    with session_scope() as s:
+        row = s.get(PasswordResetRow, rid)
+        if row is None or row.used_at is not None or _as_utc(row.expires_at) <= now:
+            return None
+        if not verify_password(token, row.token_hash):
+            return None
+        user = s.get(UserRow, row.user_id)
+        if user is None or not user.is_active:
+            return None
+        user.password_hash = hash_password(new_password)
+        # Defence in depth: a successful reset clears the lockout so the
+        # user isn't sitting on a counter that locks them out moments
+        # after they get back in.
+        user.failed_login_count = 0
+        user.locked_until = None
+        row.used_at = now
+        s.commit()
+        user_id = user.id
+    # Revoke the user's sessions out-of-band so a concurrent login
+    # can't sneak in between the password change and the next read.
+    revoke_all_sessions(user_id)
+    return user_id
 
 
 # --- Cookies ----------------------------------------------------------------

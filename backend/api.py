@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from backend import config, summarizer
 from backend.audit import audit
 from backend.auth import (
+    change_password,
     clear_session_cookie,
     create_invite,
     create_session,
@@ -29,10 +30,13 @@ from backend.auth import (
     get_optional_user,
     is_locked,
     issue_api_key,
+    mint_password_reset,
     normalize_email,
     purge_expired_sessions,
     record_login_failure,
     record_login_success,
+    redeem_password_reset,
+    revoke_all_sessions,
     revoke_api_key,
     revoke_session,
     set_session_cookie,
@@ -65,6 +69,8 @@ from backend.schemas import (
     ApiKeyCreate,
     InviteCreateRequest,
     LoginRequest,
+    PasswordChange,
+    PasswordResetConfirm,
     PromptSettingsUpdate,
     ProviderKeysUpdate,
     RedeemInviteRequest,
@@ -283,7 +289,14 @@ app.add_middleware(
 #    state-changing route, so the header requirement is invisible to
 #    it.
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-_CSRF_EXEMPT_PATHS = {"/auth/login", "/auth/redeem-invite", "/auth/logout"}
+_CSRF_EXEMPT_PATHS = {
+    "/auth/login",
+    "/auth/redeem-invite",
+    "/auth/logout",
+    "/auth/password-reset/confirm",
+    "/signup",
+    "/login",
+}
 _CSRF_HEADER = "x-requested-with"
 _CSRF_HEADER_VALUE = "standup-web"
 
@@ -499,6 +512,23 @@ def _user_to_dict(user: UserRow) -> dict:
     }
 
 
+def _user_admin_to_dict(user: UserRow) -> dict:
+    """Full user dict for the admin /admin/users view — adds is_active, the
+    login/lockout counters, and timestamps that the self-view deliberately
+    hides (issue #76)."""
+    return {
+        "id": user.id,
+        "email": user.email,
+        "display_name": user.display_name,
+        "is_active": user.is_active,
+        "is_admin": user.is_admin,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+        "failed_login_count": user.failed_login_count,
+        "locked_until": user.locked_until.isoformat() if user.locked_until else None,
+    }
+
+
 @app.post("/auth/login")
 def auth_login(
     req: LoginRequest,
@@ -658,11 +688,105 @@ def auth_redeem_invite(
     return _user_to_dict(user)
 
 
+# Friendly alias so the SPA can POST /signup (the URL a user would type). The
+# handler is the one bound to /auth/redeem-invite above; aliasing the function
+# under a second route keeps a single source of truth (no duplicated logic).
+# CSRF allowlist includes /signup so the SPA can post it without the
+# ``X-Requested-With`` header that a freshly-loaded form won't have yet.
+app.post("/signup", status_code=201)(auth_redeem_invite)
+
+
 @app.get("/auth/me")
 def auth_me(current_user: UserRow = Depends(get_current_user)):
     """The current user, for the SPA's 'logged in as' indicator and to let the
     CLI verify a stored session is still valid."""
     return _user_to_dict(current_user)
+
+
+# --- Password change (issue #77) --------------------------------------------
+
+
+@app.put("/auth/password")
+def auth_change_password(
+    req: PasswordChange,
+    request: Request,
+    response: Response,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Self-service password change. Verifies the current password, hashes
+    the new one, and revokes all of the user's *other* sessions (a stolen
+    cookie stops working). The current session is kept so the user isn't
+    logged out of the page that triggered the change. 401 on a wrong
+    current password; 404 in off/single_user mode."""
+    _require_multi_user()
+    if not verify_password(req.current_password, current_user.password_hash or ""):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    change_password(current_user.id, new_password=req.new_password)
+    sid = request.cookies.get(config.SESSION_COOKIE_NAME)
+    revoke_all_sessions(current_user.id, keep=sid)
+    audit(
+        "auth.password.change",
+        actor_id=current_user.id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return Response(status_code=204)
+
+
+# --- Password reset (issue #77) ---------------------------------------------
+# Admin mints a one-time token, delivers it out of band, the user redeems
+# it. 15-minute expiry; on success every session is revoked and the
+# lockout is cleared.
+
+
+@app.post("/admin/users/{user_id}/reset-password", status_code=201)
+def admin_reset_password(
+    user_id: str,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Mint a one-time password-reset token for ``user_id``. Admin-only.
+    Returns the token and its expiry; the admin delivers the token out
+    of band (the email-delivered story is a 0.6.0 follow-up). 404 if
+    the user doesn't exist."""
+    _require_admin(current_user)
+    target = session.get(UserRow, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    token, expires_at = mint_password_reset(target.id)
+    audit(
+        "admin.user.reset_password",
+        actor_id=current_user.id,
+        target_type="user",
+        target_id=user_id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return {"reset_token": token, "expires_at": expires_at.isoformat()}
+
+
+@app.post("/auth/password-reset/confirm", status_code=204)
+def auth_reset_password_confirm(
+    req: PasswordResetConfirm,
+    request: Request,
+):
+    """Redeem a reset token. Public (no session required) and in the CSRF
+    allowlist for the same reason as /auth/login — a freshly-loaded
+    redemption form has no session cookie to defend. On success every
+    session for the user is revoked and the lockout is cleared."""
+    _require_multi_user()
+    user_id = redeem_password_reset(req.token, new_password=req.new_password)
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    audit(
+        "auth.password.reset",
+        actor_id=user_id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return Response(status_code=204)
 
 
 # --- API keys (Bearer auth) --------------------------------------------------
@@ -797,6 +921,89 @@ def admin_unlock_user(
         ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
+    return Response(status_code=204)
+
+
+# --- Admin: users (issue #76) -----------------------------------------------
+
+
+@app.get("/admin/users")
+def admin_list_users(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    q: str | None = None,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """List every user, newest-first. Admin-only (issue #76). `q` is a
+    case-insensitive substring match on email; limit/offset paginate."""
+    _require_admin(current_user)
+    base = select(UserRow)
+    if q:
+        base = base.where(UserRow.email.ilike(f"%{_escape_like(q)}%", escape="\\"))
+    total = session.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = session.scalars(
+        base.order_by(UserRow.created_at.desc()).offset(offset).limit(limit)
+    ).all()
+    return {"total": total, "users": [_user_admin_to_dict(r) for r in rows]}
+
+
+@app.post("/admin/users/{user_id}/deactivate", status_code=204)
+def admin_deactivate_user(
+    user_id: str,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Flip is_active=False for `user_id`. Admin-only (issue #76). A
+    deactivated user keeps their row but can't sign in. The calling admin
+    can't deactivate themselves (400) — that's how you lock yourself out.
+    404 on unknown user."""
+    _require_admin(current_user)
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot deactivate yourself")
+    target = session.get(UserRow, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.is_active:
+        target.is_active = False
+        session.commit()
+        audit(
+            "admin.user.deactivate",
+            actor_id=current_user.id,
+            target_type="user",
+            target_id=user_id,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    return Response(status_code=204)
+
+
+@app.post("/admin/users/{user_id}/activate", status_code=204)
+def admin_activate_user(
+    user_id: str,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Flip is_active=True for `user_id`. Admin-only (issue #76). The
+    reverse of /deactivate — lets an admin bring a deactivated user
+    back. 404 on unknown user."""
+    _require_admin(current_user)
+    target = session.get(UserRow, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not target.is_active:
+        target.is_active = True
+        session.commit()
+        audit(
+            "admin.user.activate",
+            actor_id=current_user.id,
+            target_type="user",
+            target_id=user_id,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
     return Response(status_code=204)
 
 
@@ -1454,6 +1661,27 @@ def _as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
+@app.get("/summaries/mine")
+def list_my_shares(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """The caller's saved shares, newest first. Expired shares are
+    excluded — they're not resolvable, so showing them is dead UI."""
+    now = datetime.now(UTC)
+    base = select(SharedSummaryRow).where(
+        SharedSummaryRow.owner_id == current_user.id,
+        SharedSummaryRow.expires_at > now,
+    )
+    total = session.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = session.scalars(
+        base.order_by(SharedSummaryRow.created_at.desc()).offset(offset).limit(limit)
+    ).all()
+    return {"total": total, "summaries": [_share_to_dict(r) for r in rows]}
+
+
 @app.get("/summaries/{slug}")
 def get_share(
     slug: str,
@@ -1486,6 +1714,25 @@ def share_page(slug: str):
     /s/{slug} works. The client-side route reads the slug and re-runs the
     query via GET /summaries/{slug}. In dev (no build) the Vite server handles
     this route instead, so a 404 here is correct."""
+    return _serve_spa_shell()
+
+
+@app.get("/login")
+def login_page():
+    """SPA shell for /login. The client-side route renders the login form. In
+    dev (no build) the Vite server handles this route instead."""
+    return _serve_spa_shell()
+
+
+@app.get("/signup")
+def signup_page():
+    """SPA shell for /signup. The client-side route reads ``?token=...`` from
+    the query string and renders the redemption form. In dev (no build) the
+    Vite server handles this route instead."""
+    return _serve_spa_shell()
+
+
+def _serve_spa_shell():
     fallback = _FRONTEND_BUILD / "200.html"
     if fallback.is_file():
         return FileResponse(fallback)

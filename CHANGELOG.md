@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+0.5.0 is the auth + multi-user release. After 0.5.0, the remaining work for
+1.0.0 is multi-tenant features (orgs, billing, SSO) and the API stability
+promise. The 1.0.0 release will be cut when 0.6.0 and 0.7.0 (or whichever
+follows) close out the multi-tenant and stability work.
+
 ### Added
 
 - **Auth foundation (0.5.0 slice 1).** An `AUTH_MODE` setting with three modes:
@@ -44,6 +49,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/security.md` (threat model, rate-limit table, ops checklist).
   - `scripts/rotate-secrets.sh` (in-place re-encryption under a new
     master).
+- **UX slice (0.5.0 slice 3).**
+  - `/signup`, `/login`, `/password-reset` pages and `/admin/users` admin
+    page (issues #75, #76, #79). Terminal-aesthetic SPA pages, the
+    `X-Requested-With: standup-web` CSRF header on every non-safe call, and
+    a client-side auth guard that redirects unauthenticated users to
+    `/login`.
+  - Per-user password change and admin-mediated reset (issue #77):
+    `PUT /auth/password` (self-service), `POST /admin/users/{id}/reset-password`
+    (admin mints a one-time token), and `POST /auth/password-reset/confirm`
+    (user redeems it). All other sessions for the affected user are
+    revoked on change/reset.
+  - Admin user management (issue #76): list, search, unlock, and
+    activate/deactivate users; issue invites and display the redeem URL
+    out of band.
+  - Per-user UX polish (issue #78): a logged-in indicator in the top
+    bar with a logout button, and a `/summaries` page that lists the
+    caller's saved shares.
+  - CLI login/logout (issue #80): `standup --login`, `standup --logout`,
+    `standup --redeem-invite` (CLI session cookie persisted at
+    `$XDG_CONFIG_HOME/standup/session` with 0600 perms). Test coverage
+    expanded.
+  - `docs/self-host.md` (issue #81): end-to-end self-hosting guide —
+    sizing, quickstart, TLS, backup, runbook.
+  - README rewrite (issue #82): now leads with the self-host story.
 
 ### Changed
 

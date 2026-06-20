@@ -36,11 +36,22 @@ export interface Summary {
 	ai_summaries: Record<string, { summary: string; provider: string; model: string }> | null;
 }
 
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const CSRF_HEADER = 'X-Requested-With';
+const CSRF_VALUE = 'standup-web';
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-	const res = await fetch(`${BASE}${path}`, {
-		headers: { 'Content-Type': 'application/json' },
-		...init
-	});
+	// The CSRF middleware in backend/api.py requires this header on every
+	// non-safe method in multi_user mode. We send it unconditionally so
+	// callers don't have to think about it; the server ignores it on safe
+	// methods and in off/single_user mode.
+	const method = (init?.method ?? 'GET').toUpperCase();
+	const headers: Record<string, string> = {
+		'Content-Type': 'application/json',
+		...(init?.headers as Record<string, string> | undefined)
+	};
+	if (UNSAFE_METHODS.has(method)) headers[CSRF_HEADER] = CSRF_VALUE;
+	const res = await fetch(`${BASE}${path}`, { ...init, headers });
 	if (!res.ok) {
 		// FastAPI errors carry a `detail` field; fall back to the status text.
 		let detail: unknown = res.statusText;
@@ -49,11 +60,59 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		} catch {
 			/* non-JSON body */
 		}
-		throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+		const message = typeof detail === 'string' ? detail : JSON.stringify(detail);
+		// ponytail: extra fields on the Error are cheaper than a custom class.
+		// `status` lets the auth guard distinguish 401 from any other failure;
+		// `lockoutSeconds` powers the login page's retry countdown.
+		const err = new Error(message) as Error & { status?: number; lockoutSeconds?: number };
+		err.status = res.status;
+		if (res.status === 423) {
+			const retryAfter = Number(res.headers.get('Retry-After'));
+			if (Number.isFinite(retryAfter) && retryAfter > 0) err.lockoutSeconds = retryAfter;
+		}
+		throw err;
 	}
 	// 204 No Content (e.g. DELETE) has no body to parse.
 	return res.status === 204 ? (undefined as T) : res.json();
 }
+
+// --- auth (multi_user) -----------------------------------------------------
+
+export interface CurrentUser {
+	id: string;
+	email: string;
+	display_name: string;
+	is_admin: boolean;
+}
+
+export const fetchCurrentUser = () => request<CurrentUser>('/auth/me');
+
+export const login = (email: string, password: string) =>
+	request<CurrentUser>('/auth/login', {
+		method: 'POST',
+		body: JSON.stringify({ email, password })
+	});
+
+export interface SignupRequest {
+	token: string;
+	password: string;
+	email?: string;
+	display_name?: string;
+}
+
+export const signup = (req: SignupRequest) =>
+	request<CurrentUser>('/auth/redeem-invite', {
+		method: 'POST',
+		body: JSON.stringify(req)
+	});
+
+export const logout = () => request<void>('/auth/logout', { method: 'POST' });
+
+export const resetPassword = (token: string, newPassword: string) =>
+	request<void>('/auth/password-reset/confirm', {
+		method: 'POST',
+		body: JSON.stringify({ token, new_password: newPassword })
+	});
 
 export const listRepos = () => request<{ repos: Repo[] }>('/repos').then((r) => r.repos);
 
@@ -97,6 +156,58 @@ export function generateSummary(params: SummaryParams = {}, signal?: AbortSignal
 
 export const fetchProviders = () =>
 	request<ProvidersResponse>('/providers');
+
+// --- admin (issue #76) ----------------------------------------------------
+
+export interface AdminUser {
+	id: string;
+	email: string;
+	display_name: string;
+	is_active: boolean;
+	is_admin: boolean;
+	created_at: string | null;
+	last_login_at: string | null;
+	failed_login_count: number;
+	locked_until: string | null;
+}
+
+export interface AdminInviteRequest {
+	email?: string;
+	role: 'user' | 'admin';
+	ttl_days: number;
+}
+
+export interface AdminInviteResponse {
+	id: string;
+	token: string;
+	email: string | null;
+	role: string;
+	expires_at: string;
+}
+
+export function fetchAdminUsers(params: { limit?: number; offset?: number; q?: string } = {}) {
+	const q = new URLSearchParams();
+	if (params.limit != null) q.set('limit', String(params.limit));
+	if (params.offset) q.set('offset', String(params.offset));
+	if (params.q) q.set('q', params.q);
+	const qs = q.toString();
+	return request<{ total: number; users: AdminUser[] }>(`/admin/users${qs ? `?${qs}` : ''}`);
+}
+
+export const unlockUser = (id: string) =>
+	request<void>(`/admin/users/${id}/unlock`, { method: 'POST' });
+
+export const deactivateUser = (id: string) =>
+	request<void>(`/admin/users/${id}/deactivate`, { method: 'POST' });
+
+export const activateUser = (id: string) =>
+	request<void>(`/admin/users/${id}/activate`, { method: 'POST' });
+
+export const createInvite = (req: AdminInviteRequest) =>
+	request<AdminInviteResponse>('/admin/invites', {
+		method: 'POST',
+		body: JSON.stringify(req)
+	});
 
 export interface PromptSettings {
 	// null = the global default row; a number = a repo-specific override.
@@ -143,6 +254,23 @@ export const createShare = (params: SummaryParams) =>
 
 export const fetchShare = (slug: string) =>
 	request<SharedSummary>(`/summaries/${encodeURIComponent(slug)}`);
+
+export interface MySummary {
+	slug: string;
+	params: SummaryParams;
+	created_at: string | null;
+	expires_at: string | null;
+}
+
+export function fetchMySummaries(params: { limit?: number; offset?: number } = {}) {
+	const q = new URLSearchParams();
+	if (params.limit != null) q.set('limit', String(params.limit));
+	if (params.offset) q.set('offset', String(params.offset));
+	const qs = q.toString();
+	return request<{ total: number; summaries: MySummary[] }>(
+		`/summaries/mine${qs ? `?${qs}` : ''}`
+	);
+}
 
 // --- streaming AI summaries (SSE) ---
 

@@ -180,6 +180,10 @@ user-facing request).
   restart to load the new master into the running process.
 - **Lockout recovery**: an admin can unlock a user via
   `POST /admin/users/{id}/unlock`.
+- **Password reset**: admin uses `POST /admin/users/{id}/reset-password`
+  to mint a one-time token, delivers the token out of band, the user
+  redeems it at `POST /auth/password-reset/confirm`. 15-minute expiry.
+  Email-delivered reset is a 0.6.0 follow-up.
 - **Reading the audit log**: `GET /admin/audit?action=auth.login.fail`
   shows every failed login. `?since=2026-06-20T00:00:00` filters
   by time.
@@ -192,10 +196,10 @@ These are 0.6.0+ work, deliberately deferred:
   designed so OIDC can replace just the multi_user branch of
   `get_current_user`.
 - **Org / team model**. 0.5.0 is user-scoped, not org-scoped.
-- **Email-delivered password reset**. 0.5.0's reset flow is
-  admin-mediated (`POST /admin/users/{id}/reset-password` is in
-  the 0.5.0 plan but unimplemented in this slice — the operator
-  rotates the password via the database or `standup --login`).
+- **Email-delivered password reset**. Admin-mediated reset
+  (`POST /admin/users/{id}/reset-password` + `POST /auth/password-reset/confirm`)
+  ships in 0.5.0 slice 3 (issue #77); the email-delivery story is the
+  remaining 0.6.0 piece.
 - **Rate limit on `/auth/login` (per-user)**. The plan calls for
   a separate per-user login rate limit on top of the lockout;
   slice 2 ships lockout only (the lockout covers the credential

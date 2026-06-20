@@ -6,6 +6,7 @@
 	import SummaryPanel from '$lib/components/SummaryPanel.svelte';
 	import PromptSettings from '$lib/components/PromptSettings.svelte';
 	import ThemePicker from '$lib/components/ThemePicker.svelte';
+	import UserBadge from '$lib/components/UserBadge.svelte';
 	import HelpOverlay from '$lib/components/HelpOverlay.svelte';
 
 	let repos = $state<Repo[]>([]);
@@ -59,7 +60,11 @@
 			<span class="flex-1 text-xs text-fg-muted">
 				nick@standup: ~/standup
 			</span>
-			<ThemePicker />
+			<div class="flex items-center gap-2">
+				<a href="/summaries" class="text-xs text-fg-muted transition hover:text-fg">summaries</a>
+				<UserBadge />
+				<ThemePicker />
+			</div>
 		</div>
 
 		<div class="px-4 py-6 sm:px-6">
