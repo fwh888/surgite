@@ -61,10 +61,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 			/* non-JSON body */
 		}
 		const message = typeof detail === 'string' ? detail : JSON.stringify(detail);
-		// ponytail: a single extra field on the Error is cheaper than a
-		// custom error class. Callers that need it (e.g. the login page's
-		// lockout countdown) can read it; everyone else ignores it.
-		const err = new Error(message) as Error & { lockoutSeconds?: number };
+		// ponytail: extra fields on the Error are cheaper than a custom class.
+		// `status` lets the auth guard distinguish 401 from any other failure;
+		// `lockoutSeconds` powers the login page's retry countdown.
+		const err = new Error(message) as Error & { status?: number; lockoutSeconds?: number };
+		err.status = res.status;
 		if (res.status === 423) {
 			const retryAfter = Number(res.headers.get('Retry-After'));
 			if (Number.isFinite(retryAfter) && retryAfter > 0) err.lockoutSeconds = retryAfter;
@@ -106,6 +107,12 @@ export const signup = (req: SignupRequest) =>
 	});
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' });
+
+export const resetPassword = (token: string, newPassword: string) =>
+	request<void>('/auth/password-reset/confirm', {
+		method: 'POST',
+		body: JSON.stringify({ token, new_password: newPassword })
+	});
 
 export const listRepos = () => request<{ repos: Repo[] }>('/repos').then((r) => r.repos);
 

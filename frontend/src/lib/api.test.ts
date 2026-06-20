@@ -82,8 +82,9 @@ describe('request() — error parsing', () => {
 			await login('a@b.c', 'pw');
 			expect.fail('expected throw');
 		} catch (e) {
-			const err = e as Error & { lockoutSeconds?: number };
+			const err = e as Error & { lockoutSeconds?: number; status?: number };
 			expect(err.lockoutSeconds).toBe(300);
+			expect(err.status).toBe(423);
 			expect(err.message).toContain('locked');
 		}
 	});
@@ -95,6 +96,16 @@ describe('request() — error parsing', () => {
 			expect.fail('expected throw');
 		} catch (e) {
 			expect((e as Error & { lockoutSeconds?: number }).lockoutSeconds).toBeUndefined();
+		}
+	});
+
+	it('attaches status to the thrown Error on any 4xx/5xx', async () => {
+		fetchSpy.mockResolvedValueOnce(errBody(401, 'Not authenticated'));
+		try {
+			await login('a@b.c', 'pw');
+			expect.fail('expected throw');
+		} catch (e) {
+			expect((e as Error & { status?: number }).status).toBe(401);
 		}
 	});
 });
@@ -193,5 +204,38 @@ describe('logout (issue #78)', () => {
 		expect(init.method).toBe('POST');
 		const headers = init.headers as Record<string, string>;
 		expect(headers['X-Requested-With']).toBe('standup-web');
+	});
+});
+
+describe('resetPassword (issue #79)', () => {
+	it('POSTs to /auth/password-reset/confirm with token + new_password', async () => {
+		const { resetPassword } = await import('./api');
+		fetchSpy.mockResolvedValueOnce({
+			ok: true,
+			status: 204,
+			statusText: '',
+			headers: new Headers()
+		} as Response);
+		await expect(resetPassword('tok', 'newpw1234')).resolves.toBeUndefined();
+		const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('http://api.test/auth/password-reset/confirm');
+		expect(init.method).toBe('POST');
+		expect(JSON.parse(init.body as string)).toEqual({
+			token: 'tok',
+			new_password: 'newpw1234'
+		});
+		const headers = init.headers as Record<string, string>;
+		expect(headers['X-Requested-With']).toBe('standup-web');
+	});
+
+	it('attaches status=400 on an expired token', async () => {
+		const { resetPassword } = await import('./api');
+		fetchSpy.mockResolvedValueOnce(errBody(400, 'Invalid or expired reset token'));
+		try {
+			await resetPassword('tok', 'newpw1234');
+			expect.fail('expected throw');
+		} catch (e) {
+			expect((e as Error & { status?: number }).status).toBe(400);
+		}
 	});
 });

@@ -42,8 +42,9 @@
 	}
 
 	onMount(() => {
-		const retry = new URLSearchParams(window.location.search).get('retry');
-		if (retry) error = 'Please log in to continue.';
+		const params = new URLSearchParams(window.location.search);
+		if (params.get('retry')) error = 'Please log in to continue.';
+		else if (params.get('reset') === 'ok') error = 'Password reset; please log in.';
 	});
 </script>
 
@@ -107,6 +108,10 @@
 					need an account? <span class="text-accent">signup</span>
 				</a>
 			</div>
+			<p class="text-xs text-fg-faint">
+				Forgot your password? Ask an admin to issue a reset token. They use
+				<code class="text-fg-muted">POST /admin/users/{'{id}'}/reset-password</code> to mint one.
+			</p>
 		</form>
 	</div>
 </main>
