@@ -120,3 +120,40 @@ describe('signup()', () => {
 		expect(JSON.parse(init.body as string)).toEqual({ token: 'tok', password: 'pw' });
 	});
 });
+
+describe('admin endpoints (issue #76)', () => {
+	it('fetchAdminUsers GETs /admin/users with query params', async () => {
+		const { fetchAdminUsers } = await import('./api');
+		fetchSpy.mockResolvedValueOnce(okBody({ total: 0, users: [] }));
+		await fetchAdminUsers({ limit: 10, q: 'ali' });
+		const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('http://api.test/admin/users?limit=10&q=ali');
+		expect(init.method).toBeUndefined();
+		expect((init.headers as Record<string, string>)['X-Requested-With']).toBeUndefined();
+	});
+
+	it('POST endpoints send the CSRF header', async () => {
+		const { unlockUser, deactivateUser, activateUser, createInvite } = await import('./api');
+		fetchSpy.mockResolvedValue({ ok: true, status: 204, statusText: '', headers: new Headers() } as Response);
+		await unlockUser('u1');
+		await deactivateUser('u1');
+		await activateUser('u1');
+		fetchSpy.mockResolvedValueOnce(
+			okBody({ id: 'i1', token: 'tok', email: null, role: 'user', expires_at: 'x' })
+		);
+		await createInvite({ role: 'user', ttl_days: 7 });
+		for (let i = 0; i < 4; i++) {
+			const init = fetchSpy.mock.calls[i][1] as RequestInit;
+			expect((init.headers as Record<string, string>)['X-Requested-With']).toBe('standup-web');
+		}
+	});
+
+	it('createInvite omits empty email and serialises role/ttl', async () => {
+		const { createInvite } = await import('./api');
+		fetchSpy.mockResolvedValueOnce(okBody({ id: 'i1', token: 'tok' }));
+		await createInvite({ role: 'admin', ttl_days: 14 });
+		const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('http://api.test/admin/invites');
+		expect(JSON.parse(init.body as string)).toEqual({ role: 'admin', ttl_days: 14 });
+	});
+});

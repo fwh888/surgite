@@ -569,3 +569,113 @@ def test_reset_token_redeem_off_mode_returns_404(client):
         json={"token": "pr_a_a", "new_password": "x"},
     )
     assert r.status_code == 404
+
+
+# --- Admin: users (issue #76) -----------------------------------------------
+
+
+def test_admin_list_users_paginated(client, multi_user):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    _make_user(email="alice@example.com")
+    _make_user(email="bob@example.com")
+    r = client.get("/admin/users?limit=2", headers=_cookie_header(_make_session(admin)))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 3
+    assert len(body["users"]) == 2
+
+
+def test_admin_list_users_filter_by_email(client, multi_user):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    _make_user(email="alice@example.com")
+    _make_user(email="bob@example.com")
+    r = client.get("/admin/users?q=ALI", headers=_cookie_header(_make_session(admin)))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["users"][0]["email"] == "alice@example.com"
+
+
+def test_admin_list_users_non_admin_403(client, multi_user):
+    regular = _make_user(email="user@example.com")
+    assert (
+        client.get("/admin/users", headers=_cookie_header(_make_session(regular))).status_code
+        == 403
+    )
+
+
+def test_admin_deactivate_user(client, multi_user):
+    from backend.db import AuditLogRow
+
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    target = _make_user(email="victim@example.com")
+    r = client.post(
+        f"/admin/users/{target}/deactivate",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    assert r.status_code == 204
+    with get_session() as s:
+        assert s.get(UserRow, target).is_active is False
+        assert (
+            s.scalar(
+                select(AuditLogRow).where(
+                    AuditLogRow.action == "admin.user.deactivate",
+                    AuditLogRow.target_id == target,
+                )
+            )
+            is not None
+        )
+
+
+def test_admin_deactivate_self_400(client, multi_user):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    r = client.post(
+        f"/admin/users/{admin}/deactivate",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    assert r.status_code == 400
+
+
+def test_admin_deactivate_unknown_404(client, multi_user):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    r = client.post(
+        "/admin/users/does-not-exist/deactivate",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    assert r.status_code == 404
+
+
+def test_admin_activate_user(client, multi_user):
+    from backend.db import AuditLogRow
+
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    target = _make_user(email="victim@example.com")
+    # Pre-deactivate so the activate handler has work to do.
+    with get_session() as s:
+        s.get(UserRow, target).is_active = False
+        s.commit()
+    r = client.post(
+        f"/admin/users/{target}/activate",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    assert r.status_code == 204
+    with get_session() as s:
+        assert s.get(UserRow, target).is_active is True
+        assert (
+            s.scalar(
+                select(AuditLogRow).where(
+                    AuditLogRow.action == "admin.user.activate",
+                    AuditLogRow.target_id == target,
+                )
+            )
+            is not None
+        )
+
+
+def test_admin_activate_unknown_404(client, multi_user):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    r = client.post(
+        "/admin/users/does-not-exist/activate",
+        headers=_cookie_header(_make_session(admin)),
+    )
+    assert r.status_code == 404

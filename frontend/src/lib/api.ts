@@ -150,6 +150,58 @@ export function generateSummary(params: SummaryParams = {}, signal?: AbortSignal
 export const fetchProviders = () =>
 	request<ProvidersResponse>('/providers');
 
+// --- admin (issue #76) ----------------------------------------------------
+
+export interface AdminUser {
+	id: string;
+	email: string;
+	display_name: string;
+	is_active: boolean;
+	is_admin: boolean;
+	created_at: string | null;
+	last_login_at: string | null;
+	failed_login_count: number;
+	locked_until: string | null;
+}
+
+export interface AdminInviteRequest {
+	email?: string;
+	role: 'user' | 'admin';
+	ttl_days: number;
+}
+
+export interface AdminInviteResponse {
+	id: string;
+	token: string;
+	email: string | null;
+	role: string;
+	expires_at: string;
+}
+
+export function fetchAdminUsers(params: { limit?: number; offset?: number; q?: string } = {}) {
+	const q = new URLSearchParams();
+	if (params.limit != null) q.set('limit', String(params.limit));
+	if (params.offset) q.set('offset', String(params.offset));
+	if (params.q) q.set('q', params.q);
+	const qs = q.toString();
+	return request<{ total: number; users: AdminUser[] }>(`/admin/users${qs ? `?${qs}` : ''}`);
+}
+
+export const unlockUser = (id: string) =>
+	request<void>(`/admin/users/${id}/unlock`, { method: 'POST' });
+
+export const deactivateUser = (id: string) =>
+	request<void>(`/admin/users/${id}/deactivate`, { method: 'POST' });
+
+export const activateUser = (id: string) =>
+	request<void>(`/admin/users/${id}/activate`, { method: 'POST' });
+
+export const createInvite = (req: AdminInviteRequest) =>
+	request<AdminInviteResponse>('/admin/invites', {
+		method: 'POST',
+		body: JSON.stringify(req)
+	});
+
 export interface PromptSettings {
 	// null = the global default row; a number = a repo-specific override.
 	repo_id: number | null;

@@ -512,6 +512,23 @@ def _user_to_dict(user: UserRow) -> dict:
     }
 
 
+def _user_admin_to_dict(user: UserRow) -> dict:
+    """Full user dict for the admin /admin/users view — adds is_active, the
+    login/lockout counters, and timestamps that the self-view deliberately
+    hides (issue #76)."""
+    return {
+        "id": user.id,
+        "email": user.email,
+        "display_name": user.display_name,
+        "is_active": user.is_active,
+        "is_admin": user.is_admin,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+        "failed_login_count": user.failed_login_count,
+        "locked_until": user.locked_until.isoformat() if user.locked_until else None,
+    }
+
+
 @app.post("/auth/login")
 def auth_login(
     req: LoginRequest,
@@ -904,6 +921,89 @@ def admin_unlock_user(
         ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
+    return Response(status_code=204)
+
+
+# --- Admin: users (issue #76) -----------------------------------------------
+
+
+@app.get("/admin/users")
+def admin_list_users(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    q: str | None = None,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """List every user, newest-first. Admin-only (issue #76). `q` is a
+    case-insensitive substring match on email; limit/offset paginate."""
+    _require_admin(current_user)
+    base = select(UserRow)
+    if q:
+        base = base.where(UserRow.email.ilike(f"%{_escape_like(q)}%", escape="\\"))
+    total = session.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = session.scalars(
+        base.order_by(UserRow.created_at.desc()).offset(offset).limit(limit)
+    ).all()
+    return {"total": total, "users": [_user_admin_to_dict(r) for r in rows]}
+
+
+@app.post("/admin/users/{user_id}/deactivate", status_code=204)
+def admin_deactivate_user(
+    user_id: str,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Flip is_active=False for `user_id`. Admin-only (issue #76). A
+    deactivated user keeps their row but can't sign in. The calling admin
+    can't deactivate themselves (400) — that's how you lock yourself out.
+    404 on unknown user."""
+    _require_admin(current_user)
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot deactivate yourself")
+    target = session.get(UserRow, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.is_active:
+        target.is_active = False
+        session.commit()
+        audit(
+            "admin.user.deactivate",
+            actor_id=current_user.id,
+            target_type="user",
+            target_id=user_id,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    return Response(status_code=204)
+
+
+@app.post("/admin/users/{user_id}/activate", status_code=204)
+def admin_activate_user(
+    user_id: str,
+    request: Request,
+    session: Session = Depends(get_db),
+    current_user: UserRow = Depends(get_current_user),
+):
+    """Flip is_active=True for `user_id`. Admin-only (issue #76). The
+    reverse of /deactivate — lets an admin bring a deactivated user
+    back. 404 on unknown user."""
+    _require_admin(current_user)
+    target = session.get(UserRow, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not target.is_active:
+        target.is_active = True
+        session.commit()
+        audit(
+            "admin.user.activate",
+            actor_id=current_user.id,
+            target_type="user",
+            target_id=user_id,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
     return Response(status_code=204)
 
 
