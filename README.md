@@ -41,10 +41,11 @@ Add `--summarize` to get AI-written prose (set `ANTHROPIC_API_KEY` first).
 
 ## Screenshots
 
-<!-- TODO slice 4: add demo GIF and screenshots of the dashboard, the summary panel, and a share view -->
+![standup-gen dashboard](docs/demo.gif)
 
-The demo GIF lands in 0.5.1; until then, [`docs/self-host.md`](docs/self-host.md)
-has the deployment story and the feature walkthrough.
+The dashboard, with terminal-aesthetic chrome, a sample repo's commit log,
+and a streamed AI summary panel. See [`docs/self-host.md`](docs/self-host.md)
+for the deployment walkthrough.
 
 ## What you get
 
