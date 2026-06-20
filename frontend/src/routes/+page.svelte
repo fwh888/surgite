@@ -58,7 +58,7 @@
 	<div class="border border-border bg-surface">
 		<div class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
 			<span class="flex-1 text-xs text-fg-muted">
-				nick@standup: ~/standup
+				standup-gen
 			</span>
 			<div class="flex items-center gap-2">
 				<a href="/summaries" class="text-xs text-fg-muted transition hover:text-fg">summaries</a>
