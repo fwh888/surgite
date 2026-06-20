@@ -283,7 +283,7 @@ app.add_middleware(
 #    state-changing route, so the header requirement is invisible to
 #    it.
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-_CSRF_EXEMPT_PATHS = {"/auth/login", "/auth/redeem-invite", "/auth/logout"}
+_CSRF_EXEMPT_PATHS = {"/auth/login", "/auth/redeem-invite", "/auth/logout", "/signup", "/login"}
 _CSRF_HEADER = "x-requested-with"
 _CSRF_HEADER_VALUE = "standup-web"
 
@@ -656,6 +656,14 @@ def auth_redeem_invite(
         metadata={"role": invite.role},
     )
     return _user_to_dict(user)
+
+
+# Friendly alias so the SPA can POST /signup (the URL a user would type). The
+# handler is the one bound to /auth/redeem-invite above; aliasing the function
+# under a second route keeps a single source of truth (no duplicated logic).
+# CSRF allowlist includes /signup so the SPA can post it without the
+# ``X-Requested-With`` header that a freshly-loaded form won't have yet.
+app.post("/signup", status_code=201)(auth_redeem_invite)
 
 
 @app.get("/auth/me")
@@ -1486,6 +1494,25 @@ def share_page(slug: str):
     /s/{slug} works. The client-side route reads the slug and re-runs the
     query via GET /summaries/{slug}. In dev (no build) the Vite server handles
     this route instead, so a 404 here is correct."""
+    return _serve_spa_shell()
+
+
+@app.get("/login")
+def login_page():
+    """SPA shell for /login. The client-side route renders the login form. In
+    dev (no build) the Vite server handles this route instead."""
+    return _serve_spa_shell()
+
+
+@app.get("/signup")
+def signup_page():
+    """SPA shell for /signup. The client-side route reads ``?token=...`` from
+    the query string and renders the redemption form. In dev (no build) the
+    Vite server handles this route instead."""
+    return _serve_spa_shell()
+
+
+def _serve_spa_shell():
     fallback = _FRONTEND_BUILD / "200.html"
     if fallback.is_file():
         return FileResponse(fallback)

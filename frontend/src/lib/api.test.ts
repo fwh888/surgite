@@ -1,0 +1,122 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The api module reads `import.meta.env` at top level. `VITE_API_BASE` is set
+// before the dynamic import below so the import picks up our test URL.
+import.meta.env.VITE_API_BASE = 'http://api.test';
+
+// Dynamic import so the module evaluates with our env stubs in place.
+const { login, signup } = await import('./api');
+
+const okBody = (body: unknown) =>
+	({
+		ok: true,
+		status: 200,
+		statusText: 'OK',
+		json: () => Promise.resolve(body)
+	}) as Response;
+
+const errBody = (status: number, detail: unknown, headers: Record<string, string> = {}) =>
+	({
+		ok: false,
+		status,
+		statusText: 'Error',
+		headers: new Headers(headers),
+		json: () => Promise.resolve({ detail })
+	}) as Response;
+
+let fetchSpy: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+	fetchSpy = vi.fn();
+	vi.stubGlobal('fetch', fetchSpy);
+});
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
+
+describe('request() — CSRF header', () => {
+	it('sends X-Requested-With on POST', async () => {
+		fetchSpy.mockResolvedValueOnce(okBody({ id: 'u1', email: 'a@b.c' }));
+		await login('a@b.c', 'pw');
+		const init = fetchSpy.mock.calls[0][1] as RequestInit;
+		const headers = init.headers as Record<string, string>;
+		expect(headers['X-Requested-With']).toBe('standup-web');
+		expect(headers['Content-Type']).toBe('application/json');
+	});
+
+	it('does not send X-Requested-With on GET', async () => {
+		const { fetchCurrentUser } = await import('./api');
+		fetchSpy.mockResolvedValueOnce(okBody({ id: 'u1' }));
+		await fetchCurrentUser();
+		const init = fetchSpy.mock.calls[0][1] as RequestInit;
+		const headers = init.headers as Record<string, string>;
+		expect(headers['X-Requested-With']).toBeUndefined();
+	});
+});
+
+describe('request() — error parsing', () => {
+	it('throws with the detail string on a 4xx', async () => {
+		fetchSpy.mockResolvedValueOnce(errBody(401, 'Invalid email or password'));
+		await expect(login('a@b.c', 'pw')).rejects.toThrow('Invalid email or password');
+	});
+
+	it('falls back to statusText when body is not JSON', async () => {
+		fetchSpy.mockResolvedValueOnce({
+			ok: false,
+			status: 500,
+			statusText: 'Server Error',
+			headers: new Headers(),
+			json: () => Promise.reject(new Error('not json'))
+		} as Response);
+		await expect(login('a@b.c', 'pw')).rejects.toThrow('Server Error');
+	});
+
+	it('attaches lockoutSeconds on 423 from Retry-After header', async () => {
+		fetchSpy.mockResolvedValueOnce(
+			errBody(423, 'Account temporarily locked. Try again later.', {
+				'Retry-After': '300'
+			})
+		);
+		try {
+			await login('a@b.c', 'pw');
+			expect.fail('expected throw');
+		} catch (e) {
+			const err = e as Error & { lockoutSeconds?: number };
+			expect(err.lockoutSeconds).toBe(300);
+			expect(err.message).toContain('locked');
+		}
+	});
+
+	it('omits lockoutSeconds on 423 without Retry-After', async () => {
+		fetchSpy.mockResolvedValueOnce(errBody(423, 'locked'));
+		try {
+			await login('a@b.c', 'pw');
+			expect.fail('expected throw');
+		} catch (e) {
+			expect((e as Error & { lockoutSeconds?: number }).lockoutSeconds).toBeUndefined();
+		}
+	});
+});
+
+describe('signup()', () => {
+	it('POSTs to /auth/redeem-invite with the token', async () => {
+		fetchSpy.mockResolvedValueOnce(okBody({ id: 'u1', email: 'a@b.c' }));
+		await signup({ token: 'tok', password: 'pw', display_name: 'Alice' });
+		const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('http://api.test/auth/redeem-invite');
+		expect(init.method).toBe('POST');
+		expect(JSON.parse(init.body as string)).toEqual({
+			token: 'tok',
+			password: 'pw',
+			display_name: 'Alice'
+		});
+	});
+
+	it('omits undefined email/display_name from the body', async () => {
+		fetchSpy.mockResolvedValueOnce(okBody({ id: 'u1' }));
+		await signup({ token: 'tok', password: 'pw' });
+		const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+		expect(JSON.parse(init.body as string)).toEqual({ token: 'tok', password: 'pw' });
+	});
+});

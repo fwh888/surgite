@@ -127,8 +127,12 @@ def test_off_mode_no_auth_required(client, add_commit):
 
 
 def test_off_mode_auth_routes_404(client):
+    # /login and /signup (GET) are SPA shell routes — they serve the build's
+    # 200.html in prod, 404 in dev. They aren't auth handlers, so AUTH_MODE
+    # doesn't gate them; the page itself decides what to render.
     assert client.post("/auth/login", json={"email": "a@b.c", "password": "x"}).status_code == 404
     assert client.post("/auth/logout").status_code == 404
+    assert client.post("/signup", json={"token": "x", "password": "x"}).status_code == 404
 
 
 # --- AUTH_MODE=multi_user ---------------------------------------------------
@@ -235,6 +239,31 @@ def test_redeem_used_invite_rejected(client, multi_user):
 
 def test_redeem_unknown_invite_rejected(client, multi_user):
     r = client.post("/auth/redeem-invite", json={"token": "nope", "password": "whatever-123"})
+    assert r.status_code == 400
+
+
+# --- /signup alias (issue #75) ---------------------------------------------
+# /signup and /auth/redeem-invite are aliases of the same handler; one
+# parametrized test exercises both paths to keep the diff small.
+
+
+@pytest.mark.parametrize("path", ["/auth/redeem-invite", "/signup"])
+def test_signup_alias_creates_user_and_logs_in(client, multi_user, path):
+    admin = _make_user(email="admin@example.com", is_admin=True)
+    with get_session() as s:
+        token = create_invite(s, email="newbie@example.com", role="user", created_by=admin).token
+    r = client.post(path, json={"token": token, "password": "brand-new-pass"})
+    assert r.status_code == 201
+    assert r.json()["email"] == "newbie@example.com"
+    sid = r.headers["set-cookie"].split(f"{COOKIE}=", 1)[1].split(";", 1)[0]
+    assert (
+        client.get("/auth/me", headers=_cookie_header(sid)).json()["email"] == "newbie@example.com"
+    )
+
+
+@pytest.mark.parametrize("path", ["/auth/redeem-invite", "/signup"])
+def test_signup_alias_rejects_bad_token(client, multi_user, path):
+    r = client.post(path, json={"token": "nope", "password": "whatever-123"})
     assert r.status_code == 400
 
 
