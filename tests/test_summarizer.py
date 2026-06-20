@@ -245,7 +245,7 @@ async def test_per_repo_uses_per_repo_settings(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
     seen: dict[str, dict | None] = {}
 
-    async def fake_generate(log_text, provider=None, settings=None, client=None):
+    async def fake_generate(log_text, provider=None, settings=None, client=None, user_id=None):
         seen[log_text] = settings
         return {"summary": "ok", "provider": "groq", "model": "m"}
 

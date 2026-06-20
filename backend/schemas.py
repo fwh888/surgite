@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -51,3 +53,33 @@ class RedeemInviteRequest(BaseModel):
     password: str
     email: str | None = None
     display_name: str | None = None
+
+
+class ApiKeyCreate(BaseModel):
+    """Mint a new per-user API key. The full key is returned in the response
+    exactly once (slice 2 plan #65)."""
+
+    name: str
+    expires_at: datetime | None = None
+
+
+class InviteCreateRequest(BaseModel):
+    """Create a new invite token. `email` is optional — an open invite
+    (null email) can be redeemed by any new user; a pinned invite is
+    locked to one address. `role` is either ``"user"`` (default) or
+    ``"admin"``. The redeem token is returned in the response so the
+    admin can copy it out of band (slice 2 plan #74)."""
+
+    email: str | None = None
+    role: str = "user"
+    ttl_days: int = 14
+
+
+class ProviderKeysUpdate(BaseModel):
+    """Set (or replace) a per-user provider key. The clear flag revokes the
+    existing row; the key field is required otherwise. The raw key is never
+    returned by the API (slice 2 plan #73)."""
+
+    provider: str
+    key: str | None = None
+    clear: bool = False

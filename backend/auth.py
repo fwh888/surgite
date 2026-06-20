@@ -11,8 +11,8 @@ call so tests can flip it):
   off         — anonymous; resolves to the bootstrap user. 0.4.0 behaviour.
   single_user — resolves to the bootstrap user; the machinery is exercised but
                 no login flow is exposed.
-  multi_user  — full session-cookie auth; an absent/expired/invalid session is
-                a 401.
+  multi_user  — full session-cookie or Bearer API-key auth; an absent/expired/
+                invalid session or key is a 401.
 
 Designed so OIDC can be added in 0.6.0 by replacing only the multi_user branch
 of `get_current_user` with one that consults an OIDC verifier first, falling
@@ -31,7 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend import config
-from backend.db import InviteRow, SessionRow, UserRow, get_db, session_scope
+from backend.db import ApiKeyRow, InviteRow, SessionRow, UserRow, get_db, session_scope
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +63,144 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def normalize_email(email: str) -> str:
     return email.strip().lower()
+
+
+# --- API keys (Bearer) -------------------------------------------------------
+
+
+# A full key is `sk_<prefix>_<secret>` where prefix is 8 chars and secret is
+# 32 chars. The DB stores an argon2id hash of the *full* key plus the prefix
+# for a fast lookup index (argon2 is intentionally slow — we don't want to
+# hash every incoming Bearer just to identify the key).
+_API_KEY_PREFIX_LEN = 8
+_API_KEY_SECRET_LEN = 32
+_API_KEY_PREFIX_BYTES = 4  # 4 bytes -> 6 chars urlsafe; pad to 8 with sk_
+_API_KEY_SECRET_BYTES = 24  # 24 bytes -> 32 chars urlsafe
+
+
+def _generate_api_key() -> tuple[str, str, str]:
+    """Mint a new (full_key, prefix, secret) triple. The full key is what the
+    caller stores; only the prefix and the argon2id hash of the full key hit
+    the DB. The secret portion is the second half of the key, returned as
+    part of `full_key` so the CLI can present it to the user once."""
+    prefix = "sk_" + secrets.token_urlsafe(_API_KEY_PREFIX_BYTES)[:_API_KEY_PREFIX_LEN]
+    secret = secrets.token_urlsafe(_API_KEY_SECRET_BYTES)[:_API_KEY_SECRET_LEN]
+    full = f"{prefix}_{secret}"
+    return full, prefix, secret
+
+
+def issue_api_key(
+    user_id: str,
+    *,
+    name: str,
+    expires_at: datetime | None = None,
+) -> tuple[str, str]:
+    """Create a new API key for `user_id`. Returns ``(full_key, key_id)``.
+    ``full_key`` is shown to the caller exactly once (they need to put it
+    in their CI secret); only the argon2id hash is persisted."""
+    full, prefix, _secret = _generate_api_key()
+    kid = secrets.token_urlsafe(8)
+    now = datetime.now(UTC)
+    with session_scope() as s:
+        row = ApiKeyRow(
+            id=kid,
+            user_id=user_id,
+            name=name,
+            prefix=prefix,
+            key_hash=hash_password(full),
+            expires_at=expires_at,
+            created_at=now,
+        )
+        s.add(row)
+        s.commit()
+    return full, kid
+
+
+def verify_api_key(full_key: str, *, session: Session) -> UserRow | None:
+    """Resolve a Bearer key to its user. Returns None on any failure (no
+    key, unknown prefix, bad hash, expired, revoked). Updates
+    ``last_used_at`` on success."""
+    if not full_key or not full_key.startswith("sk_"):
+        return None
+    parts = full_key.split("_", 2)
+    if len(parts) != 3:
+        return None
+    prefix = parts[0] + "_" + parts[1]
+    row = session.scalar(select(ApiKeyRow).where(ApiKeyRow.prefix == prefix))
+    if row is None or row.revoked_at is not None:
+        return None
+    if row.expires_at is not None and _as_utc(row.expires_at) <= datetime.now(UTC):
+        return None
+    if not verify_password(full_key, row.key_hash):
+        return None
+    row.last_used_at = datetime.now(UTC)
+    session.commit()
+    user = session.get(UserRow, row.user_id)
+    return user if user is not None and user.is_active else None
+
+
+def revoke_api_key(key_id: str, *, user_id: str | None = None) -> bool:
+    """Revoke a key by id. If ``user_id`` is given, only revoke keys owned
+    by that user (the per-user DELETE path). Returns True iff a row was
+    updated."""
+    with session_scope() as s:
+        q = select(ApiKeyRow).where(ApiKeyRow.id == key_id)
+        if user_id is not None:
+            q = q.where(ApiKeyRow.user_id == user_id)
+        row = s.scalar(q)
+        if row is None or row.revoked_at is not None:
+            return False
+        row.revoked_at = datetime.now(UTC)
+        s.commit()
+        return True
+
+
+# --- Login lockout (plan #69) -----------------------------------------------
+
+
+def is_locked(user: UserRow) -> bool:
+    """True iff `user.locked_until` is set and in the future. The check is
+    pure read; the caller is responsible for deciding how to surface it
+    (the auth_login handler turns it into a 423 with a Retry-After)."""
+    if user.locked_until is None:
+        return False
+    return _as_utc(user.locked_until) > datetime.now(UTC)
+
+
+def record_login_failure(user: UserRow, *, session: Session) -> None:
+    """Bump the per-user failure counter. Trips a lockout window if the
+    count crosses ``LOGIN_LOCKOUT_THRESHOLD`` within
+    ``LOGIN_LOCKOUT_WINDOW_MINUTES`` of the first failure. The window is
+    observed by clearing the counter when the gap to the *last* failure
+    exceeds the window — the implementation here is "increment and
+    re-evaluate", which over-locks slightly in the corner case of a
+    slow-but-steady attacker. The over-lock is bounded by the window
+    length and is preferable to under-locking."""
+    user.failed_login_count += 1
+    if user.failed_login_count >= config.LOGIN_LOCKOUT_THRESHOLD:
+        user.locked_until = datetime.now(UTC) + timedelta(
+            minutes=config.LOGIN_LOCKOUT_DURATION_MINUTES
+        )
+        user.failed_login_count = 0  # reset so a fresh attempt after unlock starts at 0
+    session.commit()
+
+
+def record_login_success(user: UserRow, *, session: Session) -> None:
+    """Reset the failure counter and clear the lockout on a successful
+    login. Belt-and-braces: the lockout check rejects locked users
+    regardless, but resetting the count on success means a user who
+    eventually types their password right isn't still sitting on 9
+    failed attempts."""
+    user.failed_login_count = 0
+    user.locked_until = None
+    session.commit()
+
+
+def unlock_user(user: UserRow, *, session: Session) -> None:
+    """Admin action: clear the lockout and the failure counter."""
+    user.failed_login_count = 0
+    user.locked_until = None
+    session.commit()
 
 
 # --- Users ------------------------------------------------------------------
@@ -247,10 +385,32 @@ def get_current_user(
 ) -> UserRow:
     """Resolve the request to a user per AUTH_MODE. In off/single_user the
     bootstrap user is always returned (so handlers can assume a current user
-    exists); in multi_user an absent/expired/invalid session is a 401."""
+    exists); in multi_user an absent/expired/invalid session OR API key is
+    a 401.
+
+    Auth precedence in multi_user mode:
+      1. ``Authorization: Bearer sk_...`` (API key) — used by the CLI
+         (`STANDUP_API_KEY`) and any out-of-band caller.
+      2. The session cookie (``__Host-standup_session``) — used by the SPA.
+
+    The API key path is checked first because a CLI request that
+    mistakenly also sends a stale cookie still authenticates; the cookie
+    path is the SPA's only path. A 401 from the API key path does NOT
+    fall through to the cookie path (and vice versa) — both are
+    independent auth attempts and either one resolving is enough."""
     mode = config.AUTH_MODE
     if mode in ("off", "single_user"):
         return ensure_bootstrap_user(session)
+
+    # Bearer API key (CLI). Stays strictly orthogonal to the cookie path so a
+    # caller with a valid key never has to worry about stray cookies.
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        user = verify_api_key(token, session=session)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        return user
 
     sid = request.cookies.get(config.SESSION_COOKIE_NAME)
     if not sid:

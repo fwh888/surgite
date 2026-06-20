@@ -31,10 +31,13 @@ from sqlalchemy import event, select
 from backend.api import app
 from backend.auth import ensure_bootstrap_user
 from backend.db import (
+    ApiKeyRow,
+    AuditLogRow,
     Base,
     CommitRow,
     InviteRow,
     PromptSettingsRow,
+    ProviderKeyRow,
     RepoRow,
     SessionRow,
     SharedSummaryRow,
@@ -67,6 +70,9 @@ def _clean_tables():
         s.query(SharedSummaryRow).delete()
         s.query(PromptSettingsRow).delete()
         s.query(RepoRow).delete()
+        s.query(ProviderKeyRow).delete()
+        s.query(ApiKeyRow).delete()
+        s.query(AuditLogRow).delete()
         s.query(SessionRow).delete()
         s.query(InviteRow).delete()
         s.query(UserRow).delete()
