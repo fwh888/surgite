@@ -44,6 +44,11 @@ uv run pytest
 uv run ruff check .          # lint (add --fix to auto-fix)
 uv run ruff format .         # format in place
 
+# Regenerate the OpenAPI snapshot baseline (run after changing a route).
+task openapi-snapshot
+# Local equivalent of the CI snapshot gate (run before pushing).
+task openapi-snapshot-check
+
 # Frontend type-check and unit tests (CI runs these alongside the build)
 cd frontend && npm run check
 cd frontend && npm run test    # vitest
