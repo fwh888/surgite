@@ -1,0 +1,65 @@
+# https://taskfile.dev
+#
+# Task shortcuts for the 0.6.0 OpenAPI snapshot workflow.
+#
+# Install task: https://taskfile.dev/installation/
+# On Debian/Ubuntu: `go install github.com/go-task/task/v3/cmd/task@latest`
+# On macOS: `brew install go-task`
+# On Forgejo CI: see .forgejo/workflows/openapi-snapshot.yml (pips `go-task-bin`).
+#
+# Workflow:
+#   - After changing a route, run `task openapi-snapshot` to regenerate
+#     docs/openapi.json. Commit the result alongside your route change.
+#   - Before pushing, run `task openapi-snapshot-check` to confirm the
+#     committed baseline matches a fresh dump. This is the same check CI
+#     runs; failing locally means CI will fail too.
+
+version: '3'
+
+vars:
+  BASELINE: docs/openapi.json
+  SCRIPT: scripts/dump_openapi.py
+  # The dump is byte-stable but uses an ephemeral SQLite DB on disk; we
+  # point it at a project-scoped path (not /tmp) so the artifact stays
+  # close to the code that produced it and so the sandbox paths used in
+  # CI are predictable.
+  CURRENT: .forgejo/openapi.current.json
+  # We invoke the dump via the project venv's python rather than
+  # ``uv run`` so the Taskfile works without ``uv`` being on PATH
+  # (e.g. when a developer runs ``task`` from a subshell that hasn't
+  # sourced their shell profile, or from a CI runner that installs
+  # ``task`` but not ``uv``).
+  PYTHON: .venv/bin/python
+
+tasks:
+  default:
+    desc: List available tasks.
+    cmds:
+      - 'task --list'
+    silent: true
+
+  openapi-snapshot:
+    desc: Regenerate the OpenAPI snapshot baseline (docs/openapi.json).
+    cmds:
+      - mkdir -p .forgejo
+      - '{{.PYTHON}} {{.SCRIPT}} --output {{.BASELINE}}'
+      - '{{.PYTHON}} {{.SCRIPT}} --output {{.CURRENT}}'
+      - diff -u {{.BASELINE}} {{.CURRENT}}
+      - rm -f {{.CURRENT}}
+    sources:
+      - backend/**/*.py
+      - scripts/dump_openapi.py
+    generates:
+      - docs/openapi.json
+
+  openapi-snapshot-check:
+    desc: Diff a fresh dump against the committed baseline; exit 1 on drift.
+    cmds:
+      - mkdir -p .forgejo
+      - '{{.PYTHON}} {{.SCRIPT}} --output {{.CURRENT}}'
+      - diff -u {{.BASELINE}} {{.CURRENT}}
+      - rm -f {{.CURRENT}}
+    sources:
+      - backend/**/*.py
+      - scripts/dump_openapi.py
+      - docs/openapi.json
