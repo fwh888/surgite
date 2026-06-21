@@ -24,6 +24,9 @@ discuss before building something large.
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.14+ and dependencies)
+- [Task](https://taskfile.dev) (the `task` binary, used for command shortcuts
+  like `task openapi-snapshot` and `task openapi-snapshot-check` — see
+  [Taskfile.yml](Taskfile.yml) for the full list)
 - Node.js 22+ (for the frontend)
 - Docker + Docker Compose (for Postgres and the full-app path)
 
@@ -67,6 +70,7 @@ uv run ruff check .               # lint (add --fix to auto-fix)
 uv run ruff format .              # format
 uv run mypy backend/              # type check
 uv run pytest                     # backend tests
+task openapi-snapshot-check       # OpenAPI snapshot drift gate (see below)
 
 cd frontend
 npm run check                     # svelte-check (types + a11y)
@@ -75,6 +79,26 @@ npm run test                      # vitest
 
 If you add behavior, add a test for it. If you fix a bug, add a test that would
 have caught it.
+
+### OpenAPI snapshot
+
+The committed `docs/openapi.json` is the canonical baseline for the project's
+public API surface. The CI snapshot gate (`.forgejo/workflows/openapi-snapshot.yml`)
+regenerates the dump on every PR and fails the build if the committed baseline
+drifts from a fresh dump. This is the 0.6.0 API-stability promise: a route that
+exists in the baseline must continue to exist, byte-for-byte, in the dump.
+
+If you change a route, response model, or anything that affects `app.openapi()`:
+
+1. Run `task openapi-snapshot` to regenerate `docs/openapi.json`.
+2. Commit the updated `docs/openapi.json` alongside your route change.
+3. Push — the workflow will re-run and pass.
+
+`task` is the [Taskfile](https://taskfile.dev) runner. Install with
+`brew install go-task` (macOS), `go install github.com/go-task/task/v3/cmd/task@latest`
+(Go), or `pipx install go-task-bin` (Python); see the [Taskfile.yml](Taskfile.yml)
+for the full task list. `task` is intentionally preferred over Makefile (no
+shell-escaping gotchas, declarative YAML, easy to add new tasks later).
 
 ## Pull request process
 
