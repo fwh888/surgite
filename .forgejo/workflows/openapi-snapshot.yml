@@ -1,0 +1,36 @@
+name: OpenAPI snapshot
+
+on:
+  pull_request:
+
+jobs:
+  openapi-snapshot:
+    name: OpenAPI snapshot gate
+    runs-on: host
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync --group dev
+
+      - name: Dump current OpenAPI document
+        run: uv run python scripts/dump_openapi.py --output /tmp/openapi.json
+
+      - name: Diff against committed baseline
+        run: |
+          if ! diff -u docs/openapi.json /tmp/openapi.json; then
+            echo ""
+            echo "::error::OpenAPI snapshot drift detected. The API surface changed since docs/openapi.json was last updated."
+            echo ""
+            echo "API surface changed. Review the diff above and, if the change is intentional:"
+            echo ""
+            echo "  1. Run 'make openapi-snapshot' (or 'uv run python scripts/dump_openapi.py --output docs/openapi.json') to regenerate the baseline."
+            echo "  2. Commit the updated docs/openapi.json to this branch."
+            echo "  3. Push - the workflow will re-run and pass."
+            echo ""
+            echo "If the change is unintentional, fix the route / schema / model and push again. See docs/0.6.0-plan.md slice 1 for the stability policy this gate enforces."
+            exit 1
+          fi
