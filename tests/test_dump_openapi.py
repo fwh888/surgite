@@ -105,6 +105,49 @@ def test_dump_documents_expected_routes(dump_output: str) -> None:
         assert expected in paths, f"expected route {expected!r} missing from OpenAPI dump"
 
 
+def test_dump_operation_ids_are_unique_and_stable(dump_output: str) -> None:
+    """Every operation has a non-empty, unique ``operationId``.
+
+    OpenAPI's ``operationId`` is the contract SDK generators use
+    to name methods (e.g. ``client.auth.login_auth_login_post()``
+    for the default FastAPI format, or ``client.auth.login()`` for
+    a custom generator). Two consequences:
+
+    1. The ID must be non-empty — FastAPI always generates one,
+       so a missing ID means a regression in the OpenAPI generator.
+    2. The IDs must be unique across the whole document — a
+       collision would break the OpenAPI spec and any client
+       consuming it.
+
+    This is a property the snapshot gate relies on implicitly
+    (a duplicate-ID warning at ``app.openapi()`` time would change
+    the dump), but pinning it here makes the failure mode obvious
+    if it ever breaks.
+    """
+    import re
+    from collections import Counter
+
+    parsed = json.loads(dump_output)
+    ids: list[str] = []
+    for path, methods in parsed["paths"].items():
+        for method, op in methods.items():
+            if method == "parameters":
+                continue
+            op_id = op.get("operationId", "")
+            assert op_id, f"route {method.upper()} {path} has empty operationId"
+            ids.append(op_id)
+
+    counts = Counter(ids)
+    duplicates = {op_id: n for op_id, n in counts.items() if n > 1}
+    assert not duplicates, f"duplicate operationIds: {duplicates}"
+
+    # Every ID must be a valid Python identifier (no spaces,
+    # no slashes, no special chars) — this is what SDK
+    # generators expect.
+    invalid = [op_id for op_id in ids if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", op_id)]
+    assert not invalid, f"operationIds with invalid characters: {invalid}"
+
+
 def test_dump_is_byte_stable(dump_output: str, tmp_path: Path) -> None:
     """Two consecutive runs of the dump script must produce
     byte-identical output.
