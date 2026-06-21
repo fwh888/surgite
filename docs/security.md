@@ -28,7 +28,8 @@ What we're defending against:
   user's repos / commits / provider keys / shares. Mitigated by
   owner-scoped queries on every table (`owner_id = current_user.id`
   is the only access pattern) and the explicit per-route checks
-  documented in `docs/0.5.0-plan.md`.
+  documented in `docs/releases/0.5.0-plan.md` (the historical
+  plan; the current roadmap is `docs/0.6.0-plan.md`).
 - **API key theft.** The CLI's `STANDUP_API_KEY` is stolen. Mitigated
   by `name` on every key (revoke "laptop", keep "CI"), `last_used_at`
   for forensic review, and the fact that keys are argon2id-hashed
