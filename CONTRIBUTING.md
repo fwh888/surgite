@@ -96,9 +96,10 @@ If you change a route, response model, or anything that affects `app.openapi()`:
 
 `task` is the [Taskfile](https://taskfile.dev) runner. Install with
 `brew install go-task` (macOS), `go install github.com/go-task/task/v3/cmd/task@latest`
-(Go), or `pipx install go-task-bin` (Python); see the [Taskfile.yml](Taskfile.yml)
-for the full task list. `task` is intentionally preferred over Makefile (no
-shell-escaping gotchas, declarative YAML, easy to add new tasks later).
+(Go), or `uv tool install go-task-bin` (any platform with [uv](https://docs.astral.sh/uv/));
+see the [Taskfile.yml](Taskfile.yml) for the full task list. `task` is
+intentionally preferred over Makefile (declarative YAML, no shell-escaping
+gotchas, file-watch sources that skip up-to-date tasks).
 
 ## Pull request process
 

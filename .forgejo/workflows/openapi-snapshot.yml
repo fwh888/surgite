@@ -15,11 +15,14 @@ jobs:
 
       - name: Install task
         # `task` is the Taskfile runner used by the snapshot workflow.
-        # See Taskfile.yml for the task definitions. We install via pip
-        # rather than `go install` because the host runner doesn't have
-        # a Go toolchain; `go-task-bin` is a PyPI-distributed binary
-        # that drops `task` onto PATH.
-        run: pip install go-task-bin
+        # See Taskfile.yml for the task definitions. We install via
+        # `uv tool install` (rather than `pip install` or `go install`)
+        # because the host runner's system Python is PEP 668-locked
+        # and doesn't have a Go toolchain; `uv tool install` creates
+        # an isolated tool venv at `~/.local/share/uv/tools/...` and
+        # symlinks the binary into `~/.local/bin/task`, which is on
+        # the runner's PATH.
+        run: uv tool install go-task-bin
 
       - name: Sync dependencies
         run: uv sync --group dev
