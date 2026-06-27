@@ -77,6 +77,12 @@ for the deployment walkthrough.
   (sizing, quickstart, TLS, backup, runbook).
 - [`docs/security.md`](docs/security.md) — the threat model and the security
   controls.
+- [`docs/api-stability.md`](docs/api-stability.md) — the API stability policy:
+  what we promise not to break, and how deprecation works.
+- [`docs/security-support.md`](docs/security-support.md) — supported versions,
+  the vulnerability-response SLA, and the advisory process.
+- [`docs/openapi.json`](docs/openapi.json) — the snapshot-tested OpenAPI
+  document; the machine-readable API contract.
 - [`docs/migrations/0.4.0-to-0.5.0.md`](docs/migrations/0.4.0-to-0.5.0.md) —
   upgrading a 0.4.0 install.
 - [`.env.example`](.env.example) — every configuration variable, with

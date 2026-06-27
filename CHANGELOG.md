@@ -5,6 +5,43 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The API-stability release. 0.6.0 makes the contract with downstream users
+explicit: a snapshot-tested OpenAPI surface, a written stability policy, a
+deprecation procedure, and a security-support commitment.
+
+### Added
+
+- A canonical, snapshot-tested OpenAPI document (`docs/openapi.json`),
+  regenerated from the app and gated in CI
+  (`.forgejo/workflows/openapi-snapshot.yml`). Every route now carries an
+  explicit `operationId`, a summary, and a tag; the stable
+  `{"detail": "..."}` error envelope is declared as the `ErrorResponse`
+  schema.
+- `docs/api-stability.md` — the public API stability policy: what we
+  promise not to break in a minor, what we reserve the right to change,
+  and how the deprecation cycle works.
+- `docs/security-support.md` — supported versions, the
+  vulnerability-response SLA, and the advisory process.
+
+### Changed
+
+- (none yet)
+
+### Deprecated
+
+> Routes and fields marked deprecated in a release are removed no earlier
+> than the second minor release after it (something deprecated in 0.6.0
+> goes no sooner than 0.8.0). See `docs/api-stability.md` for the full
+> policy.
+
+- The `STANDUP_API_TOKEN` environment variable is deprecated in favour of
+  `STANDUP_API_KEY` (it has been an alias since 0.5.0, and the CLI already
+  logs a one-time deprecation warning when it's used). Scheduled for
+  removal in **0.8.0**. This is the first use of the new deprecation
+  procedure.
+
 ## [0.5.0] - 2026-06-20
 
 The auth + multi-user release. After 0.5.0 the project is safe to expose to
