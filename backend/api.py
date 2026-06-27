@@ -67,6 +67,7 @@ from backend.rate_limit import (
 )
 from backend.schemas import (
     ApiKeyCreate,
+    ErrorResponse,
     InviteCreateRequest,
     LoginRequest,
     PasswordChange,
@@ -258,7 +259,20 @@ async def _lifespan(app: FastAPI):
                 pass
 
 
-app = FastAPI(lifespan=_lifespan)
+# Document the stable error envelope once, for every route. OpenAPI's
+# `default` response means "any status not otherwise listed" — accurate
+# here because every error path (HTTPException, the CSRF and SQLAlchemy
+# handlers below) serialises to the same {"detail": "..."} shape. This
+# puts ErrorResponse in components/schemas and declares the contract the
+# 0.6.0 api-stability policy promises, without per-route boilerplate.
+# Routes that want to call out a specific status + header (login's 423,
+# api-key issuance's 429) add it on their own decorator.
+# ponytail: one app-level default beats responses= on all 36 routes.
+_ERROR_RESPONSES: dict = {
+    "default": {"model": ErrorResponse, "description": 'Error: `{"detail": "..."}`.'}
+}
+
+app = FastAPI(lifespan=_lifespan, responses=_ERROR_RESPONSES)
 
 # Allow the Vite dev server (separate origin) to call the API during development.
 # In production the frontend is served same-origin from the static mount below, so
@@ -393,7 +407,7 @@ def _query_commits(
         return total, [_row_to_dict(r) for r in rows]
 
 
-@app.get("/health")
+@app.get("/health", summary="Liveness + DB readiness", tags=["health"], operation_id="health")
 def health(session: Session = Depends(get_db)):
     """Liveness + DB readiness, for monitoring and the container healthcheck.
     A failed DB connection raises SQLAlchemyError, mapped to 503 above."""
@@ -419,7 +433,23 @@ async def _check_providers() -> dict[str, str]:
     return out
 
 
-@app.get("/health/deep")
+@app.get(
+    "/health/deep",
+    summary="Deep health check",
+    tags=["health"],
+    operation_id="health_deep",
+    responses={
+        200: {"description": "All checked components healthy."},
+        503: {
+            "description": (
+                "At least one checked component is degraded. Body is "
+                '`{"status": "ok"|"degraded", "components": {"db", "git", '
+                '"providers"}}`; `no_repos` / `missing_key` are informational, '
+                "not failures."
+            )
+        },
+    },
+)
 async def health_deep(
     session: Session = Depends(get_db),
     user: UserRow | None = Depends(get_optional_user),
@@ -470,7 +500,12 @@ async def health_deep(
     )
 
 
-@app.get("/providers")
+@app.get(
+    "/providers",
+    summary="List summary providers",
+    tags=["providers"],
+    operation_id="list_providers",
+)
 def providers(current_user: UserRow = Depends(get_current_user)):
     """List summary providers, their default model, and whether each is
     configured. A client (UI/CLI) can use this to let the user pick one.
@@ -529,7 +564,24 @@ def _user_admin_to_dict(user: UserRow) -> dict:
     }
 
 
-@app.post("/auth/login")
+@app.post(
+    "/auth/login",
+    summary="Log in",
+    tags=["auth"],
+    operation_id="auth_login",
+    responses={
+        423: {
+            "model": ErrorResponse,
+            "description": "Account temporarily locked.",
+            "headers": {
+                "Retry-After": {
+                    "schema": {"type": "integer"},
+                    "description": "Seconds until the lockout expires.",
+                }
+            },
+        }
+    },
+)
 def auth_login(
     req: LoginRequest,
     request: Request,
@@ -602,7 +654,7 @@ def auth_login(
     return _user_to_dict(user)
 
 
-@app.post("/auth/logout")
+@app.post("/auth/logout", summary="Log out", tags=["auth"], operation_id="auth_logout")
 def auth_logout(
     request: Request,
     response: Response,
@@ -623,7 +675,13 @@ def auth_logout(
     return {"status": "logged out"}
 
 
-@app.post("/auth/redeem-invite", status_code=201)
+@app.post(
+    "/auth/redeem-invite",
+    status_code=201,
+    summary="Redeem an invite",
+    tags=["auth"],
+    operation_id="auth_redeem_invite",
+)
 def auth_redeem_invite(
     req: RedeemInviteRequest,
     request: Request,
@@ -693,10 +751,16 @@ def auth_redeem_invite(
 # under a second route keeps a single source of truth (no duplicated logic).
 # CSRF allowlist includes /signup so the SPA can post it without the
 # ``X-Requested-With`` header that a freshly-loaded form won't have yet.
-app.post("/signup", status_code=201)(auth_redeem_invite)
+app.post(
+    "/signup",
+    status_code=201,
+    summary="Sign up (redeem-invite alias)",
+    tags=["auth"],
+    operation_id="signup",
+)(auth_redeem_invite)
 
 
-@app.get("/auth/me")
+@app.get("/auth/me", summary="Current user", tags=["auth"], operation_id="auth_me")
 def auth_me(current_user: UserRow = Depends(get_current_user)):
     """The current user, for the SPA's 'logged in as' indicator and to let the
     CLI verify a stored session is still valid."""
@@ -706,7 +770,12 @@ def auth_me(current_user: UserRow = Depends(get_current_user)):
 # --- Password change (issue #77) --------------------------------------------
 
 
-@app.put("/auth/password")
+@app.put(
+    "/auth/password",
+    summary="Change password",
+    tags=["auth"],
+    operation_id="auth_change_password",
+)
 def auth_change_password(
     req: PasswordChange,
     request: Request,
@@ -740,7 +809,13 @@ def auth_change_password(
 # lockout is cleared.
 
 
-@app.post("/admin/users/{user_id}/reset-password", status_code=201)
+@app.post(
+    "/admin/users/{user_id}/reset-password",
+    status_code=201,
+    summary="Mint a password-reset token",
+    tags=["admin"],
+    operation_id="admin_reset_password",
+)
 def admin_reset_password(
     user_id: str,
     request: Request,
@@ -767,7 +842,13 @@ def admin_reset_password(
     return {"reset_token": token, "expires_at": expires_at.isoformat()}
 
 
-@app.post("/auth/password-reset/confirm", status_code=204)
+@app.post(
+    "/auth/password-reset/confirm",
+    status_code=204,
+    summary="Confirm a password reset",
+    tags=["auth"],
+    operation_id="auth_reset_password_confirm",
+)
 def auth_reset_password_confirm(
     req: PasswordResetConfirm,
     request: Request,
@@ -810,7 +891,25 @@ def _api_key_to_dict(row: ApiKeyRow) -> dict:
     }
 
 
-@app.post("/auth/api-keys", status_code=201)
+@app.post(
+    "/auth/api-keys",
+    status_code=201,
+    summary="Create an API key",
+    tags=["auth"],
+    operation_id="create_api_key",
+    responses={
+        429: {
+            "model": ErrorResponse,
+            "description": "API key issuance rate limit exceeded.",
+            "headers": {
+                "Retry-After": {
+                    "schema": {"type": "integer"},
+                    "description": "Seconds until issuance is allowed again.",
+                }
+            },
+        }
+    },
+)
 def create_api_key(
     req: ApiKeyCreate,
     request: Request,
@@ -854,7 +953,7 @@ def create_api_key(
     return {"id": kid, "name": req.name, "key": full}
 
 
-@app.get("/auth/api-keys")
+@app.get("/auth/api-keys", summary="List API keys", tags=["auth"], operation_id="list_api_keys")
 def list_api_keys(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
@@ -870,7 +969,13 @@ def list_api_keys(
     return {"keys": [_api_key_to_dict(r) for r in rows]}
 
 
-@app.delete("/auth/api-keys/{key_id}", status_code=204)
+@app.delete(
+    "/auth/api-keys/{key_id}",
+    status_code=204,
+    summary="Revoke an API key",
+    tags=["auth"],
+    operation_id="revoke_api_key",
+)
 def revoke_api_key_endpoint(
     key_id: str,
     request: Request,
@@ -899,7 +1004,13 @@ def _require_admin(user: UserRow) -> None:
         raise HTTPException(status_code=403, detail="Admin only")
 
 
-@app.post("/admin/users/{user_id}/unlock", status_code=204)
+@app.post(
+    "/admin/users/{user_id}/unlock",
+    status_code=204,
+    summary="Unlock a user",
+    tags=["admin"],
+    operation_id="admin_unlock_user",
+)
 def admin_unlock_user(
     user_id: str,
     request: Request,
@@ -927,7 +1038,7 @@ def admin_unlock_user(
 # --- Admin: users (issue #76) -----------------------------------------------
 
 
-@app.get("/admin/users")
+@app.get("/admin/users", summary="List users", tags=["admin"], operation_id="admin_list_users")
 def admin_list_users(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -948,7 +1059,13 @@ def admin_list_users(
     return {"total": total, "users": [_user_admin_to_dict(r) for r in rows]}
 
 
-@app.post("/admin/users/{user_id}/deactivate", status_code=204)
+@app.post(
+    "/admin/users/{user_id}/deactivate",
+    status_code=204,
+    summary="Deactivate a user",
+    tags=["admin"],
+    operation_id="admin_deactivate_user",
+)
 def admin_deactivate_user(
     user_id: str,
     request: Request,
@@ -979,7 +1096,13 @@ def admin_deactivate_user(
     return Response(status_code=204)
 
 
-@app.post("/admin/users/{user_id}/activate", status_code=204)
+@app.post(
+    "/admin/users/{user_id}/activate",
+    status_code=204,
+    summary="Activate a user",
+    tags=["admin"],
+    operation_id="admin_activate_user",
+)
 def admin_activate_user(
     user_id: str,
     request: Request,
@@ -1010,7 +1133,13 @@ def admin_activate_user(
 # --- Admin: invites (plan #74) ----------------------------------------------
 
 
-@app.post("/admin/invites", status_code=201)
+@app.post(
+    "/admin/invites",
+    status_code=201,
+    summary="Create an invite",
+    tags=["admin"],
+    operation_id="admin_create_invite",
+)
 def admin_create_invite(
     req: InviteCreateRequest,
     request: Request,
@@ -1053,7 +1182,12 @@ def admin_create_invite(
 # --- Admin: audit log (plan #75) --------------------------------------------
 
 
-@app.get("/admin/audit")
+@app.get(
+    "/admin/audit",
+    summary="Read the audit log",
+    tags=["admin"],
+    operation_id="admin_list_audit",
+)
 def admin_list_audit(
     since: datetime | None = None,
     action: str | None = None,
@@ -1104,7 +1238,12 @@ def _provider_key_to_dict(row: ProviderKeyRow) -> dict:
     }
 
 
-@app.get("/settings/provider-keys")
+@app.get(
+    "/settings/provider-keys",
+    summary="List configured provider keys",
+    tags=["settings"],
+    operation_id="get_provider_keys",
+)
 def get_provider_keys(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
@@ -1120,7 +1259,12 @@ def get_provider_keys(
     return {"keys": [_provider_key_to_dict(r) for r in rows]}
 
 
-@app.put("/settings/provider-keys")
+@app.put(
+    "/settings/provider-keys",
+    summary="Set or clear a provider key",
+    tags=["settings"],
+    operation_id="upsert_provider_key",
+)
 def upsert_provider_key(
     req: ProviderKeysUpdate,
     request: Request,
@@ -1230,7 +1374,12 @@ def _settings_row_to_dict(row: PromptSettingsRow) -> dict:
     }
 
 
-@app.get("/settings/prompt")
+@app.get(
+    "/settings/prompt",
+    summary="Get prompt settings",
+    tags=["settings"],
+    operation_id="get_prompt_settings",
+)
 def get_prompt_settings(
     repo_id: int | None = None,
     session: Session = Depends(get_db),
@@ -1245,13 +1394,21 @@ def get_prompt_settings(
     return _settings_row_to_dict(row)
 
 
-@app.put("/settings/prompt")
+@app.put(
+    "/settings/prompt",
+    summary="Update prompt settings",
+    tags=["settings"],
+    operation_id="update_prompt_settings",
+)
 def update_prompt_settings(
     update: PromptSettingsUpdate,
     repo_id: int | None = None,
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
+    """Upsert the prompt settings for the caller, optionally scoped to a repo
+    they own (`repo_id`). Only the provided fields are changed. 404 if
+    `repo_id` is given but the caller doesn't own that repo."""
     if repo_id is not None and _owned_repo(session, repo_id, current_user.id) is None:
         raise HTTPException(status_code=404, detail="Repo not found")
 
@@ -1270,7 +1427,7 @@ def update_prompt_settings(
     return _settings_row_to_dict(row)
 
 
-@app.get("/commits")
+@app.get("/commits", summary="List commits", tags=["commits"], operation_id="list_commits")
 def list_commits(
     since: date | None = None,
     until: date | None = None,
@@ -1281,6 +1438,9 @@ def list_commits(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
+    """Paginated, filterable list of the caller's ingested commits. Filters:
+    `since`/`until` (inclusive dates), `author` (substring), `repo` (name).
+    Newest first. Scoped to the caller's own repos."""
     total, commits = _query_commits(
         since, until, author, repo, limit, offset, current_user.id, session=session
     )
@@ -1291,12 +1451,20 @@ def _looks_like_hash(value: str) -> bool:
     return len(value) >= 7 and all(c in "0123456789abcdef" for c in value.lower())
 
 
-@app.get("/commits/{hash}")
+@app.get(
+    "/commits/{hash}",
+    summary="Get a commit by hash",
+    tags=["commits"],
+    operation_id="get_commit",
+)
 def get_commit(
     hash: str,
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
+    """Resolve a full or abbreviated (>=7 hex chars) commit hash to one of the
+    caller's commits. 400 on a malformed hash, 404 if no match, 409 if an
+    abbreviation matches more than one commit."""
     if not _looks_like_hash(hash):
         raise HTTPException(
             status_code=400,
@@ -1383,7 +1551,12 @@ def _check_ai_preconditions(request: Request, provider: str | None, total: int, 
     return resolved
 
 
-@app.get("/summary")
+@app.get(
+    "/summary",
+    summary="Commit summary for a period",
+    tags=["summaries"],
+    operation_id="get_summary",
+)
 async def summary(
     request: Request,
     since: date | None = None,
@@ -1470,7 +1643,12 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-@app.get("/summary/stream")
+@app.get(
+    "/summary/stream",
+    summary="Stream an AI summary (SSE)",
+    tags=["summaries"],
+    operation_id="stream_summary",
+)
 async def summary_stream(
     request: Request,
     since: date | None = None,
@@ -1547,16 +1725,23 @@ async def summary_stream(
     )
 
 
-@app.get("/repos")
+@app.get("/repos", summary="List repos", tags=["repos"], operation_id="list_repos")
 def list_repos(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
+    """List the repos the caller has registered, with ingest timestamps."""
     rows = session.scalars(select(RepoRow).where(RepoRow.owner_id == current_user.id)).all()
     return {"repos": [_repo_to_dict(r) for r in rows]}
 
 
-@app.post("/repos", status_code=201)
+@app.post(
+    "/repos",
+    status_code=201,
+    summary="Register a repo",
+    tags=["repos"],
+    operation_id="create_repo",
+)
 def create_repo(
     req: RepoCreate,
     background: BackgroundTasks,
@@ -1608,12 +1793,20 @@ def create_repo(
     return _repo_to_dict(repo)
 
 
-@app.delete("/repos/{repo_id}", status_code=204)
+@app.delete(
+    "/repos/{repo_id}",
+    status_code=204,
+    summary="Delete a repo",
+    tags=["repos"],
+    operation_id="delete_repo",
+)
 def delete_repo(
     repo_id: int,
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
+    """Remove a repo the caller owns (and its commits cascade). 404 if the
+    repo doesn't exist or isn't owned by the caller."""
     repo = _owned_repo(session, repo_id, current_user.id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repo not found")
@@ -1621,7 +1814,13 @@ def delete_repo(
     session.commit()
 
 
-@app.post("/summaries", status_code=201)
+@app.post(
+    "/summaries",
+    status_code=201,
+    summary="Create a shareable summary link",
+    tags=["summaries"],
+    operation_id="create_share",
+)
 def create_share(
     req: ShareCreate,
     session: Session = Depends(get_db),
@@ -1661,7 +1860,12 @@ def _as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
-@app.get("/summaries/mine")
+@app.get(
+    "/summaries/mine",
+    summary="List my shared summaries",
+    tags=["summaries"],
+    operation_id="list_my_shares",
+)
 def list_my_shares(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -1682,7 +1886,12 @@ def list_my_shares(
     return {"total": total, "summaries": [_share_to_dict(r) for r in rows]}
 
 
-@app.get("/summaries/{slug}")
+@app.get(
+    "/summaries/{slug}",
+    summary="Resolve a shared summary",
+    tags=["summaries"],
+    operation_id="get_share",
+)
 def get_share(
     slug: str,
     session: Session = Depends(get_db),
@@ -1708,7 +1917,12 @@ def get_share(
 _FRONTEND_BUILD = Path(__file__).resolve().parent.parent / "frontend" / "build"
 
 
-@app.get("/s/{slug}")
+@app.get(
+    "/s/{slug}",
+    summary="Shared-summary SPA shell",
+    tags=["ui"],
+    operation_id="share_page",
+)
 def share_page(slug: str):
     """Serve the SPA shell for a shared-summary deep link so a hard refresh on
     /s/{slug} works. The client-side route reads the slug and re-runs the
@@ -1717,14 +1931,14 @@ def share_page(slug: str):
     return _serve_spa_shell()
 
 
-@app.get("/login")
+@app.get("/login", summary="Login SPA shell", tags=["ui"], operation_id="login_page")
 def login_page():
     """SPA shell for /login. The client-side route renders the login form. In
     dev (no build) the Vite server handles this route instead."""
     return _serve_spa_shell()
 
 
-@app.get("/signup")
+@app.get("/signup", summary="Signup SPA shell", tags=["ui"], operation_id="signup_page")
 def signup_page():
     """SPA shell for /signup. The client-side route reads ``?token=...`` from
     the query string and renders the redemption form. In dev (no build) the
