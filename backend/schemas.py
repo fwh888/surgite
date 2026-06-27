@@ -104,6 +104,14 @@ class PasswordChange(BaseModel):
     new_password: str
 
 
+class PasswordResetRequest(BaseModel):
+    """Start the self-serve password reset (0.6.0). The endpoint always
+    returns 204, even for an unknown email, so this never reveals whether
+    an account exists."""
+
+    email: str
+
+
 class PasswordResetConfirm(BaseModel):
     """Redeem an admin-minted one-time reset token. 15-minute expiry,
     one-time use; on success all of the user's sessions are revoked

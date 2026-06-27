@@ -24,10 +24,29 @@ deprecation procedure, and a security-support commitment.
   and how the deprecation cycle works.
 - `docs/security-support.md` — supported versions, the
   vulnerability-response SLA, and the advisory process.
+- **CLI keyring storage.** `standup --login` / `--redeem-invite` now store
+  the session cookie in the OS keyring (macOS Keychain, Linux Secret
+  Service, Windows Credential Manager) instead of a 0600 file. Falls back
+  to the 0600 file when no keyring backend is available (headless / no
+  D-Bus); `--keyring-file` forces the file. An existing 0600 session is
+  migrated into the keyring on first read, then shredded. New dependency:
+  `keyring`.
+- **Self-serve, email-delivered password reset.** `POST /auth/password-reset`
+  (public) emails a one-time, 15-minute reset link; it always returns 204,
+  so it can't be used to enumerate accounts. A new `backend/mail.py`
+  provides an SMTP mailer (`SMTP_*` env vars, STARTTLS / implicit TLS) and a
+  logging mailer that writes the email to the log stream — the default when
+  `SMTP_HOST` is unset, so reset works before mail is configured. The
+  admin-mediated `POST /admin/users/{id}/reset-password` stays.
 
 ### Changed
 
-- (none yet)
+- Password-reset token ids are now generated as hex (`token_hex`) rather
+  than `token_urlsafe`. The previous ids could contain `_`/`-`, which made
+  a fraction of tokens fail to redeem because the `pr_<id>_<secret>` format
+  couldn't be split back apart reliably. Existing un-redeemed tokens from a
+  pre-upgrade process are unaffected by a normal deploy (they're short-lived
+  and re-issued on demand).
 
 ### Deprecated
 

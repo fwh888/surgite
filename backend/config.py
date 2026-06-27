@@ -84,3 +84,19 @@ IP_OUTER_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("IP_OUTER_RATE_LIMIT_WIN
 # per user is generous for normal use and catches a runaway script.
 API_KEY_ISSUE_LIMIT = int(os.environ.get("API_KEY_ISSUE_LIMIT", "10"))
 API_KEY_ISSUE_WINDOW_HOURS = int(os.environ.get("API_KEY_ISSUE_WINDOW_HOURS", "24"))
+
+# --- Email (0.6.0) ----------------------------------------------------------
+# SMTP for email-delivered password reset. When SMTP_HOST is unset, the app
+# uses the LoggingMailer (writes the rendered email to the log stream) so a
+# self-hoster who hasn't configured mail still gets working password reset —
+# the link lands where they already look for operational signals.
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("SMTP_FROM", "standup-gen <no-reply@localhost>")
+# "starttls" (default, port 587), "ssl" (implicit TLS, port 465), or "none".
+SMTP_TLS = os.environ.get("SMTP_TLS", "starttls").lower()
+# Base URL used to build links in emails (the reset link). Defaults to the
+# request's own origin when unset, so a single-host deployment needs no config.
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
