@@ -125,6 +125,20 @@
         "title": "PasswordResetConfirm",
         "type": "object"
       },
+      "PasswordResetRequest": {
+        "description": "Start the self-serve password reset (0.6.0). The endpoint always\nreturns 204, even for an unknown email, so this never reveals whether\nan account exists.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "PasswordResetRequest",
+        "type": "object"
+      },
       "PromptSettingsUpdate": {
         "properties": {
           "custom_instructions": {
@@ -984,6 +998,41 @@
           }
         },
         "summary": "Change password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/password-reset": {
+      "post": {
+        "description": "Self-serve password reset. Mints a one-time, 15-minute token for the\naccount and emails the reset link. Always returns 204 — even when the\nemail doesn't exist or the account is inactive — so it can't be used to\nenumerate accounts. Public (no session) and CSRF-exempt, like login.",
+        "operationId": "auth_request_password_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error: `{\"detail\": \"...\"}`."
+          }
+        },
+        "summary": "Request a password reset email",
         "tags": [
           "auth"
         ]

@@ -14,11 +14,71 @@ from backend import cli_auth
 
 @pytest.fixture(autouse=True)
 def _isolated_config(tmp_path, monkeypatch):
-    """Point the session jar at a temp dir and clear auth env vars."""
+    """Point the session jar at a temp dir, clear auth env vars, and force the
+    0600-file backend so tests never touch the developer's real OS keyring.
+    The keyring path gets its own tests with a fake backend below."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     for var in ("STANDUP_API_KEY", "STANDUP_API_TOKEN", "STANDUP_EMAIL", "STANDUP_PASSWORD"):
         monkeypatch.delenv(var, raising=False)
+    cli_auth.use_file_fallback(True)
     yield
+    cli_auth.use_file_fallback(False)
+
+
+class _FakeKeyring:
+    """In-memory stand-in for the OS keyring, so the keyring code path is
+    tested without a real backend (and without prompting the dev keychain)."""
+
+    def __init__(self):
+        self.store: dict[tuple[str, str], str] = {}
+
+    def set_password(self, service, user, value):
+        self.store[(service, user)] = value
+
+    def get_password(self, service, user):
+        return self.store.get((service, user))
+
+    def delete_password(self, service, user):
+        if (service, user) not in self.store:
+            raise cli_auth.keyring.errors.PasswordDeleteError("not found")
+        del self.store[(service, user)]
+
+
+@pytest.fixture
+def fake_keyring(monkeypatch):
+    """Activate the keyring path backed by an in-memory store."""
+    kr = _FakeKeyring()
+    monkeypatch.setattr(cli_auth.keyring, "set_password", kr.set_password)
+    monkeypatch.setattr(cli_auth.keyring, "get_password", kr.get_password)
+    monkeypatch.setattr(cli_auth.keyring, "delete_password", kr.delete_password)
+    monkeypatch.setattr(cli_auth, "_keyring_available", lambda: True)
+    cli_auth.use_file_fallback(False)
+    return kr
+
+
+def test_session_round_trips_through_keyring(fake_keyring):
+    """With a keyring backend, the session lives in the keyring, not a file."""
+    cli_auth.save_session("http://api", "n", "v")
+    assert not cli_auth.session_file().exists()
+    assert cli_auth.load_session() == {
+        "api_url": "http://api",
+        "cookie_name": "n",
+        "cookie_value": "v",
+    }
+    cli_auth.clear_session()
+    assert cli_auth.load_session() is None
+
+
+def test_keyring_migration_from_0600_file(fake_keyring):
+    """An existing 0600 file is migrated into the keyring and then shredded."""
+    cli_auth._write_session_file(
+        '{"api_url": "http://api", "cookie_name": "n", "cookie_value": "old"}'
+    )
+    assert cli_auth.session_file().exists()
+    sess = cli_auth.load_session()  # triggers the migration
+    assert sess["cookie_value"] == "old"
+    assert not cli_auth.session_file().exists(), "file should be shredded after migration"
+    assert fake_keyring.get_password(cli_auth._KEYRING_SERVICE, cli_auth._KEYRING_USER) is not None
 
 
 def test_save_load_clear_session(tmp_path):

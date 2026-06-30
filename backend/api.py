@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend import config, summarizer
+from backend import config, mail, summarizer
 from backend.audit import audit
 from backend.auth import (
     change_password,
@@ -72,6 +72,7 @@ from backend.schemas import (
     LoginRequest,
     PasswordChange,
     PasswordResetConfirm,
+    PasswordResetRequest,
     PromptSettingsUpdate,
     ProviderKeysUpdate,
     RedeemInviteRequest,
@@ -307,6 +308,7 @@ _CSRF_EXEMPT_PATHS = {
     "/auth/login",
     "/auth/redeem-invite",
     "/auth/logout",
+    "/auth/password-reset",
     "/auth/password-reset/confirm",
     "/signup",
     "/login",
@@ -803,10 +805,56 @@ def auth_change_password(
     return Response(status_code=204)
 
 
-# --- Password reset (issue #77) ---------------------------------------------
-# Admin mints a one-time token, delivers it out of band, the user redeems
-# it. 15-minute expiry; on success every session is revoked and the
-# lockout is cleared.
+# --- Password reset (issue #77, email delivery 0.6.0) -----------------------
+# Two ways in: the self-serve flow (user asks, gets an email) and the
+# admin-mediated flow (admin mints a token, useful when the user can't
+# receive mail). Both land on POST /auth/password-reset/confirm to redeem.
+# 15-minute expiry; on success every session is revoked and the lockout
+# is cleared.
+
+
+def _reset_link(request: Request, token: str) -> str:
+    """Build the reset link the email points at. PUBLIC_URL wins; otherwise
+    fall back to the request's own origin so a single-host deploy needs no
+    config. The path is the SPA's /password-reset page, which reads ?token."""
+    base = config.PUBLIC_URL or str(request.base_url).rstrip("/")
+    return f"{base}/password-reset?token={token}"
+
+
+@app.post(
+    "/auth/password-reset",
+    status_code=204,
+    summary="Request a password reset email",
+    tags=["auth"],
+    operation_id="auth_request_password_reset",
+)
+def auth_request_password_reset(
+    req: PasswordResetRequest,
+    request: Request,
+    session: Session = Depends(get_db),
+):
+    """Self-serve password reset. Mints a one-time, 15-minute token for the
+    account and emails the reset link. Always returns 204 — even when the
+    email doesn't exist or the account is inactive — so it can't be used to
+    enumerate accounts. Public (no session) and CSRF-exempt, like login."""
+    _require_multi_user()
+    ip = request.client.host if request.client else None
+    user = session.scalar(select(UserRow).where(UserRow.email == normalize_email(req.email)))
+    if user is not None and user.is_active:
+        token, expires_at = mint_password_reset(user.id)
+        ttl_minutes = max(1, round((expires_at - datetime.now(UTC)).total_seconds() / 60))
+        mail.get_mailer().send_template(
+            user.email,
+            "password-reset",
+            {"reset_url": _reset_link(request, token), "ttl_minutes": ttl_minutes},
+        )
+        audit(
+            "auth.password.reset_request",
+            actor_id=user.id,
+            ip=ip,
+            user_agent=request.headers.get("user-agent"),
+        )
+    return Response(status_code=204)
 
 
 @app.post(

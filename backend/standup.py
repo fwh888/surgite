@@ -90,6 +90,12 @@ def main():
         help="Redeem an invite token: create an account and log in",
     )
     auth_group.add_argument("--email", help="Email for --login / --redeem-invite (or prompt)")
+    auth_group.add_argument(
+        "--keyring-file",
+        action="store_true",
+        help="Store the session in a 0600 file instead of the OS keyring "
+        "(for headless servers and CI)",
+    )
 
     since_group = parser.add_mutually_exclusive_group()
     since_group.add_argument("--since", help="Start date for git log (default: 7.days.ago)")
@@ -102,6 +108,9 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if args.keyring_file:
+        cli_auth.use_file_fallback(True)
 
     # Auth subcommands short-circuit before the repo/summary path.
     if args.login or args.logout or args.redeem_invite:

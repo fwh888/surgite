@@ -12,8 +12,13 @@ Auth precedence for `--registered` calls:
 STANDUP_API_TOKEN (0.4.0) is accepted as a deprecated alias for
 STANDUP_API_KEY with a one-time warning.
 
-The session file lives at $XDG_CONFIG_HOME/standup/session (default
-~/.config/standup/session). Keyring integration is deferred to 0.6.0.
+Session storage (0.6.0): the cookie lives in the OS keyring by default —
+the login keychain on macOS, the Secret Service on Linux (GNOME Keyring,
+KWallet, KeePassXC), the Credential Manager on Windows. When no keyring
+backend is available (a headless box with no D-Bus) or `--keyring-file`
+is passed, it falls back to a 0600 file at $XDG_CONFIG_HOME/standup/session
+(default ~/.config/standup/session). An existing 0600 file from <=0.5.0 is
+migrated into the keyring on first read, then shredded.
 """
 
 import getpass
@@ -23,6 +28,36 @@ import sys
 from pathlib import Path
 
 import httpx
+import keyring
+import keyring.errors
+
+_KEYRING_SERVICE = "standup-gen"
+_KEYRING_USER = "session"
+
+# Set by the CLI's --keyring-file flag (and by tests). When True we skip the
+# keyring entirely and use the 0600 file — for headless servers, CI, and the
+# test suite, which must not touch the developer's real login keychain.
+_force_file = False
+
+
+def use_file_fallback(force: bool) -> None:
+    """Force (or unforce) the 0600-file backend instead of the OS keyring."""
+    global _force_file
+    _force_file = force
+
+
+def _keyring_available() -> bool:
+    """True if a real OS keyring backend is configured. keyring installs a
+    no-op `fail` backend when nothing real is present (headless, no D-Bus);
+    we treat that as 'use the file fallback'."""
+    if _force_file:
+        return False
+    try:
+        from keyring.backends.fail import Keyring as _FailKeyring
+
+        return not isinstance(keyring.get_keyring(), _FailKeyring)
+    except Exception:
+        return False
 
 
 def _config_dir() -> Path:
@@ -34,20 +69,17 @@ def session_file() -> Path:
     return _config_dir() / "session"
 
 
-def save_session(api_url: str, cookie_name: str, cookie_value: str) -> None:
-    """Persist the session cookie for `api_url` with 0600 perms."""
+def _write_session_file(blob: str) -> None:
     d = _config_dir()
     d.mkdir(parents=True, exist_ok=True)
     path = session_file()
     # Create with restrictive perms from the start, then write.
     path.touch(mode=0o600, exist_ok=True)
     path.chmod(0o600)
-    path.write_text(
-        json.dumps({"api_url": api_url, "cookie_name": cookie_name, "cookie_value": cookie_value})
-    )
+    path.write_text(blob)
 
 
-def load_session() -> dict | None:
+def _read_session_file() -> dict | None:
     path = session_file()
     if not path.exists():
         return None
@@ -57,10 +89,63 @@ def load_session() -> dict | None:
         return None
 
 
-def clear_session() -> None:
+def _shred_session_file() -> None:
+    """Overwrite then unlink the 0600 file. ponytail: a single overwrite is
+    best-effort — on an SSD/CoW filesystem wear-levelling may leave the old
+    block readable; the real protection is the keyring, this just avoids a
+    plaintext cookie lingering at a well-known path."""
     path = session_file()
-    if path.exists():
-        path.unlink()
+    if not path.exists():
+        return
+    try:
+        with open(path, "r+b") as f:
+            f.write(os.urandom(max(path.stat().st_size, 1)))
+            f.flush()
+            os.fsync(f.fileno())
+    except OSError:
+        pass
+    path.unlink(missing_ok=True)
+
+
+def save_session(api_url: str, cookie_name: str, cookie_value: str) -> None:
+    """Persist the session cookie for `api_url` (keyring, or 0600 file)."""
+    blob = json.dumps(
+        {"api_url": api_url, "cookie_name": cookie_name, "cookie_value": cookie_value}
+    )
+    if _keyring_available():
+        keyring.set_password(_KEYRING_SERVICE, _KEYRING_USER, blob)
+        _shred_session_file()  # don't leave a stale plaintext copy behind
+        return
+    _write_session_file(blob)
+
+
+def load_session() -> dict | None:
+    if not _keyring_available():
+        return _read_session_file()
+    blob = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USER)
+    if blob is None:
+        # Migration: a 0600 file from <=0.5.0. Move it into the keyring once,
+        # then shred the file so the plaintext cookie stops lingering on disk.
+        migrated = _read_session_file()
+        if migrated is None:
+            return None
+        keyring.set_password(_KEYRING_SERVICE, _KEYRING_USER, json.dumps(migrated))
+        _shred_session_file()
+        print("Migrated CLI session from the 0600 file into the OS keyring.", file=sys.stderr)
+        return migrated
+    try:
+        return json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+
+
+def clear_session() -> None:
+    if _keyring_available():
+        try:
+            keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USER)
+        except keyring.errors.PasswordDeleteError:
+            pass  # nothing stored; clearing is idempotent
+    _shred_session_file()  # also remove any file copy (fallback or pre-migration)
 
 
 def _parse_set_cookie(header: str | None) -> tuple[str | None, str | None]:

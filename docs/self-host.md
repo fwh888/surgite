@@ -123,6 +123,60 @@ Upgrading 0.5.x → 0.5.y is a normal `docker compose pull && docker compose up 
 followed by `uv run alembic upgrade head` (the API runs it on startup, so this
 is usually implicit). Migrations are forward-only.
 
+## CLI session storage
+
+`standup --login` / `--redeem-invite` save a session cookie so later
+`standup --registered <name>` calls reuse it. Where that cookie lives:
+
+- **By default, the OS keyring** — the login keychain on macOS, the Secret
+  Service on Linux (GNOME Keyring, KWallet, KeePassXC — whatever you have),
+  the Credential Manager on Windows. Nothing to configure.
+- **A 0600 file** at `$XDG_CONFIG_HOME/standup/session` (default
+  `~/.config/standup/session`) when no keyring backend is available — a
+  headless server or CI runner with no D-Bus / Secret Service falls back to
+  this automatically.
+- **Forced file mode** with `standup --login --keyring-file`, for headless
+  boxes where you'd rather not depend on keyring detection, or for scripted
+  setups.
+
+Upgrading from 0.5.x: an existing 0600 session file is migrated into the
+keyring the first time the CLI reads it (then the file is overwritten and
+removed). No action needed. The 0600 file remains fully supported in 0.6.0;
+per [`docs/api-stability.md`](api-stability.md) any future change to this
+behaviour goes through the deprecation cycle.
+
+## Email configuration
+
+Email is used for self-serve password reset (`POST /auth/password-reset`).
+You don't have to configure it:
+
+- **Unconfigured (default).** With `SMTP_HOST` unset, the app uses the
+  *logging mailer*: the reset email — including the reset link — is written
+  to the structured log stream instead of being sent. A self-hoster who
+  hasn't set up mail still gets working password reset; the link lands where
+  they already look for operational signals (`docker compose logs`).
+- **SMTP.** Set the `SMTP_*` vars to send real mail:
+
+  ```bash
+  SMTP_HOST=smtp.example.com
+  SMTP_PORT=587                 # 587 for STARTTLS, 465 for implicit TLS
+  SMTP_USERNAME=apikey
+  SMTP_PASSWORD=...
+  SMTP_FROM="standup-gen <no-reply@example.com>"
+  SMTP_TLS=starttls             # starttls | ssl | none
+  PUBLIC_URL=https://standup.example.com   # used to build the reset link
+  ```
+
+  A transactional provider (Mailgun, Postmark, SES) is the right choice for
+  a real deployment; a personal Gmail app-password works for a tiny team.
+  `PUBLIC_URL` defaults to the request's own origin, so a single-host
+  deployment behind one hostname needs no extra config.
+
+If your SMTP credentials leak, rotate `SMTP_PASSWORD` — it's independent of
+the Fernet master key, so `provider_keys` are unaffected. See
+[`docs/security-support.md`](security-support.md) for the broader
+incident-response policy.
+
 ## Threat model
 
 The full threat model is in [`docs/security.md`](security.md) — what we

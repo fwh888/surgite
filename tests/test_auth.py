@@ -763,3 +763,55 @@ def test_summaries_mine_excludes_expired(client, multi_user):
 
 def test_summaries_mine_requires_auth_in_multi_user(client, multi_user):
     assert client.get("/summaries/mine").status_code == 401
+
+
+# --- Self-serve, email-delivered password reset (0.6.0) ---------------------
+# SMTP_HOST is unset in tests, so the app uses LoggingMailer: the reset email
+# (link + token) is written to the `backend.mail` logger. We read it back from
+# caplog and prove the token redeems end-to-end.
+
+
+def _reset_email_body(caplog) -> str:
+    msgs = [r.getMessage() for r in caplog.records if r.name == "backend.mail"]
+    assert msgs, "no email was logged"
+    return "\n".join(msgs)
+
+
+def test_self_serve_reset_emails_a_working_link(client, multi_user, caplog):
+    import logging
+    import re
+
+    _make_user(email="victim@example.com", password="old-pass-1234")
+    with caplog.at_level(logging.INFO, logger="backend.mail"):
+        r = client.post("/auth/password-reset", json={"email": "victim@example.com"})
+    assert r.status_code == 204
+    body = _reset_email_body(caplog)
+    m = re.search(r"/password-reset\?token=(pr_[A-Za-z0-9_-]+)", body)
+    assert m, f"no reset link in email:\n{body}"
+    token = m.group(1)
+    # The emailed token redeems and sets the new password.
+    r = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": token, "new_password": "freshly-chosen-pw"},
+    )
+    assert r.status_code == 204
+    assert (
+        client.post(
+            "/auth/login", json={"email": "victim@example.com", "password": "freshly-chosen-pw"}
+        ).status_code
+        == 200
+    )
+
+
+def test_self_serve_reset_unknown_email_is_204_and_silent(client, multi_user, caplog):
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="backend.mail"):
+        r = client.post("/auth/password-reset", json={"email": "nobody@example.com"})
+    assert r.status_code == 204  # no enumeration: same response as a real account
+    assert not [rec for rec in caplog.records if rec.name == "backend.mail"]
+
+
+def test_self_serve_reset_404s_outside_multi_user(client):
+    # AUTH_MODE defaults to off; the route should not exist.
+    assert client.post("/auth/password-reset", json={"email": "x@example.com"}).status_code == 404

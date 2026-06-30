@@ -400,14 +400,20 @@ def change_password(user_id: str, *, new_password: str) -> None:
 # index, same as the api_keys design.
 
 _PASSWORD_RESET_TTL_MINUTES = 15
-_PASSWORD_RESET_ID_LEN = 8
+_PASSWORD_RESET_ID_BYTES = 4  # token_hex(4) -> 8 hex chars, separator-free
+_PASSWORD_RESET_ID_LEN = _PASSWORD_RESET_ID_BYTES * 2
 _PASSWORD_RESET_SECRET_BYTES = 32
 
 
 def _generate_reset_token() -> tuple[str, str]:
-    """Mint a new (full_token, id) pair. The full token is what the
-    admin shows the user once; the id is the lookup index."""
-    rid = secrets.token_urlsafe(_API_KEY_PREFIX_BYTES)[:_PASSWORD_RESET_ID_LEN]
+    """Mint a new (full_token, id) pair. The full token is what gets emailed
+    to the user once; the id is the lookup index.
+
+    The id is hex (``token_hex``), not ``token_urlsafe``: the token format is
+    ``pr_<id>_<secret>`` and the id must not contain the ``_``/``-`` that
+    ``token_urlsafe`` can emit, or redemption can't reliably split the id
+    back out. The secret keeps full url-safe entropy."""
+    rid = secrets.token_hex(_PASSWORD_RESET_ID_BYTES)
     secret = secrets.token_urlsafe(_PASSWORD_RESET_SECRET_BYTES)
     return f"pr_{rid}_{secret}", rid
 
@@ -440,15 +446,17 @@ def redeem_password_reset(token: str, *, new_password: str) -> str | None:
     on success, None if the token is unknown / expired / used / the
     user is inactive.
 
-    The token format is ``pr_<id>_<secret>``; we look up by the 6-char
-    ``id`` (the lookup index) and verify the full token against the
-    argon2id hash, exactly like api_keys."""
+    The token format is ``pr_<id>_<secret>`` where ``<id>`` is exactly
+    ``_PASSWORD_RESET_ID_LEN`` chars. We slice the id out by position
+    rather than splitting on ``_``: ``token_urlsafe`` can emit ``_`` and
+    ``-``, so a split would mis-parse the (~few %) of ids that contain an
+    underscore. The full token is still verified against the argon2id hash,
+    so a wrong slice fails safe."""
     if not token or not token.startswith("pr_"):
         return None
-    parts = token.split("_", 2)
-    if len(parts) != 3:
+    rid = token[3 : 3 + _PASSWORD_RESET_ID_LEN]
+    if len(rid) != _PASSWORD_RESET_ID_LEN:
         return None
-    rid = parts[1]
     now = datetime.now(UTC)
     with session_scope() as s:
         row = s.get(PasswordResetRow, rid)
