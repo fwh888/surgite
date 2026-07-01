@@ -13,9 +13,10 @@ must not break the user-facing request. We log the error and move on.
 import logging
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.db import AuditLogRow, session_scope
+from backend.db import AuditLogRow, UserRow, session_scope
 
 log = logging.getLogger("audit")
 
@@ -51,6 +52,10 @@ def audit(
     )
     try:
         with session_scope(session) as s:
+            # Stamp the actor's personal org (1.0.0). Pre-auth events (actor_id
+            # None) stay org-less.
+            if actor_id is not None:
+                row.org_id = s.scalar(select(UserRow.personal_org_id).where(UserRow.id == actor_id))
             s.add(row)
             s.commit()
     except Exception as exc:  # noqa: BLE001 — audit must never break the caller

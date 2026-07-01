@@ -30,6 +30,43 @@ class Base(DeclarativeBase):  # Base class for SQLAlchemy models
     pass
 
 
+class OrgRow(Base):
+    """An organisation — the tenancy boundary introduced in 1.0.0. Every user
+    has exactly one *personal* org (see backend.auth.create_personal_org), and
+    in later slices can belong to shared orgs too. Ownership lives in
+    org_members (there is no owner_id here); `deleted_at` is a soft-delete
+    marker that stays null until slice 2 wires up org deletion."""
+
+    __tablename__ = "orgs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String)
+    slug: Mapped[str] = mapped_column(String, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OrgMemberRow(Base):
+    """Membership of a user in an org, with a role. Composite PK (org_id,
+    user_id) — a user is in an org at most once. `role` is one of
+    owner | admin | member (plain string, matching invites.role)."""
+
+    __tablename__ = "org_members"
+
+    org_id: Mapped[str] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String, default="member")
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+
+
 class UserRow(Base):
     """An account. In AUTH_MODE=off/single_user a single bootstrap user owns
     everything (see backend.auth.ensure_bootstrap_user); multi_user mode has
@@ -53,6 +90,11 @@ class UserRow(Base):
         default=lambda: datetime.now(UTC),
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The user's personal org (1.0.0). Nullable only because the FK is added
+    # before the backfill runs; after migration every user has one.
+    personal_org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
+    )
     # Lockout (slice 2, plan #69): consecutive failed logins trip a per-user
     # lockout window. `failed_login_count` is reset to 0 on a successful login.
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -68,6 +110,9 @@ class SessionRow(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -104,6 +149,11 @@ class InviteRow(Base):
     used_by: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # The issuing org (1.0.0): a personal org for self-issued invites, a shared
+    # org for admin-issued ones (slice 2). Distinct from created_by/used_by.
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class CommitRow(Base):
@@ -129,7 +179,14 @@ class RepoRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, unique=True)
     clone_url: Mapped[str] = mapped_column(String, unique=True)
-    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    # owner_id is nullable from 1.0.0: an org-owned repo has owner_id NULL,
+    # org_id set. Personal repos keep owner_id and get their personal org_id.
+    owner_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
+    )
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -155,7 +212,12 @@ class PromptSettingsRow(Base):
     repo_id: Mapped[int | None] = mapped_column(
         ForeignKey("repos.id", ondelete="CASCADE"), nullable=True
     )
-    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    owner_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
+    )
     user_name: Mapped[str] = mapped_column(String, default="")
     user_role: Mapped[str] = mapped_column(String, default="")
     tone: Mapped[str] = mapped_column(String, default="neutral")
@@ -178,7 +240,12 @@ class SharedSummaryRow(Base):
     __tablename__ = "shared_summaries"
 
     slug: Mapped[str] = mapped_column(String, primary_key=True)
-    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    owner_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
+    )
     params: Mapped[dict[str, Any]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -198,6 +265,9 @@ class ApiKeyRow(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String)
     prefix: Mapped[str] = mapped_column(String, unique=True, index=True)
     key_hash: Mapped[str] = mapped_column(String)
@@ -224,6 +294,9 @@ class ProviderKeyRow(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
+    )
     provider: Mapped[str] = mapped_column(String)
     encrypted_key: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(
@@ -248,6 +321,9 @@ class PasswordResetRow(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
+    )
     token_hash: Mapped[str] = mapped_column(String)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -268,6 +344,9 @@ class AuditLogRow(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     actor_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
     )
     action: Mapped[str] = mapped_column(String, index=True)
     target_type: Mapped[str | None] = mapped_column(String, nullable=True)

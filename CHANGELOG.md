@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The multi-tenant / orgs release (in progress). The data model gains
+organisations; the API surface stays stable (the 0.6.0 OpenAPI snapshot is
+unchanged for existing endpoints).
+
+### Added
+
+- **Org data model (slice 1).** New `orgs` and `org_members` tables, a
+  `personal_org_id` on every user, and a nullable `org_id` on the nine per-user
+  tables. Every existing user gets a personal org they own; all their data is
+  backfilled to it. Existing endpoints are unchanged — they resolve to the
+  caller's personal org. See
+  [`docs/migrations/0.6.0-to-1.0.0.md`](docs/migrations/0.6.0-to-1.0.0.md).
+
 ## [0.6.0] - 2026-06-30
 
 The API-stability release. 0.6.0 makes the contract with downstream users

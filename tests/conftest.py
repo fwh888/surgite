@@ -36,6 +36,8 @@ from backend.db import (
     Base,
     CommitRow,
     InviteRow,
+    OrgMemberRow,
+    OrgRow,
     PromptSettingsRow,
     ProviderKeyRow,
     RepoRow,
@@ -75,7 +77,10 @@ def _clean_tables():
         s.query(AuditLogRow).delete()
         s.query(SessionRow).delete()
         s.query(InviteRow).delete()
+        s.query(OrgMemberRow).delete()
         s.query(UserRow).delete()
+        # Orgs last: users.personal_org_id references orgs, so users must go first.
+        s.query(OrgRow).delete()
         s.commit()
 
 

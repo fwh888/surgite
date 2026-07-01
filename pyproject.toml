@@ -65,3 +65,4 @@ select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
 # Depends() in argument defaults is the standard FastAPI pattern.
 "backend/api.py" = ["B008"]
 "backend/auth.py" = ["B008"]
+"backend/scope.py" = ["B008"]

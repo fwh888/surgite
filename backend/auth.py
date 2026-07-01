@@ -21,6 +21,7 @@ back to the cookie.
 
 import ipaddress
 import logging
+import re
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -34,6 +35,8 @@ from backend import config
 from backend.db import (
     ApiKeyRow,
     InviteRow,
+    OrgMemberRow,
+    OrgRow,
     PasswordResetRow,
     SessionRow,
     UserRow,
@@ -113,6 +116,7 @@ def issue_api_key(
         row = ApiKeyRow(
             id=kid,
             user_id=user_id,
+            org_id=personal_org_id(s, user_id),
             name=name,
             prefix=prefix,
             key_hash=hash_password(full),
@@ -214,6 +218,47 @@ def unlock_user(user: UserRow, *, session: Session) -> None:
 # --- Users ------------------------------------------------------------------
 
 
+def slugify_org(local_part: str) -> str:
+    """Turn an email local-part into a URL-safe org slug base (lowercase,
+    [a-z0-9-], 3–32 chars). Pure, no DB — the 1.0.0 org backfill migration
+    re-implements the same rule inline (kept trivial so it can't drift far)."""
+    s = re.sub(r"[^a-z0-9]+", "-", local_part.lower()).strip("-")[:32].strip("-")
+    if len(s) < 3:
+        s = f"{s}-org" if s else "org"
+    return s
+
+
+def create_personal_org(session: Session, user: UserRow) -> OrgRow:
+    """Create the user's personal org + owner membership and point
+    ``user.personal_org_id`` at it. Idempotent: returns the existing personal
+    org if one is already set. Called from both user-creation paths so the
+    slug/role invariants match the migration backfill (1.0.0 slice 1)."""
+    if user.personal_org_id is not None:
+        existing = session.get(OrgRow, user.personal_org_id)
+        if existing is not None:
+            return existing
+    base = slugify_org(normalize_email(user.email).split("@")[0])
+    slug, n = base, 1
+    while session.scalar(select(OrgRow.slug).where(OrgRow.slug == slug)) is not None:
+        n += 1
+        slug = f"{base}-{n}"
+    org = OrgRow(name=user.display_name or base, slug=slug)
+    session.add(org)
+    session.flush()  # assign org.id before the membership/back-reference
+    session.add(OrgMemberRow(org_id=org.id, user_id=user.id, role="owner"))
+    user.personal_org_id = org.id
+    session.commit()
+    session.refresh(user)
+    return org
+
+
+def personal_org_id(session: Session, user_id: str) -> str | None:
+    """The user's personal org id, for insert sites that only carry a user_id
+    (the plain functions below have no Request to resolve a full scope from).
+    None only for pre-migration data with no personal org."""
+    return session.scalar(select(UserRow.personal_org_id).where(UserRow.id == user_id))
+
+
 def ensure_bootstrap_user(session: Session) -> UserRow:
     """Return the BOOTSTRAP_OWNER_EMAIL user, creating it (as an admin with no
     password) if it doesn't exist. This is the account that owns all data in
@@ -225,6 +270,7 @@ def ensure_bootstrap_user(session: Session) -> UserRow:
         session.add(user)
         session.commit()
         session.refresh(user)
+    create_personal_org(session, user)  # idempotent; ensures a personal org exists
     return user
 
 
@@ -246,6 +292,7 @@ def create_user(
     session.add(user)
     session.commit()
     session.refresh(user)
+    create_personal_org(session, user)  # every account gets a personal org (1.0.0)
     return user
 
 
@@ -262,6 +309,9 @@ def create_invite(
         email=normalize_email(email) if email else None,
         role=role,
         created_by=created_by,
+        # Issuing org: the creator's personal org (org-issued invites arrive in
+        # slice 2). None for the bootstrap invite, which has no creator yet.
+        org_id=personal_org_id(session, created_by) if created_by else None,
         created_at=datetime.now(UTC),
         expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
     )
@@ -333,6 +383,7 @@ def create_session(
         user_agent=(user_agent or "")[:256] or None,
     )
     with session_scope(session) as s:
+        row.org_id = personal_org_id(s, user_id)
         s.add(row)
         s.commit()
         s.refresh(row)
@@ -431,6 +482,7 @@ def mint_password_reset(user_id: str) -> tuple[str, datetime]:
             PasswordResetRow(
                 id=rid,
                 user_id=user_id,
+                org_id=personal_org_id(s, user_id),
                 token_hash=hash_password(full),
                 expires_at=expires_at,
                 created_at=now,

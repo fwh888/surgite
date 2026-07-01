@@ -32,6 +32,7 @@ from backend.auth import (
     issue_api_key,
     mint_password_reset,
     normalize_email,
+    personal_org_id,
     purge_expired_sessions,
     record_login_failure,
     record_login_success,
@@ -1353,6 +1354,7 @@ def upsert_provider_key(
     if existing is None:
         existing = ProviderKeyRow(
             user_id=current_user.id,
+            org_id=current_user.personal_org_id,
             provider=req.provider,
             encrypted_key=encrypt(req.key),
         )
@@ -1392,7 +1394,9 @@ def _get_or_create_prompt_setting(
     with session_scope(session) as s:
         row = _get_prompt_setting(s, repo_id, owner_id)
         if row is None:
-            row = PromptSettingsRow(repo_id=repo_id, owner_id=owner_id)
+            row = PromptSettingsRow(
+                repo_id=repo_id, owner_id=owner_id, org_id=personal_org_id(s, owner_id)
+            )
             s.add(row)
             s.commit()
             s.refresh(row)
@@ -1462,7 +1466,9 @@ def update_prompt_settings(
 
     row = _get_prompt_setting(session, repo_id, current_user.id)
     if row is None:
-        row = PromptSettingsRow(repo_id=repo_id, owner_id=current_user.id)
+        row = PromptSettingsRow(
+            repo_id=repo_id, owner_id=current_user.id, org_id=current_user.personal_org_id
+        )
         session.add(row)
 
     update_data = update.model_dump(exclude_none=True)
@@ -1822,6 +1828,7 @@ def create_repo(
         name=name,
         clone_url=req.url,
         owner_id=current_user.id,
+        org_id=current_user.personal_org_id,
         added_at=datetime.now(UTC),
     )
     session.add(repo)
@@ -1883,6 +1890,7 @@ def create_share(
     row = SharedSummaryRow(
         slug=slug,
         owner_id=current_user.id,
+        org_id=current_user.personal_org_id,
         params=req.model_dump(),
         created_at=now,
         expires_at=now + timedelta(days=SHARE_TTL_DAYS),
