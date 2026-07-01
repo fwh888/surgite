@@ -119,9 +119,15 @@ an admin invite for `BOOTSTRAP_OWNER_EMAIL`. `scripts/upgrade-from-0.4.sh` runs
 the whole thing interactively (or non-interactively with
 `STANDUP_BOOTSTRAP_PASSWORD` in the environment).
 
-Upgrading 0.5.x → 0.5.y is a normal `docker compose pull && docker compose up -d`
-followed by `uv run alembic upgrade head` (the API runs it on startup, so this
-is usually implicit). Migrations are forward-only.
+Coming from 0.6.0? Read [`docs/migrations/0.6.0-to-1.0.0.md`](migrations/0.6.0-to-1.0.0.md).
+1.0.0 adds organisations to the data model: `alembic upgrade head` gives every
+existing user a personal org and backfills `org_id` on every per-user row. No
+config change, no API change, no manual steps.
+
+Upgrading within a minor line (e.g. 0.5.x → 0.5.y) is a normal
+`docker compose pull && docker compose up -d` followed by
+`uv run alembic upgrade head` (the API runs it on startup, so this is usually
+implicit). Migrations are forward-only.
 
 ## CLI session storage
 
