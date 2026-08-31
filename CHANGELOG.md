@@ -5,18 +5,20 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-08-31
 
-The multi-tenant / orgs release (in progress). The data model gains
-organisations; the API surface stays stable (the 0.6.0 OpenAPI snapshot is
-unchanged for existing endpoints). 1.0.0 also carries the project rename from
-`standup-gen` to `surgite` — the PyPI name `standup-gen` belongs to an
-unrelated project, so the distribution, package, CLI, and configuration
-surface all move to `surgite` at the same major version.
+The first `surgite` release — and the first on PyPI. 1.0.0 carries the rename
+from `standup-gen` (the PyPI name belongs to an unrelated project, so the
+distribution, package, CLI, and configuration surface all move to `surgite`)
+and the orgs data-model foundation: every user gains a personal org, and the
+per-user tables are org-scoped underneath an unchanged API surface — every
+endpoint resolves to the caller's personal org, and the 0.6.0 OpenAPI
+snapshot holds. The orgs API and web UI land in the next cycle, on top of
+this foundation.
 
 ### Added
 
-- **Org data model (slice 1).** New `orgs` and `org_members` tables, a
+- **Org data model.** New `orgs` and `org_members` tables, a
   `personal_org_id` on every user, and a nullable `org_id` on the nine per-user
   tables. Every existing user gets a personal org they own; all their data is
   backfilled to it. Existing endpoints are unchanged — they resolve to the

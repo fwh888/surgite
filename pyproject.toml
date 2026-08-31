@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "surgite"
-version = "0.6.0"
+version = "1.0.0"
 description = "Git commit history summarizer with AI."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Nick Coleman" }]
 keywords = ["standup", "git", "summary", "changelog", "ai", "llm", "fastapi"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Environment :: Web Environment",
     "Intended Audience :: Developers",
