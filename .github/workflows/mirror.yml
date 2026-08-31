@@ -34,6 +34,6 @@ jobs:
           # below can't try to create an invalid refs/heads/HEAD on the remote.
           git remote set-head origin -d || true
           git push --prune \
-            "https://ncoleman:${TOKEN}@codeberg.org/ncolman/surgite.git" \
+            "https://ncoleman:${TOKEN}@codeberg.org/ncoleman/surgite.git" \
             "refs/remotes/origin/*:refs/heads/*" \
             "refs/tags/*:refs/tags/*"
