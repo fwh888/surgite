@@ -1,0 +1,9 @@
+# GitHub Actions only. Runtime deps are managed by uv (`uv lock`) and
+# audited by pip-audit in CI; the frontend's npm deps are lockfile-pinned.
+# Actions versions are the only thing worth auto-bumping.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

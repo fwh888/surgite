@@ -1,22 +1,22 @@
 # Surgite Migration Plan
 
-**Status:** in progress (branch `feat/1.0.0-surgite-rename`). Started 2026-08-31.
-This document is the authoritative plan and resume point if a working session is
-lost mid-migration.
+**Status:** phases 0–3 complete (2026-08-31). GitHub is canonical
+(`github.com/nicoleman0/surgite`, `main` protected); the self-hosted Forgejo
+instance mirrors it (pull mirror, 8h); Codeberg is synced by a push-mirror
+Action (pending `CODEBERG_MIRROR_TOKEN` secret). Remaining: Phase 4 (PyPI
+publishing, cut with v1.0.0). This document is the authoritative resume point
+if a working session is lost mid-migration.
 
 ## Context
 
 The PyPI name `standup-gen` is taken by an unrelated project
 (`mansourmatta/standup-gen`, 0.1.0). The project is renamed to **surgite**
 (Latin: "stand up / arise") — distribution, package, CLI, env vars, infra
-defaults, and repo names all become `surgite`. Hosting moves to the
-touchneedle pattern: **GitHub canonical** (`github.com/nicoleman0/surgite`),
-with pull mirrors on the self-hosted Forgejo instance and on Codeberg
-(`ncolman/surgite`) for visibility. First PyPI release is **v1.0.0**, cut after
-the orgs work lands. `surgite` was verified free on PyPI (404 on the JSON API)
-and `nicoleman0/surgite` was verified free on GitHub; the old, outdated
-`nicoleman0/standup-gen` GitHub repo (April snapshot, unrelated tag history)
-has been deleted.
+defaults, and repo names all become `surgite`. Hosting follows the
+touchneedle pattern: **GitHub canonical**, with mirrors on the self-hosted
+Forgejo instance and on Codeberg for visibility. First PyPI release is
+**v1.0.0**, cut after the orgs work lands. `surgite` was verified free on
+PyPI; the old, outdated `nicoleman0/standup-gen` GitHub repo was deleted.
 
 ## Decisions (all locked)
 
@@ -24,98 +24,82 @@ has been deleted.
 |---|---|
 | PyPI distribution | `surgite` |
 | Package layout | `backend/` → `surgite/`, `standup.py` → `cli.py`, entry `surgite.cli:main` |
-| Env vars | Clean break `STANDUP_*` → `SURGITE_*` (8 vars) at 1.0.0, no aliases; drop the deprecated `STANDUP_API_TOKEN` alias code |
-| User-state names | Rename session cookie (`__Host-surgite_session`), keyring service (`surgite`, with a one-time migration shim from `standup-gen`), `~/.config/surgite/` (old-dir session pickup), CSRF value `surgite-web` (frontend+backend atomically). One-time re-login for users |
-| Infra defaults | Rename all: Postgres db/user `surgite`, volume `surgite-repos`, `/var/surgite/repos`, image `surgite-app`, Komodo stack `surgite`, backup glob `surgite-*.sql.gz`; migration notes in `docs/self-host.md` |
-| Repos | `surgite` everywhere (GitHub, Codeberg, Forgejo) |
-| Tags | Normalize to `vX.Y.Z` before seeding GitHub (add `v0.3.0`/`v0.4.0` at those commits, delete unprefixed + duplicate `0.2.0`) |
+| Env vars | Clean break `STANDUP_*` → `SURGITE_*` (8 vars) at 1.0.0, no aliases; the deprecated `STANDUP_API_TOKEN` alias removed |
+| User-state names | Session cookie `__Host-surgite_session`, keyring service `surgite` (with one-time migration shim from `standup-gen`), `~/.config/surgite/` (old-dir session pickup), CSRF value `surgite-web` (frontend+backend atomically). One-time re-login for users |
+| Infra defaults | Postgres db/user `surgite`, volume `surgite-repos`, `/var/surgite/repos`, image `surgite-app`, Komodo stack `surgite`, backup glob `surgite-*.sql.gz`; migration notes in `docs/self-host.md` |
+| Repos | `surgite` everywhere (GitHub, Forgejo, Codeberg) |
+| Tags | Normalized to `vX.Y.Z` (`v0.2.0`–`v0.6.0`) |
 | Wheel contents | `surgite` module only; full web app stays Docker/clone |
-| Deploy pipeline | Paused (pull-mirrored Forgejo runs no Actions); revisit after migration. `.forgejo/workflows/deploy.yml` stays in-repo as the dormant LAN reference |
+| Deploy pipeline | Paused; revisit after migration. `.forgejo/workflows/deploy.yml` stays in-repo as the dormant LAN reference |
 | First PyPI release | `v1.0.0`, fresh tag post-rename (the publish workflow builds from the release tag, so old tags can't ship the new metadata) |
 
-Historical docs (`docs/releases/*`, `docs/migrations/*`, `docs/0.5.0-plan.md`,
-`docs/0.6.0-plan.md`, old CHANGELOG entries) keep the old names — they are
-records of their era. English prose ("standup summary/update") stays: that is
-what the tool produces. Only branding and identifiers change.
+Historical docs (`docs/releases/*`, `docs/migrations/*`, `docs/0.5.0/0.6.0
+plans`, old CHANGELOG entries) keep the old names — they are records of their
+era. English prose ("standup summary/update") stays: that is what the tool
+produces.
 
-## Phase 0 — Rename (on Forgejo, its CI validates it) — branch `feat/1.0.0-surgite-rename`
+## Phase 0 — Rename — DONE (Forgejo PR #104)
 
-- [ ] `git mv backend surgite`; `git mv surgite/standup.py surgite/cli.py`;
-      rewrite `backend` imports in all 25 files — mind the lazy in-function
-      imports (`summarizer.py`, `api.py`), `alembic/env.py`,
-      `scripts/dump_openapi.py`, the Python heredoc in
-      `scripts/rotate-secrets.sh`; **skip** the `keyring.backends` false
-      positive in `cli_auth.py`.
-- [ ] `pyproject.toml`: `name = "surgite"`, `surgite = "surgite.cli:main"`,
-      `module-name = "surgite"`, authors, `license`/`license-files`,
-      classifiers, `[project.urls]` → GitHub; fix per-file-ignores paths;
-      `uv lock` regen.
-- [ ] Env vars → `SURGITE_*` in code, tests, compose, `.env.example`, docs,
-      local `.env`.
-- [ ] User-state names (cookie/keyring+shim/XDG/CSRF) incl. test pins
-      (`test_cli_auth.py:90,219`, `api.test.ts`, `download.test.ts`).
-- [ ] Infra defaults (compose, Dockerfile, `backup.sh`, `restore.sh`,
-      `rotate-secrets.sh`, `deploy.yml`, `config.py` defaults, `SMTP_FROM`).
-- [ ] Frontend branding (~15 files) + `SummaryPanel` CLI echo + `download.ts`
-      suffix + `StatusBar` codeberg link → GitHub.
-- [ ] Docs: README/AGENTS/CONTRIBUTING/SECURITY/self-host/api-stability/
-      security-support/1.0.0-plan + `.forgejo/ISSUE_TEMPLATE`; canonical URLs
-      → `github.com/nicoleman0/surgite`; migration notes in `self-host.md`.
-- [ ] `FastAPI(title="surgite")`; fix `schemas.py` description; regenerate
-      OpenAPI snapshot (`task openapi-snapshot`).
-- [ ] CHANGELOG `[Unreleased]` rename entry.
-- [ ] Cleanup: stale `standup_gen.egg-info/`, unreferenced
-      `docs/{dark,light}-standup.png`, stale `.claude/commands` ref,
-      `.gitignore` comment, add `.DS_Store` to root `.gitignore`.
-- [ ] Full gate: `uv lock --check`, `uv sync`, `ruff check .`,
-      `ruff format --check .`, `mypy surgite/`, `pytest -q`, frontend
-      `npm run check`/`test`/`build`, `task openapi-snapshot-check`.
-- [ ] Push branch to Forgejo, open PR, merge. Then rebase
-      `feat/1.0.0-invite-org-role` (parked WIP) onto renamed main — import
-      fixes only.
+- [x] `git mv backend surgite`; `standup.py` → `cli.py`; imports rewritten
+      (incl. lazy imports, `alembic/env.py`, `scripts/dump_openapi.py`, the
+      heredoc in `scripts/rotate-secrets.sh`); `keyring.backends` untouched.
+- [x] pyproject: `surgite`, entry point, module-name, authors, license,
+      classifiers, `[project.urls]` → GitHub; per-file-ignores; `uv lock`.
+- [x] Env vars → `SURGITE_*`; `STANDUP_API_TOKEN` alias removed.
+- [x] User-state renames incl. keyring/XDG migration shims + tests.
+- [x] Infra defaults (compose, Dockerfile, backup/restore, deploy.yml,
+      config.py, `SMTP_FROM`).
+- [x] Frontend branding; canonical URLs → GitHub; `FastAPI(title="surgite")`;
+      OpenAPI snapshot regenerated.
+- [x] CHANGELOG `[Unreleased]` entry; `docs/self-host.md` "Upgrading from
+      standup-gen" section; cleanup (egg-info, pngs, stale `.claude` ref).
+- [x] Full gate green; `uv build` + `twine check` PASSED (wheel ships
+      `surgite/` + templates + LICENSE + entry point).
+- [x] `cryptography` bumped 49.0.0 → 50.0.1 (PYSEC-2026-3552).
 
-## Phase 1 — GitHub canonical
+## Phase 1 — GitHub canonical — DONE
 
-- [ ] (Done) Delete outdated `nicoleman0/standup-gen`.
-- [ ] Normalize tags locally: create `v0.3.0`/`v0.4.0` at the `0.3.0`/`0.4.0`
-      commits; delete `0.2.0`/`0.3.0`/`0.4.0` unprefixed tags.
-- [ ] `gh repo create nicoleman0/surgite --public`; rewire remotes: rename
-      `origin`→`codeberg` (temporary), GitHub becomes `origin`; push `main`,
-      normalized tags, kept branches (seed from local — it is ahead of
-      Codeberg); repoint `branch.main.remote`.
-- [ ] Protect `main` (require PRs), touchneedle-style.
-- [ ] Verify canonical URLs from Phase 0 resolve.
+- [x] Old `nicoleman0/standup-gen` deleted (user).
+- [x] Tags normalized locally; dup `0.2.0`/`v0.2.0` confirmed then dropped.
+- [x] `nicoleman0/surgite` created (public, topics, default branch `main`);
+      pushed `main` + tags + `feat/1.0.0-invite-org-role` (parked WIP,
+      rebased clean onto the rename).
+- [x] `main` protected: PRs required, **enforced for admins**, no
+      force-pushes/deletions.
+- [x] Local remotes: single `origin` → GitHub.
 
-## Phase 2 — Mirrors (pull from GitHub)
+## Phase 2 — Mirrors — DONE (Codeberg token pending)
 
-- [ ] Forgejo: delete old `standup-gen` repo (kills the push mirror and the
-      PRs/issues there — accepted; they survive in merge-commit messages
-      only), then Migrate as a **pull mirror** of
-      `https://github.com/nicoleman0/surgite` (git-only; default sync ~8h).
-- [ ] Codeberg: delete/re-create `ncolman/surgite` as a pull mirror the same
-      way (if the name is tombstoned: rename old → create mirror → delete
-      old). Check Codeberg's mirror policy while there.
-- [ ] Local end state: single `origin` → GitHub; drop mirror remotes.
-      Optional dir rename `/Users/nicholas/dev/standup-gen` → `surgite` —
-      then `git worktree repair` for the linked `austin` worktree.
+- [x] Forgejo: old repo deleted; `ncoleman/surgite` is a true **pull mirror**
+      (API: `mirror: true`, 8h interval; main + tags verified in sync).
+- [x] Codeberg: pull mirrors are **disabled instance-wide** on Codeberg.org
+      ("Pull mirrors have been disabled by your site administrator"), so the
+      initial migration came over as a static copy. It is kept in sync by the
+      `mirror` GitHub Action (push mirror on every push) instead.
+- [ ] Add `CODEBERG_MIRROR_TOKEN` (Codeberg access token, repository write
+      scope) to GitHub repo secrets — Settings → Secrets and variables →
+      Actions. Until then the mirror job no-ops with a notice. Optionally set
+      the Codeberg repo description to note it's a mirror of GitHub.
+- [x] Local remote cleanup (done in Phase 1).
 
-## Phase 3 — GitHub Actions CI
+## Phase 3 — GitHub Actions CI — DONE
 
-- [ ] Port `.forgejo/workflows/ci.yml` + `openapi-snapshot.yml` to
-      `.github/workflows/` (setup-uv, setup-node for the frontend job,
-      go-task for the snapshot check; `ubuntu-latest` instead of
-      `runs-on: host`; `mypy surgite/`).
-- [ ] Keep `.forgejo/workflows/deploy.yml` in-repo as the dormant LAN
-      self-host reference until deployment is revisited.
-- [ ] Dependabot, GitHub Actions ecosystem only, monthly (touchneedle style).
+- [x] `.github/workflows/ci.yml`: quality (uv lock check, ruff ×2, mypy,
+      pip-audit, pytest) + frontend (npm ci, svelte-check, vitest, build) +
+      OpenAPI snapshot gate (`task openapi-snapshot-check`), on push + PR.
+- [x] `.forgejo/workflows/ci.yml` + `openapi-snapshot.yml` removed
+      (superseded); `deploy.yml` kept as the dormant LAN reference.
+- [x] `.github/dependabot.yml` (github-actions ecosystem, monthly).
+- [x] README CI badge (resolves the old "build-status badge" TODO).
 
-## Phase 4 — PyPI v1.0.0
+## Phase 4 — PyPI v1.0.0 — PENDING
 
 - [ ] `.github/workflows/publish.yml` (touchneedle shape): on
       `release: [published]` → build job (`python -m build`, `twine check`,
       artifact) → publish job (`environment: pypi`, `id-token: write`,
       `pypa/gh-action-pypi-publish@release/v1`). The `uv_build` backend
-      works under `python -m build`. Wheel = `surgite` module only.
+      works under `python -m build`. Wheel = `surgite` module only
+      (already validated locally: `uv build` + `twine check` passed).
 - [ ] One-time: register the trusted publisher at
       `pypi.org/manage/account/publishing` (owner `nicoleman0`, repo
       `surgite`, workflow `publish.yml`, env `pypi`); create the `pypi`
@@ -123,14 +107,14 @@ what the tool produces. Only branding and identifiers change.
 - [ ] Adapt touchneedle's `RELEASING.md` (bump pyproject **and uv.lock**,
       changelog, PR, tag `vX.Y.Z` from main, cut the Release → auto-publish,
       verify on the simple index).
-- [ ] README: `pip install surgite`, PyPI/pyversions/CI badges; resolve the
-      build-status-badge TODO.
-- [ ] Cut `v1.0.0` once the orgs work lands.
+- [ ] README: `pip install surgite`, PyPI/pyversions badges.
+- [ ] Cut `v1.0.0` once the orgs work lands (invite-org-role WIP is parked
+      on `feat/1.0.0-invite-org-role`, rebased and ready).
 
 ## Standing notes
 
-- Forgejo PR numbers baked into merge messages (`#102`, `#103`) dangle on
-  GitHub — accepted (history rewrite is off the table under mirrors).
+- Forgejo PR numbers baked into merge messages (`#102`–`#104`) dangle on
+  GitHub — accepted.
 - `requires-python >= 3.14` is an aggressive floor for a public package;
   revisit if reach matters.
 - `psycopg2-binary` is a hard dep even for CLI-only installs — candidate for
@@ -138,4 +122,6 @@ what the tool produces. Only branding and identifiers change.
 - Old `standup-*.sql.gz` backups won't match the new rotation glob — clean
   or keep manually, once.
 - Komodo stack/image rename takes effect when deployment resumes.
-- `frontend/package.json` name stays `frontend` (generic, internal).
+- Optional cosmetic: rename the local checkout dir (`standup-gen` →
+  `surgite`); needs `git worktree repair` for the linked `austin` worktree
+  at `/Users/nicholas/conductor/workspaces/standup-gen/austin`.
