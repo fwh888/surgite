@@ -1,6 +1,6 @@
-# Self-hosting standup-gen
+# Self-hosting surgite
 
-standup-gen is a small, self-hostable standup summary tool. You give it a Postgres
+surgite is a small, self-hostable standup summary tool. You give it a Postgres
 and a handful of env vars and it runs: a CLI for local use, a FastAPI + Postgres
 backend that ingests git history on a schedule, and a SvelteKit web UI for repo
 management and summary generation. First-party sessions and email + password login
@@ -30,8 +30,8 @@ hundreds of users actively hitting `/summary?ai=true` at once.
 Five minutes, three commands, one env var:
 
 ```bash
-git clone https://codeberg.org/ncoleman/standup-gen.git
-cd standup-gen
+git clone https://github.com/nicoleman0/surgite.git
+cd surgite
 cp .env.example .env
 ```
 
@@ -45,11 +45,11 @@ docker compose logs -f app   # watch for the invite token
 ```
 
 When you see the log line `No admin account exists. Bootstrap an admin by
-redeeming this invite for you@example.com:  standup --redeem-invite <token>`,
+redeeming this invite for you@example.com:  surgite --redeem-invite <token>`,
 redeem it from the same checkout:
 
 ```bash
-uv run standup --redeem-invite <token> --email you@example.com
+uv run surgite --redeem-invite <token> --email you@example.com
 ```
 
 That's it. The app created the database, ran migrations, generated a Fernet
@@ -67,13 +67,13 @@ which requires HTTPS. Pick one:
 
 **Traefik + step-ca (homelab).** The step-ca ACME issuer hands out real
 certificates to anything on your tailnet; Traefik terminates TLS and forwards
-plain HTTP to the app. Configure the router for the standup-gen hostname and
+plain HTTP to the app. Configure the router for the surgite hostname and
 the `X-Forwarded-For` header is set correctly out of the box.
 
 **Caddy + Let's Encrypt (external).** The shortest Caddyfile that works:
 
 ```caddyfile
-standup.example.com {
+surgite.example.com {
     reverse_proxy localhost:8000
 }
 ```
@@ -97,7 +97,7 @@ travel in cleartext. Don't.
 ```bash
 scripts/backup.sh                          # one dump, keep last 14
 BACKUP_KEEP=30 scripts/backup.sh           # keep last 30
-scripts/restore.sh backups/standup-…sql.gz # point-in-time restore
+scripts/restore.sh backups/surgite-…sql.gz # point-in-time restore
 ```
 
 Both default to running `pg_dump` / `psql` inside the compose `db` container
@@ -117,12 +117,42 @@ The short version: the migration is one-shot, it backfills every existing row
 to one bootstrap owner, and on the first start with the new image the app mints
 an admin invite for `BOOTSTRAP_OWNER_EMAIL`. `scripts/upgrade-from-0.4.sh` runs
 the whole thing interactively (or non-interactively with
-`STANDUP_BOOTSTRAP_PASSWORD` in the environment).
+`SURGITE_BOOTSTRAP_PASSWORD` in the environment).
 
 Coming from 0.6.0? Read [`docs/migrations/0.6.0-to-1.0.0.md`](migrations/0.6.0-to-1.0.0.md).
 1.0.0 adds organisations to the data model: `alembic upgrade head` gives every
 existing user a personal org and backfills `org_id` on every per-user row. No
-config change, no API change, no manual steps.
+API change, no manual schema steps — but 1.0.0 also renames the project to
+`surgite`, which does touch configuration. That part follows.
+
+### Upgrading from standup-gen (pre-rename)
+
+1.0.0 renames the project to `surgite` (the PyPI name `standup-gen` belongs to
+an unrelated project). A one-time, few-minute migration:
+
+1. **Env vars:** rename `STANDUP_*` → `SURGITE_*` in `.env` / compose
+   (`SURGITE_USER`, `SURGITE_ROLE`, and the CLI's `SURGITE_API_URL`,
+   `SURGITE_API_KEY`, `SURGITE_EMAIL`, `SURGITE_PASSWORD`). The deprecated
+   `STANDUP_API_TOKEN` alias is gone.
+2. **Database:** the Postgres user/db defaults are now `surgite`; an existing
+   volume holds a database named `standup`. Either rename it once
+   (`ALTER DATABASE standup RENAME TO surgite; ALTER USER standup RENAME TO
+   surgite;` as the postgres admin) or pin `POSTGRES_USER` / `POSTGRES_DB`
+   to the old values in `.env`.
+3. **Volumes:** if the compose project name changes (a renamed checkout dir,
+   or the Komodo stack re-registering as `surgite`), `docker volume rename`
+   `…_pgdata` to the new project prefix before the first `up` — or set
+   `COMPOSE_PROJECT_NAME` to keep the old prefix. The repo-cache volume
+   (`…_standup-repos` → `…_surgite-repos`) is self-healing: it re-clones
+   on demand if you'd rather let it re-create.
+4. **Sessions:** the cookie renamed, so every browser user logs in again
+   once. CLI sessions migrate automatically on the first `surgite
+   --registered` call (the old `standup-gen` keyring entry and the old
+   `~/.config/standup/session` file both move forward); worst case,
+   `surgite --login` again.
+5. **Backups:** new dumps are named `surgite-*.sql.gz`; old
+   `standup-*.sql.gz` files no longer match the rotation glob — prune them
+   manually once.
 
 Upgrading within a minor line (e.g. 0.5.x → 0.5.y) is a normal
 `docker compose pull && docker compose up -d` followed by
@@ -131,17 +161,17 @@ implicit). Migrations are forward-only.
 
 ## CLI session storage
 
-`standup --login` / `--redeem-invite` save a session cookie so later
-`standup --registered <name>` calls reuse it. Where that cookie lives:
+`surgite --login` / `--redeem-invite` save a session cookie so later
+`surgite --registered <name>` calls reuse it. Where that cookie lives:
 
 - **By default, the OS keyring** — the login keychain on macOS, the Secret
   Service on Linux (GNOME Keyring, KWallet, KeePassXC — whatever you have),
   the Credential Manager on Windows. Nothing to configure.
-- **A 0600 file** at `$XDG_CONFIG_HOME/standup/session` (default
-  `~/.config/standup/session`) when no keyring backend is available — a
+- **A 0600 file** at `$XDG_CONFIG_HOME/surgite/session` (default
+  `~/.config/surgite/session`) when no keyring backend is available — a
   headless server or CI runner with no D-Bus / Secret Service falls back to
   this automatically.
-- **Forced file mode** with `standup --login --keyring-file`, for headless
+- **Forced file mode** with `surgite --login --keyring-file`, for headless
   boxes where you'd rather not depend on keyring detection, or for scripted
   setups.
 
@@ -168,9 +198,9 @@ You don't have to configure it:
   SMTP_PORT=587                 # 587 for STARTTLS, 465 for implicit TLS
   SMTP_USERNAME=apikey
   SMTP_PASSWORD=...
-  SMTP_FROM="standup-gen <no-reply@example.com>"
+  SMTP_FROM="surgite <no-reply@example.com>"
   SMTP_TLS=starttls             # starttls | ssl | none
-  PUBLIC_URL=https://standup.example.com   # used to build the reset link
+  PUBLIC_URL=https://surgite.example.com   # used to build the reset link
   ```
 
   A transactional provider (Mailgun, Postmark, SES) is the right choice for
@@ -229,7 +259,7 @@ GET /admin/audit?action=auth.login.fail&since=2026-06-20T00:00:00
 ```
 
 `auth.login.fail`, `auth.login.lockout`, `admin.user.create`, `secrets.rotate`
-— see `backend/audit.py` for the full list of action strings.
+— see `surgite/audit.py` for the full list of action strings.
 
 **Unlock a user** after a lockout (admin only):
 

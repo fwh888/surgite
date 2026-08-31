@@ -1,4 +1,4 @@
-"""Tests for the mailer abstraction (backend/mail.py).
+"""Tests for the mailer abstraction (surgite/mail.py).
 
 The network send (SMTPMailer) is a thin smtplib wrapper; the logic worth
 testing is template rendering and that the default LoggingMailer actually
@@ -9,14 +9,14 @@ import logging
 
 import pytest
 
-from backend import config, mail
+from surgite import config, mail
 
 
 def test_render_template_splits_subject_and_fills_fields():
     subject, body = mail.render_template(
         "password-reset", {"reset_url": "https://x/password-reset?token=pr_a_b", "ttl_minutes": 15}
     )
-    assert subject == "Reset your standup-gen password"
+    assert subject == "Reset your surgite password"
     assert "https://x/password-reset?token=pr_a_b" in body
     assert "15 minutes" in body
     assert "Subject:" not in body
@@ -28,13 +28,13 @@ def test_render_template_missing_field_raises():
 
 
 def test_logging_mailer_writes_the_email(caplog):
-    with caplog.at_level(logging.INFO, logger="backend.mail"):
+    with caplog.at_level(logging.INFO, logger="surgite.mail"):
         mail.LoggingMailer().send_template(
             "u@example.com",
             "password-reset",
             {"reset_url": "https://x/password-reset?token=pr_a_b", "ttl_minutes": 15},
         )
-    logged = "\n".join(r.getMessage() for r in caplog.records if r.name == "backend.mail")
+    logged = "\n".join(r.getMessage() for r in caplog.records if r.name == "surgite.mail")
     assert "u@example.com" in logged
     assert "pr_a_b" in logged
 

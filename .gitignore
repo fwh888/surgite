@@ -6,12 +6,13 @@ dist/
 build/
 .env
 .vscode/
+.DS_Store
 testing.py
 repos.txt
 ingest.log
 backups/
 # Auto-generated Fernet master for at-rest provider key encryption
-# (see backend/secrets.py). Never commit this; treat it like a private key.
+# (see surgite/secrets.py). Never commit this; treat it like a private key.
 .secrets_key
 # Temp OpenAPI dump used by `task openapi-snapshot-check` for diffing.
 .forgejo/openapi.current.json

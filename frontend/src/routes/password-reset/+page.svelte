@@ -40,7 +40,7 @@
 </script>
 
 <svelte:head>
-	<title>reset password — standup</title>
+	<title>reset password — surgite</title>
 </svelte:head>
 
 <svelte:window onkeydown={handleKey} />
@@ -48,7 +48,7 @@
 <main class="mx-auto min-h-screen max-w-2xl px-4 py-6 sm:px-6 sm:py-10">
 	<div class="border border-border bg-surface">
 		<div class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-			<span class="flex-1 text-xs text-fg-muted">standup-gen</span>
+			<span class="flex-1 text-xs text-fg-muted">surgite</span>
 		</div>
 
 		<div class="px-4 py-6 sm:px-6">
@@ -58,7 +58,7 @@
 				<span class="cursor" aria-hidden="true"></span>
 			</div>
 			<p class="mt-1 text-sm text-fg-muted">
-				Choose a new password for your standup account.
+				Choose a new password for your surgite account.
 			</p>
 			<div class="mt-1 border-b border-dashed border-border-subtle"></div>
 		</div>

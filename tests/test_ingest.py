@@ -10,8 +10,8 @@ import time
 
 import pytest
 
-from backend import api
-from backend.models import Commit
+from surgite import api
+from surgite.models import Commit
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def fake_git(monkeypatch):
 
     rec = Recorder()
     monkeypatch.setattr(
-        "backend.git.ensure_repo",
+        "surgite.git.ensure_repo",
         lambda name, url, cache: rec.ensured.append(name) or f"/fake/{name}",
     )
 
@@ -159,7 +159,7 @@ def test_scheduler_logs_and_continues_after_ingest_failure(
 
     # The fake_git fixture stubs api.get_raw_log; we wrap it to make the
     # second invocation raise.
-    with caplog.at_level(logging.WARNING, logger="backend.api"):
+    with caplog.at_level(logging.WARNING, logger="surgite.api"):
         # Wait for >=3 ingest attempts; the middle ones should log a warning.
         deadline = time.monotonic() + 3.5
         while time.monotonic() < deadline:

@@ -17,9 +17,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend import config, mail, summarizer
-from backend.audit import audit
-from backend.auth import (
+from surgite import config, mail, summarizer
+from surgite.audit import audit
+from surgite.auth import (
     change_password,
     clear_session_cookie,
     create_invite,
@@ -44,8 +44,8 @@ from backend.auth import (
     unlock_user,
     verify_password,
 )
-from backend.config import SHARE_TTL_DAYS
-from backend.db import (
+from surgite.config import SHARE_TTL_DAYS
+from surgite.db import (
     ApiKeyRow,
     AuditLogRow,
     CommitRow,
@@ -58,15 +58,15 @@ from backend.db import (
     get_db,
     session_scope,
 )
-from backend.formatter import format_log
-from backend.git import get_raw_log, ls_remote, parse_log
-from backend.logging_config import configure_logging
-from backend.models import Commit
-from backend.rate_limit import (
+from surgite.formatter import format_log
+from surgite.git import get_raw_log, ls_remote, parse_log
+from surgite.logging_config import configure_logging
+from surgite.models import Commit
+from surgite.rate_limit import (
     check_ip_outer_rate_limit,
     check_summary_user_limit,
 )
-from backend.schemas import (
+from surgite.schemas import (
     ApiKeyCreate,
     ErrorResponse,
     InviteCreateRequest,
@@ -80,8 +80,8 @@ from backend.schemas import (
     RepoCreate,
     ShareCreate,
 )
-from backend.secrets import encrypt
-from backend.summarizer import ProviderError
+from surgite.secrets import encrypt
+from surgite.summarizer import ProviderError
 
 configure_logging()
 log = logging.getLogger(__name__)
@@ -124,8 +124,8 @@ def _ingest_repo(
 ) -> dict:
     """Ingest commits for a single repo. Commits inherit the repo's owner.
     Returns a result dict."""
-    from backend.config import REPO_CACHE_DIR
-    from backend.git import ensure_repo
+    from surgite.config import REPO_CACHE_DIR
+    from surgite.git import ensure_repo
 
     actual_path = ensure_repo(repo_name, clone_url, REPO_CACHE_DIR)
 
@@ -241,7 +241,7 @@ async def _lifespan(app: FastAPI):
         if token:
             log.warning(
                 "No admin account exists. Bootstrap an admin by redeeming this "
-                "invite for %s:  standup --redeem-invite %s",
+                "invite for %s:  surgite --redeem-invite %s",
                 config.BOOTSTRAP_OWNER_EMAIL,
                 token,
             )
@@ -274,7 +274,7 @@ _ERROR_RESPONSES: dict = {
     "default": {"model": ErrorResponse, "description": 'Error: `{"detail": "..."}`.'}
 }
 
-app = FastAPI(lifespan=_lifespan, responses=_ERROR_RESPONSES)
+app = FastAPI(title="surgite", lifespan=_lifespan, responses=_ERROR_RESPONSES)
 
 # Allow the Vite dev server (separate origin) to call the API during development.
 # In production the frontend is served same-origin from the static mount below, so
@@ -300,7 +300,7 @@ app.add_middleware(
 #    are pre-session endpoints where the cookie doesn't exist yet,
 #    and the SameSite=Lax cookie already provides the cross-site
 #    protection.
-#  - The SPA sends ``X-Requested-With: standup-web`` on every state-
+#  - The SPA sends ``X-Requested-With: surgite-web`` on every state-
 #    changing request. The CLI uses Bearer auth and never hits a
 #    state-changing route, so the header requirement is invisible to
 #    it.
@@ -315,7 +315,7 @@ _CSRF_EXEMPT_PATHS = {
     "/login",
 }
 _CSRF_HEADER = "x-requested-with"
-_CSRF_HEADER_VALUE = "standup-web"
+_CSRF_HEADER_VALUE = "surgite-web"
 
 
 @app.middleware("http")
@@ -1322,7 +1322,7 @@ def upsert_provider_key(
 ):
     """Set (or clear) a per-user provider key (plan #73). The raw key is
     encrypted at rest with Fernet; the master key is the SHA-256 of
-    ``SECRETS_ENCRYPTION_KEY`` (see ``backend.secrets``). The response
+    ``SECRETS_ENCRYPTION_KEY`` (see ``surgite.secrets``). The response
     is just a confirmation — the key material is never echoed back."""
     _require_multi_user()
     if req.provider not in summarizer.PROVIDERS:
@@ -1597,7 +1597,7 @@ def _check_ai_preconditions(request: Request, provider: str | None, total: int, 
         raise HTTPException(status_code=400, detail=str(e)) from e
     # _resolve_key handles the per-user DB row vs env-var fallback.
     try:
-        from backend.summarizer import _resolve_key
+        from surgite.summarizer import _resolve_key
 
         _resolve_key(resolved, user_id)
     except ProviderError as e:
@@ -1808,7 +1808,7 @@ def create_repo(
     the clone-url path is a code-execution surface and the operator
     probably wants to gate it. The default is open to every authenticated
     user (the 0.4.0 UX)."""
-    from backend.git import _repo_name_from_url, is_remote_url
+    from surgite.git import _repo_name_from_url, is_remote_url
 
     if config.REPO_ADD_GLOBAL_ONLY and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Only admins can add repos")

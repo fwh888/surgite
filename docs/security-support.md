@@ -44,7 +44,7 @@ Our response commitment:
 
 We publish security advisories in the Forgejo / GitHub-style advisory
 format on the canonical repository
-(<https://codeberg.org/ncoleman/standup-gen>), alongside the CHANGELOG
+(<https://github.com/nicoleman0/surgite>), alongside the CHANGELOG
 entry for the fixing release. We do **not** request CVE assignment for
 low-severity issues — the advisory plus the changelog is the record. A
 high-severity issue that warrants broader notification gets a CVE/GHSA.

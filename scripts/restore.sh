@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Restore a standup-gen backup produced by backup.sh.
+# Restore a surgite backup produced by backup.sh.
 #
 # The dump is a plain pg_dump piped through gzip — restoring is a
 # `gunzip | psql` away. Two modes mirror backup.sh: "docker" (the default,
 # targets the `db` service) and "local" (host-side psql against a URL).
 #
 # Usage:
-#   scripts/restore.sh path/to/standup-20260101T120000Z.sql.gz
+#   scripts/restore.sh path/to/surgite-20260101T120000Z.sql.gz
 #   BACKUP_MODE=local BACKUP_PG_URL=... scripts/restore.sh ./backup.sql.gz
 #
 # This script DROPS and recreates the target database before loading.
@@ -24,8 +24,8 @@ DUMP="$1"
 
 MODE="${BACKUP_MODE:-docker}"
 PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
-PG_USER="${POSTGRES_USER:-standup}"
-PG_DB="${POSTGRES_DB:-standup}"
+PG_USER="${POSTGRES_USER:-surgite}"
+PG_DB="${POSTGRES_DB:-surgite}"
 
 echo "[restore] reading $DUMP (mode=$MODE)"
 
@@ -55,7 +55,7 @@ elif [[ "$MODE" == "local" ]]; then
     # psql URL form doesn't carry a "database to administer"; we need
     # the admin URL explicitly. Reuse BACKUP_PG_URL_ADMIN if set,
     # otherwise derive postgres://... from BACKUP_PG_URL.
-    ADMIN_URL="${BACKUP_PG_URL_ADMIN:-${BACKUP_PG_URL%/standup}/postgres}"
+    ADMIN_URL="${BACKUP_PG_URL_ADMIN:-${BACKUP_PG_URL%/surgite}/postgres}"
     psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$PG_DB' AND pid <> pg_backend_pid();" >/dev/null
     dropdb "${BACKUP_PG_URL%/*}/$PG_DB" 2>/dev/null || true
     createdb "${BACKUP_PG_URL%/*}/$PG_DB"

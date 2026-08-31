@@ -8,7 +8,7 @@ current org is always their personal org, so `resolve_scope` just reads
 
 Route handlers take `scope: EffectiveScope = Depends(resolve_scope)` and set
 `org_id=scope.current_org_id` on inserts. Non-request call sites (the plain
-functions in `backend.auth`) use `auth.personal_org_id(session, user_id)`
+functions in `surgite.auth`) use `auth.personal_org_id(session, user_id)`
 instead, since they have no `Request` to hang a dependency on.
 """
 
@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from backend.auth import create_personal_org, get_current_user
-from backend.db import OrgMemberRow, OrgRow, UserRow, get_db
+from surgite.auth import create_personal_org, get_current_user
+from surgite.db import OrgMemberRow, OrgRow, UserRow, get_db
 
 
 @dataclass(frozen=True)

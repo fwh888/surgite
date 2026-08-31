@@ -3,12 +3,12 @@ from datetime import date
 
 import pytest
 
-from backend.standup import main
+from surgite.cli import main
 
 
 @pytest.fixture(autouse=True)
 def _mock_ingest(monkeypatch):
-    from backend import api as api_module
+    from surgite import api as api_module
 
     monkeypatch.setattr(
         api_module,
@@ -43,12 +43,12 @@ def test_commits_returns_inserted_rows(client, add_commit):
 
 
 def test_commits_filter_by_repo_exact(client, add_commit):
-    add_commit(hash="1" * 40, short_hash="1111111", repo="standup-gen")
+    add_commit(hash="1" * 40, short_hash="1111111", repo="surgite")
     add_commit(hash="2" * 40, short_hash="2222222", repo="other-project")
-    r = client.get("/commits?repo=standup-gen")
+    r = client.get("/commits?repo=surgite")
     body = r.json()
     assert body["total"] == 1
-    assert body["commits"][0]["repo"] == "standup-gen"
+    assert body["commits"][0]["repo"] == "surgite"
 
 
 def test_commits_author_filter_escapes_wildcards(client, add_commit):
@@ -144,7 +144,7 @@ def _fake_generate(calls):
 def test_summary_ai_uses_selected_provider(client, add_commit, monkeypatch):
     add_commit()
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
-    from backend import summarizer
+    from surgite import summarizer
 
     monkeypatch.setattr(summarizer, "generate_summary", _fake_generate([]))
     body = client.get("/summary?ai=true&provider=groq&combined=true").json()
@@ -156,7 +156,7 @@ def test_summary_ai_uses_selected_provider(client, add_commit, monkeypatch):
 def test_summary_ai_skips_combined_summary_by_default(client, add_commit, monkeypatch):
     add_commit()
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
-    from backend import summarizer
+    from surgite import summarizer
 
     calls = []
     monkeypatch.setattr(summarizer, "generate_summary", _fake_generate(calls))
@@ -170,7 +170,7 @@ def test_summary_ai_skips_combined_summary_by_default(client, add_commit, monkey
 def test_summary_ai_combined_makes_one_extra_call(client, add_commit, monkeypatch):
     add_commit()
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
-    from backend import summarizer
+    from surgite import summarizer
 
     calls = []
     monkeypatch.setattr(summarizer, "generate_summary", _fake_generate(calls))
@@ -232,7 +232,7 @@ def test_create_repo_duplicate_name_returns_409(client):
 
 
 def test_create_repo_runs_ingest_in_background(client, monkeypatch):
-    from backend import api as api_module
+    from surgite import api as api_module
 
     calls = []
 
@@ -268,9 +268,9 @@ def test_delete_repo_cascades_commits(client, add_repo, add_commit):
 
 def test_cli_without_ingest_prints_formatted_log(monkeypatch):
     monkeypatch.setattr(
-        "backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
+        "surgite.cli.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
     )
-    monkeypatch.setattr("sys.argv", ["standup", "/r"])
+    monkeypatch.setattr("sys.argv", ["surgite", "/r"])
     stdout = io.StringIO()
     monkeypatch.setattr("sys.stdout", stdout)
 
@@ -282,12 +282,12 @@ def test_cli_without_ingest_prints_formatted_log(monkeypatch):
 
 def test_cli_summarize_runs_the_summarizer(monkeypatch):
     monkeypatch.setattr(
-        "backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
+        "surgite.cli.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
     )
     monkeypatch.setattr(
-        "backend.standup.summarize_commits", lambda text, **kw: "Accomplishments:\n- fixed a bug"
+        "surgite.cli.summarize_commits", lambda text, **kw: "Accomplishments:\n- fixed a bug"
     )
-    monkeypatch.setattr("sys.argv", ["standup", "/r", "--summarize"])
+    monkeypatch.setattr("sys.argv", ["surgite", "/r", "--summarize"])
     stdout = io.StringIO()
     monkeypatch.setattr("sys.stdout", stdout)
 
@@ -298,10 +298,10 @@ def test_cli_summarize_runs_the_summarizer(monkeypatch):
 
 def test_cli_output_writes_to_file(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "backend.standup.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
+        "surgite.cli.get_raw_log", lambda *a, **kw: "abc1234\x1f2026-06-01\x1fAlice\x1ffix bug"
     )
     out_file = tmp_path / "summary.txt"
-    monkeypatch.setattr("sys.argv", ["standup", "/r", "--output", str(out_file)])
+    monkeypatch.setattr("sys.argv", ["surgite", "/r", "--output", str(out_file)])
 
     main()
 
@@ -450,8 +450,8 @@ def test_resolve_unknown_share_returns_404(client):
 def test_resolve_expired_share_returns_404(client):
     from datetime import UTC, datetime, timedelta
 
-    from backend.auth import ensure_bootstrap_user
-    from backend.db import SharedSummaryRow, get_session
+    from surgite.auth import ensure_bootstrap_user
+    from surgite.db import SharedSummaryRow, get_session
 
     with get_session() as s:
         owner_id = ensure_bootstrap_user(s).id
@@ -471,9 +471,9 @@ def test_resolve_expired_share_returns_404(client):
 def test_expired_share_cleanup():
     from datetime import UTC, datetime, timedelta
 
-    from backend import api
-    from backend.auth import ensure_bootstrap_user
-    from backend.db import SharedSummaryRow, get_session
+    from surgite import api
+    from surgite.auth import ensure_bootstrap_user
+    from surgite.db import SharedSummaryRow, get_session
 
     now = datetime.now(UTC)
     with get_session() as s:
@@ -520,7 +520,7 @@ def test_health_deep_no_repos_no_keys_is_ok(client):
 
 def test_health_deep_git_ok(client, add_repo, monkeypatch):
     add_repo()
-    monkeypatch.setattr("backend.api.ls_remote", lambda url, timeout=10: None)
+    monkeypatch.setattr("surgite.api.ls_remote", lambda url, timeout=10: None)
     body = client.get("/health/deep").json()
     assert body["components"]["git"] == "ok"
 
@@ -531,7 +531,7 @@ def test_health_deep_git_failure_returns_503(client, add_repo, monkeypatch):
     def boom(url, timeout=10):
         raise RuntimeError("unreachable host")
 
-    monkeypatch.setattr("backend.api.ls_remote", boom)
+    monkeypatch.setattr("surgite.api.ls_remote", boom)
     r = client.get("/health/deep")
     assert r.status_code == 503
     assert r.json()["components"]["git"] == "error"
@@ -543,7 +543,7 @@ def test_health_deep_git_failure_returns_503(client, add_repo, monkeypatch):
 def test_summary_stream_emits_meta_deltas_and_done(client, add_commit, monkeypatch):
     add_commit()
     monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
-    from backend import summarizer
+    from surgite import summarizer
 
     async def fake_stream(log_text, provider=None, settings=None, client=None, user_id=None):
         yield "Hello "
@@ -587,8 +587,8 @@ def test_cli_registered_log_mode(monkeypatch):
         captured["params"] = params
         return _FakeApiResp({"log_by_repo": {"demo": "[2026-06-01] fix bug (Alice) <abc1234>"}})
 
-    monkeypatch.setattr("backend.standup.httpx.get", fake_get)
-    monkeypatch.setattr("sys.argv", ["standup", "--registered", "demo", "--since", "2026-06-01"])
+    monkeypatch.setattr("surgite.cli.httpx.get", fake_get)
+    monkeypatch.setattr("sys.argv", ["surgite", "--registered", "demo", "--since", "2026-06-01"])
     stdout = io.StringIO()
     monkeypatch.setattr("sys.stdout", stdout)
 
@@ -606,8 +606,8 @@ def test_cli_registered_summarize_mode(monkeypatch):
             {"ai_summaries": {"demo": {"summary": "## Work\n- shipped", "provider": "groq"}}}
         )
 
-    monkeypatch.setattr("backend.standup.httpx.get", fake_get)
-    monkeypatch.setattr("sys.argv", ["standup", "--registered", "demo", "--summarize"])
+    monkeypatch.setattr("surgite.cli.httpx.get", fake_get)
+    monkeypatch.setattr("sys.argv", ["surgite", "--registered", "demo", "--summarize"])
     stdout = io.StringIO()
     monkeypatch.setattr("sys.stdout", stdout)
 
@@ -617,6 +617,6 @@ def test_cli_registered_summarize_mode(monkeypatch):
 
 
 def test_cli_requires_path_or_registered(monkeypatch):
-    monkeypatch.setattr("sys.argv", ["standup"])
+    monkeypatch.setattr("sys.argv", ["surgite"])
     with pytest.raises(SystemExit):
         main()

@@ -17,7 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-from backend.config import DATABASE_URL
+from surgite.config import DATABASE_URL
 
 engine = create_engine(DATABASE_URL, pool_size=10, max_overflow=20, pool_pre_ping=True)
 
@@ -32,7 +32,7 @@ class Base(DeclarativeBase):  # Base class for SQLAlchemy models
 
 class OrgRow(Base):
     """An organisation — the tenancy boundary introduced in 1.0.0. Every user
-    has exactly one *personal* org (see backend.auth.create_personal_org), and
+    has exactly one *personal* org (see surgite.auth.create_personal_org), and
     in later slices can belong to shared orgs too. Ownership lives in
     org_members (there is no owner_id here); `deleted_at` is a soft-delete
     marker that stays null until slice 2 wires up org deletion."""
@@ -69,7 +69,7 @@ class OrgMemberRow(Base):
 
 class UserRow(Base):
     """An account. In AUTH_MODE=off/single_user a single bootstrap user owns
-    everything (see backend.auth.ensure_bootstrap_user); multi_user mode has
+    everything (see surgite.auth.ensure_bootstrap_user); multi_user mode has
     one row per real account.
 
     `email` is stored lower-cased and is unique. Postgres uses a CITEXT column
@@ -103,7 +103,7 @@ class UserRow(Base):
 
 class SessionRow(Base):
     """A server-side session. The opaque `id` is what the cookie carries; the
-    cookie never holds user data. Swept by backend.auth.purge_expired_sessions
+    cookie never holds user data. Swept by surgite.auth.purge_expired_sessions
     on the lifespan scheduler, and rejected on read once past `expires_at`."""
 
     __tablename__ = "sessions"
@@ -233,7 +233,7 @@ class PromptSettingsRow(Base):
 class SharedSummaryRow(Base):
     """A saved, shareable summary query. The slug is the only secret; resolving
     it re-runs the stored params. Expired rows are swept by the scheduler and
-    rejected on read (see backend.api). In multi_user mode, resolution is
+    rejected on read (see surgite.api). In multi_user mode, resolution is
     owner-scoped (a non-owner gets 404 to avoid slug existence leak; see
     slice 2 plan #71)."""
 
@@ -284,7 +284,7 @@ class ProviderKeyRow(Base):
     """A per-user LLM provider API key, Fernet-encrypted at rest. `provider`
     is the lowercase name (`anthropic`, `groq`, `deepseek`). The raw key is
     never returned by the API; the master key comes from
-    `SECRETS_ENCRYPTION_KEY` (see backend/secrets.py). Revoking sets
+    `SECRETS_ENCRYPTION_KEY` (see surgite/secrets.py). Revoking sets
     `revoked_at`; the row stays for audit (slice 2 plan #73)."""
 
     __tablename__ = "provider_keys"
@@ -312,7 +312,7 @@ class PasswordResetRow(Base):
     ``POST /auth/password-reset/confirm``. The row stores only an
     argon2id hash of the token (we look it up via the prefix index on
     ``id``, which is a short random identifier prefixed to the token
-    the user actually receives — see ``backend.auth.mint_password_reset``).
+    the user actually receives — see ``surgite.auth.mint_password_reset``).
     Used rows are kept with ``used_at`` set for audit; the lookup
     rejects them on read.
     """

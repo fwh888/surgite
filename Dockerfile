@@ -11,6 +11,6 @@ RUN pip install uv --quiet
 COPY . .
 RUN uv sync --frozen --no-dev
 COPY --from=frontend /build/frontend/build /app/frontend/build
-RUN mkdir -p /var/standup/repos
+RUN mkdir -p /var/surgite/repos
 EXPOSE 8000
-CMD .venv/bin/alembic upgrade head && .venv/bin/uvicorn backend.api:app --host 0.0.0.0 --port 8000
+CMD .venv/bin/alembic upgrade head && .venv/bin/uvicorn surgite.api:app --host 0.0.0.0 --port 8000

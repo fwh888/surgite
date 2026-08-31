@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a problem with standup-gen
+about: Report a problem with surgite
 title: ""
 labels:
   - bug

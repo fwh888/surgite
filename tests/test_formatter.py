@@ -1,5 +1,5 @@
-from backend.formatter import format_commit, format_log
-from backend.models import Commit
+from surgite.formatter import format_commit, format_log
+from surgite.models import Commit
 
 
 def _commit(**overrides) -> Commit:

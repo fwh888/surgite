@@ -27,7 +27,7 @@
 			<button onclick={onclose} class="text-fg-muted hover:text-fg">✕</button>
 		</div>
 		<div class="space-y-3 text-fg-muted">
-			<p><span class="text-fg">standup</span> generates standup summaries from your git commit history.</p>
+			<p><span class="text-fg">surgite</span> generates standup summaries from your git commit history.</p>
 			<div>
 				<p class="text-fg">Commands:</p>
 				<p>  <span class="text-accent">❯ add-repo</span>        — register a git repository</p>

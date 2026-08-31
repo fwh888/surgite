@@ -1,8 +1,8 @@
 import httpx
 import pytest
 
-from backend import summarizer
-from backend.summarizer import (
+from surgite import summarizer
+from surgite.summarizer import (
     ProviderError,
     default_provider,
     generate_summary,
@@ -82,14 +82,14 @@ def test_provider_status_flags_the_default(monkeypatch):
 
 
 def test_system_prompt_includes_identity(monkeypatch):
-    monkeypatch.setenv("STANDUP_USER", "Nick")
-    monkeypatch.setenv("STANDUP_ROLE", "developer")
+    monkeypatch.setenv("SURGITE_USER", "Nick")
+    monkeypatch.setenv("SURGITE_ROLE", "developer")
     assert "Nick (developer)" in summarizer._build_system_prompt()
 
 
 def test_system_prompt_without_identity_has_no_attribution(monkeypatch):
-    monkeypatch.delenv("STANDUP_USER", raising=False)
-    monkeypatch.delenv("STANDUP_ROLE", raising=False)
+    monkeypatch.delenv("SURGITE_USER", raising=False)
+    monkeypatch.delenv("SURGITE_ROLE", raising=False)
     assert "authored by" not in summarizer._build_system_prompt()
 
 
@@ -128,15 +128,15 @@ def test_system_prompt_with_custom_instructions():
 
 
 def test_system_prompt_settings_override_env(monkeypatch):
-    monkeypatch.setenv("STANDUP_USER", "EnvUser")
+    monkeypatch.setenv("SURGITE_USER", "EnvUser")
     prompt = summarizer._build_system_prompt({"user_name": "SettingsUser"})
     assert "SettingsUser" in prompt
     assert "EnvUser" not in prompt
 
 
 def test_system_prompt_settings_fallback_to_env(monkeypatch):
-    monkeypatch.setenv("STANDUP_USER", "EnvUser")
-    monkeypatch.setenv("STANDUP_ROLE", "dev")
+    monkeypatch.setenv("SURGITE_USER", "EnvUser")
+    monkeypatch.setenv("SURGITE_ROLE", "dev")
     prompt = summarizer._build_system_prompt({})
     assert "EnvUser (dev)" in prompt
 

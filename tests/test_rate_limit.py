@@ -3,7 +3,7 @@
 import pytest
 from fastapi import HTTPException
 
-from backend import rate_limit
+from surgite import rate_limit
 
 
 @pytest.fixture(autouse=True)

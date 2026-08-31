@@ -1,15 +1,15 @@
-# Contributing to standup-gen
+# Contributing to surgite
 
 Thanks for your interest in contributing. This project is a small, self-hostable
 tool for generating standup summaries from git history. Contributions of all
 sizes are welcome — bug reports, docs, tests, and features.
 
-The canonical repository is on Codeberg:
-<https://codeberg.org/ncoleman/standup-gen>.
+The canonical repository is on GitHub:
+<https://github.com/nicoleman0/surgite>.
 
 ## Philosophy
 
-standup-gen is deliberately minimalist and easy to maintain. For agents (and humans)
+surgite is deliberately minimalist and easy to maintain. For agents (and humans)
 before writing code, please skim [AGENTS.md](AGENTS.md) — it documents the architecture
 and the principles we hold the line on:
 
@@ -38,13 +38,13 @@ discuss before building something large.
 uv sync --group dev               # install deps incl. dev tools
 docker compose up -d db           # start Postgres
 uv run alembic upgrade head       # run migrations
-uv run uvicorn backend.api:app --reload   # API at http://127.0.0.1:8000
+uv run uvicorn surgite.api:app --reload   # API at http://127.0.0.1:8000
 ```
 
 Run the CLI without any of the above:
 
 ```bash
-uv run standup /path/to/repo --since 7.days.ago
+uv run surgite /path/to/repo --since 7.days.ago
 ```
 
 ### Frontend
@@ -68,7 +68,7 @@ Please make sure these all pass locally — CI runs the same checks:
 ```bash
 uv run ruff check .               # lint (add --fix to auto-fix)
 uv run ruff format .              # format
-uv run mypy backend/              # type check
+uv run mypy surgite/              # type check
 uv run pytest                     # backend tests
 task openapi-snapshot-check       # OpenAPI snapshot drift gate (see below)
 

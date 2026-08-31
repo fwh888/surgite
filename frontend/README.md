@@ -1,6 +1,6 @@
-# standup-gen frontend
+# surgite frontend
 
-SvelteKit SPA (Svelte 5 + Tailwind v4) for the standup-gen web app: register repos,
+SvelteKit SPA (Svelte 5 + Tailwind v4) for the surgite web app: register repos,
 trigger ingests, and generate standup summaries from the browser. Built to static
 assets via `@sveltejs/adapter-static` and served same-origin by the FastAPI backend
 in production.
@@ -15,7 +15,7 @@ npm install
 npm run dev      # Vite dev server on :5173, calls the API on :8000 cross-origin
 ```
 
-Run the backend (`uv run uvicorn backend.api:app --reload`) alongside it. To point at
+Run the backend (`uv run uvicorn surgite.api:app --reload`) alongside it. To point at
 a non-default backend, set `VITE_API_BASE` — see [.env.example](.env.example).
 
 ## Build & check

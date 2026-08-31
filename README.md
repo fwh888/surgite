@@ -1,4 +1,4 @@
-# standup-gen
+# surgite
 
 Standup summaries from your git history — in the browser, in the terminal, or as a shareable link.
 
@@ -20,28 +20,28 @@ Two paths. Pick one.
 **The web app** — three commands, full team dashboard:
 
 ```bash
-git clone https://codeberg.org/ncoleman/standup-gen.git
-cd standup-gen
+git clone https://github.com/nicoleman0/surgite.git
+cd surgite
 cp .env.example .env       # set BOOTSTRAP_OWNER_EMAIL=you@example.com
 docker compose up -d
 ```
 
 On first start the app mints an admin invite and logs the token; redeem it
-with `uv run standup --redeem-invite <token> --email you@example.com` and
+with `uv run surgite --redeem-invite <token> --email you@example.com` and
 you're in. Full guide: [`docs/self-host.md`](docs/self-host.md).
 
 **One-off summary from a local repo** — no database, no server:
 
 ```bash
 uv tool install .
-standup /path/to/your/repo --since 7.days.ago
+surgite /path/to/your/repo --since 7.days.ago
 ```
 
 Add `--summarize` to get AI-written prose (set `ANTHROPIC_API_KEY` first).
 
 ## Screenshots
 
-![standup-gen dashboard](docs/demo.gif)
+![surgite dashboard](docs/demo.gif)
 
 The dashboard, with terminal-aesthetic chrome, a sample repo's commit log,
 and a streamed AI summary panel. See [`docs/self-host.md`](docs/self-host.md)
@@ -52,9 +52,9 @@ for the deployment walkthrough.
 - **Web dashboard** — per-user repos, prompt settings, summary history, share
   links, admin user management (`/admin/users`). Email + password login with
   `__Host-` session cookies.
-- **CLI** — `standup /path/to/repo` for a local one-off, `standup --registered
-  <name>` to pull from a running API, `standup --login` to authenticate,
-  `standup --summarize` for AI-written prose.
+- **CLI** — `surgite /path/to/repo` for a local one-off, `surgite --registered
+  <name>` to pull from a running API, `surgite --login` to authenticate,
+  `surgite --summarize` for AI-written prose.
 - **Per-user provider keys** — each user brings their own Anthropic / Groq /
   DeepSeek key. Fernet-encrypted at rest, never returned by the API.
 - **Shareable summary links** — `POST /summaries` mints a `/s/{slug}` URL that
@@ -95,7 +95,7 @@ for the deployment walkthrough.
 uv sync --group dev                 # install deps (incl. dev tools)
 docker compose up -d db             # Postgres for local dev
 uv run alembic upgrade head         # run migrations
-uv run uvicorn backend.api:app --reload
+uv run uvicorn surgite.api:app --reload
 cd frontend && npm install && npm run dev
 uv run pytest                       # tests
 uv run ruff check . && uv run ruff format --check .   # lint + format
@@ -112,8 +112,8 @@ principles in [`AGENTS.md`](AGENTS.md). Start with
 also read [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). For anything
 security-sensitive, see [`SECURITY.md`](SECURITY.md).
 
-The canonical repository is on Codeberg:
-<https://codeberg.org/ncoleman/standup-gen>.
+The canonical repository is on GitHub:
+<https://github.com/nicoleman0/surgite>.
 
 ## License
 

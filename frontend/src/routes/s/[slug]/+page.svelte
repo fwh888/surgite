@@ -29,13 +29,13 @@
 </script>
 
 <svelte:head>
-	<title>shared summary — standup</title>
+	<title>shared summary — surgite</title>
 </svelte:head>
 
 <main class="mx-auto min-h-screen max-w-2xl px-4 py-6 sm:px-6 sm:py-10">
 	<div class="border border-border bg-surface">
 		<div class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-			<span class="flex-1 text-xs text-fg-muted">standup-gen</span>
+			<span class="flex-1 text-xs text-fg-muted">surgite</span>
 		</div>
 
 		<div class="px-4 py-6 sm:px-6">
@@ -45,7 +45,7 @@
 			</div>
 			<p class="mt-1 text-sm text-fg-muted">
 				A read-only standup summary shared via link.
-				<a href="/" class="text-accent underline hover:text-accent-hover">open standup ❯</a>
+				<a href="/" class="text-accent underline hover:text-accent-hover">open surgite ❯</a>
 			</p>
 			<div class="mt-1 border-b border-dashed border-border-subtle"></div>
 

@@ -1,7 +1,7 @@
 # Security model — 0.5.0
 
 This document describes the threat model for 0.5.0 and the design
-choices that follow from it. The 0.5.0 release makes standup-gen
+choices that follow from it. The 0.5.0 release makes surgite
 **safe to expose to the public internet** behind a TLS terminator
 (Traefik + step-ca, Caddy + Let's Encrypt, or anything else that
 hands the app a verified connection).
@@ -30,7 +30,7 @@ What we're defending against:
   is the only access pattern) and the explicit per-route checks
   documented in `docs/releases/0.5.0-plan.md` (the historical
   plan; the current roadmap is `docs/0.6.0-plan.md`).
-- **API key theft.** The CLI's `STANDUP_API_KEY` is stolen. Mitigated
+- **API key theft.** The CLI's `SURGITE_API_KEY` is stolen. Mitigated
   by `name` on every key (revoke "laptop", keep "CI"), `last_used_at`
   for forensic review, and the fact that keys are argon2id-hashed
   at rest (a DB leak doesn't yield usable keys).
@@ -43,7 +43,7 @@ What we're defending against:
 - **CSRF.** A malicious site triggers a state-changing request
   against the API. Mitigated by the `SameSite=Lax` cookie (the
   browser won't send the cookie on cross-site POSTs) plus the
-  `X-Requested-With: standup-web` header requirement on every
+  `X-Requested-With: surgite-web` header requirement on every
   non-safe request in multi_user mode. The CLI uses Bearer auth and
   is unaffected.
 - **Information disclosure via `/health/deep`.** The probe in 0.4.0
@@ -78,7 +78,7 @@ What we're NOT defending against:
 |------|------------|----------------|-------------|----------------|----------|
 | `off` | none | ignored | ignored | 404 | 0.4.0 behaviour, single-user trusted network |
 | `single_user` | none (resolves to bootstrap user) | ignored | ignored | 404 | "I just want auth on the API" / tests |
-| `multi_user` | email + password | `__Host-standup_session` | `Authorization: Bearer sk_...` | 200 | exposed deployment |
+| `multi_user` | email + password | `__Host-surgite_session` | `Authorization: Bearer sk_...` | 200 | exposed deployment |
 
 ## Rate limits (multi_user mode)
 
@@ -90,14 +90,14 @@ What we're NOT defending against:
 | `/auth/api-keys` (issue) | 10 / 24h | per user | `API_KEY_ISSUE_LIMIT`, `API_KEY_ISSUE_WINDOW_HOURS` |
 
 All limits are hand-rolled in-memory token buckets (see
-`backend/rate_limit.py`). Process-local is fine: a restart resets
+`surgite/rate_limit.py`). Process-local is fine: a restart resets
 the bucket, which is the lenient behaviour we want for an
 accidental button-mash guard. For real abuse protection, sit this
 behind Traefik + fail2ban as the project docs already recommend.
 
 ## Cookies
 
-- Name: `__Host-standup_session` in production, `standup_session`
+- Name: `__Host-surgite_session` in production, `surgite_session`
   in `DEBUG=true`.
 - `__Host-` prefix forces `Secure` + host-only + `path=/` at the
   browser. `Secure` requires HTTPS, so plain-HTTP local dev uses
@@ -134,7 +134,7 @@ on `revoked_at IS NOT NULL`.
 
 `provider_keys.encrypted_key` is a Fernet token. The master key
 comes from `SECRETS_ENCRYPTION_KEY` (env var) or `.secrets_key`
-(generated on first run, chmod 600, see `backend/secrets.py`). The
+(generated on first run, chmod 600, see `surgite/secrets.py`). The
 operator is warned on first run to back the file up. Rotation:
 `scripts/rotate-secrets.sh`.
 
@@ -155,7 +155,7 @@ filterable by `since` and `action`).
 The structured logger mirrors every audit row to the standard log
 stream (namespace `audit`), so log shippers see the same events
 without a separate database query. The `audit()` helper in
-`backend/audit.py` is the only write path; it never raises (an
+`surgite/audit.py` is the only write path; it never raises (an
 audit write failure is logged at `ERROR` but does not break the
 user-facing request).
 
@@ -164,7 +164,7 @@ user-facing request).
 - **First run on a fresh deployment**: set
   `BOOTSTRAP_OWNER_EMAIL=you@example.com`, start the API, copy
   the bootstrap admin invite out of the logs, redeem via
-  `standup --redeem-invite <token>`. Then add the second admin
+  `surgite --redeem-invite <token>`. Then add the second admin
   with `POST /admin/invites` (role=admin) and revoke any
   long-lived keys you don't need.
 - **TLS**: app refuses to start in `multi_user` mode without a

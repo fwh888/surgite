@@ -47,7 +47,7 @@ tasks:
       - diff -u {{.BASELINE}} {{.CURRENT}}
       - rm -f {{.CURRENT}}
     sources:
-      - backend/**/*.py
+      - surgite/**/*.py
       - scripts/dump_openapi.py
     generates:
       - docs/openapi.json
@@ -60,6 +60,6 @@ tasks:
       - diff -u {{.BASELINE}} {{.CURRENT}}
       - rm -f {{.CURRENT}}
     sources:
-      - backend/**/*.py
+      - surgite/**/*.py
       - scripts/dump_openapi.py
       - docs/openapi.json

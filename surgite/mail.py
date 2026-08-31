@@ -9,7 +9,7 @@ A tiny mailer abstraction with two implementations:
     self-hoster who hasn't configured mail still gets a working password
     reset: the link lands in the log stream they already watch.
 
-Templates are plain-text files in ``backend/templates/email/*.txt`` with
+Templates are plain-text files in ``surgite/templates/email/*.txt`` with
 ``{placeholder}`` fields filled by ``str.format``. The first line is
 ``Subject: ...``; everything after the blank line is the body.
 
@@ -26,7 +26,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Protocol
 
-from backend import config
+from surgite import config
 
 log = logging.getLogger(__name__)
 

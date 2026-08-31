@@ -6,14 +6,14 @@ from datetime import date, timedelta
 import httpx
 from dotenv import load_dotenv
 
-from backend import cli_auth
-from backend.formatter import format_log
-from backend.git import get_raw_log, parse_log
-from backend.summarizer import summarize_commits
+from surgite import cli_auth
+from surgite.formatter import format_log
+from surgite.git import get_raw_log, parse_log
+from surgite.summarizer import summarize_commits
 
 
 def _api_base() -> str:
-    return os.environ.get("STANDUP_API_URL", "http://localhost:8000").rstrip("/")
+    return os.environ.get("SURGITE_API_URL", "http://localhost:8000").rstrip("/")
 
 
 def _run_local(args) -> str:
@@ -33,10 +33,10 @@ def _run_local(args) -> str:
 
 
 def _run_registered(args) -> str:
-    """Pull a registered repo's data from a running standup-gen API instead of
-    a local clone. URL from STANDUP_API_URL. Auth (multi_user deployments) via
-    a saved session cookie (`standup --login` / `--redeem-invite`) or
-    STANDUP_API_KEY; off/single_user deployments need none. Mirrors what the
+    """Pull a registered repo's data from a running surgite API instead of
+    a local clone. URL from SURGITE_API_URL. Auth (multi_user deployments) via
+    a saved session cookie (`surgite --login` / `--redeem-invite`) or
+    SURGITE_API_KEY; off/single_user deployments need none. Mirrors what the
     web UI shows for the same repo."""
     base = _api_base()
     headers = cli_auth.auth_headers(base)
@@ -72,8 +72,8 @@ def main():
     parser.add_argument(
         "--registered",
         metavar="NAME",
-        help="Pull a repo registered in a running standup-gen API "
-        "(set STANDUP_API_URL; auth via `standup --login` or STANDUP_API_KEY) "
+        help="Pull a repo registered in a running surgite API "
+        "(set SURGITE_API_URL; auth via `surgite --login` or SURGITE_API_KEY) "
         "instead of a local path",
     )
 

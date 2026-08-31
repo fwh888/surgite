@@ -29,7 +29,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 log = logging.getLogger(__name__)
 
-# Project root: two levels up from backend/secrets.py. AGENTS.md lives there.
+# Project root: two levels up from surgite/secrets.py. AGENTS.md lives there.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SECRETS_FILE = _PROJECT_ROOT / ".secrets_key"
 

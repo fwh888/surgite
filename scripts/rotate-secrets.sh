@@ -13,7 +13,7 @@
 #   scripts/rotate-secrets.sh <new-fernet-key>      # 44-char urlsafe-b64 key
 #
 # Either form is fine; we derive the Fernet key from the input the same
-# way backend/secrets.py does (accepting either a Fernet key or an
+# way surgite/secrets.py does (accepting either a Fernet key or an
 # arbitrary passphrase).
 
 set -euo pipefail
@@ -66,8 +66,8 @@ def _derive(material: str) -> bytes:
 old_fernet = Fernet(_derive(OLD_MATERIAL))
 new_fernet = Fernet(_derive(NEW_MATERIAL))
 
-from backend.db import ProviderKeyRow, session_scope
-from backend.config import DATABASE_URL
+from surgite.db import ProviderKeyRow, session_scope
+from surgite.config import DATABASE_URL
 
 # Cheap guard: refuse to run on a SQLite test DB. The check is the
 # dialect name; if we ever support other backends, this branch needs
@@ -102,7 +102,7 @@ Rotation complete.
   - Active rows re-encrypted: see script output above
 
 Next steps:
-  1. Restart the standup-gen API to load the new master key.
+  1. Restart the surgite API to load the new master key.
   2. Back up .secrets_key (chmod 600) somewhere safe.
   3. The old key is no longer valid; if you saved it elsewhere, delete it.
 EOF

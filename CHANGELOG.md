@@ -9,7 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The multi-tenant / orgs release (in progress). The data model gains
 organisations; the API surface stays stable (the 0.6.0 OpenAPI snapshot is
-unchanged for existing endpoints).
+unchanged for existing endpoints). 1.0.0 also carries the project rename from
+`standup-gen` to `surgite` — the PyPI name `standup-gen` belongs to an
+unrelated project, so the distribution, package, CLI, and configuration
+surface all move to `surgite` at the same major version.
 
 ### Added
 
@@ -19,6 +22,31 @@ unchanged for existing endpoints).
   backfilled to it. Existing endpoints are unchanged — they resolve to the
   caller's personal org. See
   [`docs/migrations/0.6.0-to-1.0.0.md`](docs/migrations/0.6.0-to-1.0.0.md).
+
+### Changed
+
+- **Renamed to `surgite`.** The Python package is `surgite/` (was `backend/`),
+  the CLI command is `surgite` (was `standup`), and the project is published to
+  PyPI as `surgite`. The canonical repository moves to GitHub
+  (<https://github.com/nicoleman0/surgite>) with read-only pull mirrors on
+  Forgejo and Codeberg. Environment variables rename `STANDUP_*` →
+  `SURGITE_*`, the session cookie is `__Host-surgite_session`, the CSRF header
+  value is `surgite-web` (SPA and API flip together — invisible to users), the
+  keyring service is `surgite` with automatic forward-migration from the old
+  `standup-gen` entry, the CLI config dir is `~/.config/surgite/` (the old
+  `~/.config/standup/session` file migrates too), and infra defaults rename
+  (Postgres db/user `surgite`, cache volume `surgite-repos`,
+  `/var/surgite/repos`, image `surgite-app`, backup pattern
+  `surgite-*.sql.gz`). One-time effects: browser sessions are invalidated
+  (everyone logs in again once); CLI sessions migrate automatically or
+  re-login. Upgrade steps for existing deployments:
+  [`docs/self-host.md`](docs/self-host.md#upgrading-from-standup-gen-pre-rename).
+
+### Removed
+
+- The deprecated `STANDUP_API_TOKEN` env var (an alias for `STANDUP_API_KEY`
+  since 0.5.0), per the [`docs/api-stability.md`](docs/api-stability.md)
+  deprecation procedure — subsumed by the `SURGITE_*` rename above.
 
 ## [0.6.0] - 2026-06-30
 

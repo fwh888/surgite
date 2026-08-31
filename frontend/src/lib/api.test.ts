@@ -41,7 +41,7 @@ describe('request() — CSRF header', () => {
 		await login('a@b.c', 'pw');
 		const init = fetchSpy.mock.calls[0][1] as RequestInit;
 		const headers = init.headers as Record<string, string>;
-		expect(headers['X-Requested-With']).toBe('standup-web');
+		expect(headers['X-Requested-With']).toBe('surgite-web');
 		expect(headers['Content-Type']).toBe('application/json');
 	});
 
@@ -155,7 +155,7 @@ describe('admin endpoints (issue #76)', () => {
 		await createInvite({ role: 'user', ttl_days: 7 });
 		for (let i = 0; i < 4; i++) {
 			const init = fetchSpy.mock.calls[i][1] as RequestInit;
-			expect((init.headers as Record<string, string>)['X-Requested-With']).toBe('standup-web');
+			expect((init.headers as Record<string, string>)['X-Requested-With']).toBe('surgite-web');
 		}
 	});
 
@@ -203,7 +203,7 @@ describe('logout (issue #78)', () => {
 		expect(url).toBe('http://api.test/auth/logout');
 		expect(init.method).toBe('POST');
 		const headers = init.headers as Record<string, string>;
-		expect(headers['X-Requested-With']).toBe('standup-web');
+		expect(headers['X-Requested-With']).toBe('surgite-web');
 	});
 });
 
@@ -225,7 +225,7 @@ describe('resetPassword (issue #79)', () => {
 			new_password: 'newpw1234'
 		});
 		const headers = init.headers as Record<string, string>;
-		expect(headers['X-Requested-With']).toBe('standup-web');
+		expect(headers['X-Requested-With']).toBe('surgite-web');
 	});
 
 	it('attaches status=400 on an expired token', async () => {
