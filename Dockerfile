@@ -24,4 +24,6 @@ RUN uv sync --frozen --no-dev
 COPY --from=frontend /build/frontend/build /app/frontend/build
 RUN mkdir -p /var/surgite/repos /var/surgite/data
 EXPOSE 8000
-CMD .venv/bin/alembic upgrade head && .venv/bin/uvicorn surgite.api:app --host 0.0.0.0 --port 8000
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+CMD ["/entrypoint.sh"]

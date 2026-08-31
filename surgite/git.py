@@ -33,18 +33,33 @@ def _repo_name_from_url(url: str) -> str:
 def ensure_repo(name: str, url: str, cache_dir: str) -> str:
     """Ensure a remote repo is cloned (shallow). Returns the local path.
 
-    If already cloned, fetches latest. Uses --depth for efficiency.
+    If already cloned, fetches latest. Bounds the shallow clone by time
+    (--shallow-since) rather than commit count, so the default 7-day
+    query window is always covered regardless of commit volume.
+    Depth can be overridden with the CLONE_DEPTH env var (in days,
+    default 30).
     """
     dest = os.path.join(cache_dir, name)
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
+    clone_since_days = int(os.environ.get("CLONE_DEPTH", "30"))
+    since_arg = f"--shallow-since={clone_since_days}.days.ago"
+
     if os.path.isdir(os.path.join(dest, ".git")):
         subprocess.run(
-            ["git", "fetch", "--depth", "100", "origin"],
+            ["git", "fetch", since_arg, "origin"],
             cwd=dest,
             capture_output=True,
             text=True,
             check=True,
+        )
+        # Refresh origin/HEAD so a renamed default branch (master -> main)
+        # is picked up on the next ingest instead of reading a stale branch.
+        subprocess.run(
+            ["git", "remote", "set-head", "origin", "-d"],
+            cwd=dest,
+            capture_output=True,
+            text=True,
         )
         subprocess.run(
             ["git", "reset", "--hard", "origin/HEAD"],
@@ -55,7 +70,7 @@ def ensure_repo(name: str, url: str, cache_dir: str) -> str:
         )
     else:
         subprocess.run(
-            ["git", "clone", "--depth", "100", url, dest],
+            ["git", "clone", since_arg, url, dest],
             capture_output=True,
             text=True,
             check=True,
