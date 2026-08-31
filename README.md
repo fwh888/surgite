@@ -3,6 +3,8 @@
 Standup summaries from your git history — in the browser, in the terminal, or as a shareable link.
 
 [![CI](https://github.com/nicoleman0/surgite/actions/workflows/ci.yml/badge.svg)](https://github.com/nicoleman0/surgite/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/surgite)](https://pypi.org/project/surgite/)
+[![Python versions](https://img.shields.io/pypi/pyversions/surgite)](https://pypi.org/project/surgite/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 The web app gives your team a shared dashboard: per-user repos, per-user prompt
@@ -33,9 +35,14 @@ you're in. Full guide: [`docs/self-host.md`](docs/self-host.md).
 **One-off summary from a local repo** — no database, no server:
 
 ```bash
-uv tool install .
+pip install surgite         # or: uv tool install surgite
 surgite /path/to/your/repo --since 7.days.ago
 ```
+
+The PyPI wheel ships the `surgite` package — the CLI and the API code. The
+web frontend and the alembic migrations are not in the wheel; the full
+self-hosted stack installs from the repo or the Docker image (see
+[`docs/self-host.md`](docs/self-host.md)).
 
 Add `--summarize` to get AI-written prose (set `ANTHROPIC_API_KEY` first).
 

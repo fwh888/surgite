@@ -102,7 +102,7 @@ API:  POST /repos  →  create repo + per-repo BackgroundTask ingest (clone/fetc
 
 ## Roadmap
 
-- Release history lives in [CHANGELOG.md](CHANGELOG.md); 0.4.0 was the most recent release. There's no open roadmap doc — file an issue for new work.
+- Release history lives in [CHANGELOG.md](CHANGELOG.md). The release process (version bump, tag, PyPI publish) is in [RELEASING.md](RELEASING.md). No open roadmap doc — file an issue for new work.
 
 ## Environment Variables
 
