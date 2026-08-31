@@ -2,7 +2,7 @@
 
 Standup summaries from your git history — in the browser, in the terminal, or as a shareable link.
 
-[![CI](https://github.com/nicoleman0/surgite/actions/workflows/ci.yml/badge.svg)](https://github.com/nicoleman0/surgite/actions/workflows/ci.yml)
+[![CI](https://github.com/nicoleman0/surgite/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nicoleman0/surgite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/surgite)](https://pypi.org/project/surgite/)
 [![Python versions](https://img.shields.io/pypi/pyversions/surgite)](https://pypi.org/project/surgite/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -46,7 +46,7 @@ self-hosted stack installs from the repo or the Docker image (see
 
 Add `--summarize` to get AI-written prose (set `ANTHROPIC_API_KEY` first).
 
-## Screenshots
+## Demo
 
 ![surgite dashboard](https://raw.githubusercontent.com/nicoleman0/surgite/main/docs/demo.gif)
 
