@@ -48,7 +48,7 @@ Add `--summarize` to get AI-written prose (set `ANTHROPIC_API_KEY` first).
 
 ## Screenshots
 
-![surgite dashboard](docs/demo.gif)
+![surgite dashboard](https://raw.githubusercontent.com/nicoleman0/surgite/main/docs/demo.gif)
 
 The dashboard, with terminal-aesthetic chrome, a sample repo's commit log,
 and a streamed AI summary panel. See [`docs/self-host.md`](docs/self-host.md)
