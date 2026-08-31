@@ -20,8 +20,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if [ ! -f .secrets_key ]; then
-  echo "error: no .secrets_key in $(pwd) — start the API at least once to generate one" >&2
+# Must match surgite/secrets.py: the fallback key's location is overridable so
+# containerised deployments can put it on a volume. Rotating the wrong file
+# re-encrypts every row under a key the API will never load.
+KEY_FILE="${SECRETS_KEY_FILE:-.secrets_key}"
+
+if [ ! -f "$KEY_FILE" ]; then
+  echo "error: no key file at $KEY_FILE (cwd $(pwd)) — start the API at least once to generate one," >&2
+  echo "       or set SECRETS_KEY_FILE if this deployment keeps it elsewhere" >&2
   exit 1
 fi
 
@@ -40,7 +46,7 @@ fi
 # transaction so a crash mid-rotation doesn't leave the table half-
 # encrypted.
 
-OLD_KEY=$(cat .secrets_key)
+OLD_KEY=$(cat "$KEY_FILE")
 
 uv run --quiet python3 - "$OLD_KEY" "$NEW_KEY" <<'PYEOF'
 import sys
@@ -90,8 +96,9 @@ with session_scope() as s:
 PYEOF
 
 # Persist the new master.
-printf '%s\n' "$NEW_KEY" > .secrets_key
-chmod 600 .secrets_key
+mkdir -p "$(dirname "$KEY_FILE")"
+printf '%s\n' "$NEW_KEY" > "$KEY_FILE"
+chmod 600 "$KEY_FILE"
 
 cat <<EOF
 
@@ -103,6 +110,6 @@ Rotation complete.
 
 Next steps:
   1. Restart the surgite API to load the new master key.
-  2. Back up .secrets_key (chmod 600) somewhere safe.
+  2. Back up $KEY_FILE (chmod 600) somewhere safe.
   3. The old key is no longer valid; if you saved it elsewhere, delete it.
 EOF

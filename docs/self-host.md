@@ -53,8 +53,10 @@ uv run surgite --redeem-invite <token> --email you@example.com
 ```
 
 That's it. The app created the database, ran migrations, generated a Fernet
-master key for at-rest encryption, wrote it to `.secrets_key` (chmod 600, owned
-by the API process — back it up), minted the admin invite, and on redeem created
+master key for at-rest encryption, wrote it to the `surgite-data` volume at
+`/var/surgite/data/.secrets_key` (chmod 600, owned by the API process — back it
+up, or set `SECRETS_ENCRYPTION_KEY` in `.env` and skip the generated key
+entirely), minted the admin invite, and on redeem created
 your account with a password you set in the prompt. You're logged in; invite
 the rest of your team from the web UI (admins land in slice 2; until then the
 API endpoints are in `docs/security.md`).
@@ -106,11 +108,51 @@ Postgres. Wire this into a daily cron on a Proxmox Backup Server (PBS) — the
 named volume `pgdata` plus the dated dumps in `BACKUP_DIR` is the whole
 recovery story.
 
-Back up `.secrets_key` **separately** — it is the Fernet master that decrypts
-`provider_keys`, and the backup script does not include it. If you lose it, the
-ciphertext in any DB backup is unreadable.
+Back up the Fernet master key **separately** — it decrypts `provider_keys`, and
+the backup script does not include it. If you lose it, the ciphertext in any DB
+backup is unreadable. Under compose it lives on the `surgite-data` volume:
+
+```bash
+docker compose exec app cat /var/surgite/data/.secrets_key
+```
+
+Better still, set `SECRETS_ENCRYPTION_KEY` in `.env` so the key is something you
+chose and already store elsewhere, rather than something the app generated.
 
 ## Upgrade
+
+### Rescue your master key before upgrading past 1.0.1
+
+Compose deployments up to and including 1.0.1 did not pass
+`SECRETS_ENCRYPTION_KEY` into the container, and the app's generated fallback
+key was written to `/app/.secrets_key` — inside the image layer, with no volume
+behind it. That key was already being destroyed every time the container was
+replaced, silently orphaning every provider key stored in the database.
+
+This release moves the fallback onto the `surgite-data` volume. That fixes it
+going forward, but the upgrade itself replaces the container, so **do this
+before you pull**:
+
+```bash
+# 1. Read the key out of the RUNNING container, before it is replaced.
+docker compose exec app cat /app/.secrets_key
+
+# 2. Put it in .env so the new container keeps using it.
+echo "SECRETS_ENCRYPTION_KEY=<the value from step 1>" >> .env
+
+# 3. Now upgrade.
+docker compose pull && docker compose up -d
+```
+
+Skip step 1 and the new container generates a fresh key, at which point every
+stored provider key is unreadable. Nothing else is lost — repos, users,
+sessions, summaries and share links are all in Postgres and unaffected — and
+each user can re-enter their provider key from the web UI. But you cannot
+recover the old ones, so it is worth the two minutes.
+
+If the container is already gone, that is the situation: have each user
+re-enter their provider key, and set `SECRETS_ENCRYPTION_KEY` in `.env` now so
+it cannot happen again.
 
 Coming from 0.4.0? Read [`docs/migrations/0.4.0-to-0.5.0.md`](migrations/0.4.0-to-0.5.0.md).
 The short version: the migration is one-shot, it backfills every existing row
@@ -243,12 +285,21 @@ on the next tick.
 
 **Rotate the Fernet master key.** `scripts/rotate-secrets.sh` re-encrypts every
 active `provider_keys` row in place under a new key, atomically. The running
-API keeps using the old key until you restart it. Back up the new
-`.secrets_key` and delete the old one from wherever you stored it.
+API keeps using the old key until you restart it. Back up the new key file and
+delete the old one from wherever you stored it.
 
 ```bash
 scripts/rotate-secrets.sh                    # generates a new key for you
 scripts/rotate-secrets.sh 'my-new-passphrase'  # or use a specific passphrase
+```
+
+The script rotates `SECRETS_KEY_FILE` when set, falling back to `.secrets_key`
+next to the project root. Under compose the key lives on a volume, so point the
+script at it — otherwise it re-encrypts every row under a key the API will never
+load:
+
+```bash
+SECRETS_KEY_FILE=/var/surgite/data/.secrets_key scripts/rotate-secrets.sh
 ```
 
 **Read the audit log.** Admin-only, paginated, filterable by `action` (exact

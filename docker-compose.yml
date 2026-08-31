@@ -30,6 +30,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-surgite}
       GIT_SSL_NO_VERIFY: "1"
       REPO_CACHE_DIR: /var/surgite/repos
+      # Fernet master for at-rest provider-key encryption. Set this in .env
+      # for anything you care about. Left blank, the app generates one into
+      # SECRETS_KEY_FILE below — which MUST live on a volume: /app is an
+      # image layer, so a key written there dies with the container and takes
+      # every stored provider key with it on the next redeploy.
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
+      SECRETS_KEY_FILE: /var/surgite/data/.secrets_key
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
@@ -43,6 +50,7 @@ services:
       API_PORT: 8000
     volumes:
       - surgite-repos:/var/surgite/repos
+      - surgite-data:/var/surgite/data
     depends_on:
       db:
         condition: service_healthy
@@ -56,3 +64,7 @@ services:
 volumes:
   pgdata:
   surgite-repos:
+  # Holds the generated Fernet master key when SECRETS_ENCRYPTION_KEY is
+  # unset. Back it up, or `docker volume rm` it and every provider key
+  # stored in the database becomes undecryptable.
+  surgite-data:

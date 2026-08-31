@@ -5,6 +5,36 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Compose deployments silently destroyed every stored provider key on
+  redeploy.** `SECRETS_ENCRYPTION_KEY` was not passed through in
+  `docker-compose.yml`, so the app fell back to generating a Fernet master
+  key on first start — into `/app/.secrets_key`, an image layer with no
+  volume behind it. Two starts of the same image produced two different
+  keys, so every `provider_keys` row encrypted under the old one became
+  permanently undecryptable the next time the container was replaced.
+  Compose now passes `SECRETS_ENCRYPTION_KEY` through and points the new
+  `SECRETS_KEY_FILE` at the `surgite-data` volume, so the generated fallback
+  survives a restart. **Existing compose users: read the upgrade note in
+  [`docs/self-host.md`](docs/self-host.md) before pulling this** — rescue
+  your running key first or you will lose the stored keys yourself.
+- **`.dockerignore` let `.secrets_key` into the build context.** The
+  `Dockerfile` does `COPY . .`, so anyone building an image from a checkout
+  where the app had run locally baked their own Fernet master key into it,
+  and pushed it to whatever registry the image went to. Also excludes
+  `node_modules/`, build output and tool caches, which cuts the build
+  context from ~135 MB to ~1.4 MB.
+
+### Added
+
+- `SECRETS_KEY_FILE` overrides where the generated fallback master key is
+  written, for deployments where the project root is not durable storage.
+  Defaults to `.secrets_key` next to the project root, so existing installs
+  are unaffected. `scripts/rotate-secrets.sh` honours it too.
+
 ## [1.0.1] - 2026-08-31
 
 A same-day patch on 1.0.0: API keys issued by that release could be born

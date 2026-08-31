@@ -119,6 +119,8 @@ API:  POST /repos  →  create repo + per-repo BackgroundTask ingest (clone/fetc
 | `LOG_FORMAT` | Set to `json` for structured logs (Loki / vector / fluentbit); default is human-readable. |
 | `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS` | Per-IP guard on `/summary?ai=true` (default `5` / `60`). |
 | `SHARE_TTL_DAYS` | Lifetime of a shared-summary `/s/<slug>` link (default `7`). |
+| `SECRETS_ENCRYPTION_KEY` | Fernet master for at-rest provider-key encryption. Generated on first run if unset. |
+| `SECRETS_KEY_FILE` | Where the generated fallback master key is written (default: `.secrets_key` at the project root). Must be durable storage — compose points it at the `surgite-data` volume, because the default path is inside the container's image layer. |
 | `SURGITE_API_URL` / `SURGITE_API_TOKEN` | Target API + optional bearer for the CLI's `--registered` mode (default URL `http://localhost:8000`). |
 | `SURGITE_USER` | Name injected into the summarizer prompt (e.g. `Alice`); defaults to `the developer` |
 | `SURGITE_ROLE` | Optional role description (e.g. `backend engineer at Acme`) appended to the identity in the prompt |
