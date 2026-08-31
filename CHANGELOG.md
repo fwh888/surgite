@@ -5,6 +5,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The demo GIF is now referenced by absolute URL, so it renders on PyPI as
+  well as GitHub. A relative path only resolves against the repository, and
+  PyPI has no repository to resolve it against — the same reason the shields
+  badges (absolute URLs) always worked there. PyPI freezes a release's
+  description at upload, so this takes effect from the next release.
+
 ## [1.0.2] - 2026-08-31
 
 ### Fixed
