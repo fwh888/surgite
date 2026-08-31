@@ -154,6 +154,10 @@ class InviteRow(Base):
     org_id: Mapped[str | None] = mapped_column(
         ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
     )
+    # Non-null marks an *org* invite (slice 2): redeeming adds the user to
+    # `org_id` with this membership role (owner|admin|member). NULL for the
+    # ordinary account invites, which don't touch org_members.
+    org_role: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class CommitRow(Base):
