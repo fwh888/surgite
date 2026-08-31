@@ -9,6 +9,7 @@ on:
   push:
     branches: ["**"]
     tags: ["v*"]
+  workflow_dispatch: # manual re-sync (e.g. after a failed run or secret rotation)
 
 permissions:
   contents: read
@@ -41,7 +42,13 @@ jobs:
           # Drop the symbolic refs/remotes/origin/HEAD so the wildcard refspec
           # below can't try to create an invalid refs/heads/HEAD on the remote.
           git remote set-head origin -d || true
-          git push --prune \
+          # --force: GitHub is canonical and rebases/force-pushes happen here
+          # (feature branches). A fast-forward-only push would fail forever
+          # on any ref whose history was rewritten — the mirror must reflect
+          # the canonical repo, not merge with it.
+          # The Codeberg owner is "ncolman" (n-c-o-l-e-m-a-n; the GitHub
+          # owner is "nicoleman0"). This exact path was typo'd twice before.
+          git push --prune --force \
             "https://ncoleman:${TOKEN}@codeberg.org/ncoleman/surgite.git" \
             "refs/remotes/origin/*:refs/heads/*" \
             "refs/tags/*:refs/tags/*"
