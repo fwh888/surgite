@@ -5,7 +5,12 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.1] - 2026-08-31
+
+A same-day patch on 1.0.0: API keys issued by that release could be born
+unusable. Keys that already verify are unaffected and keep working — the
+parsing is unchanged — but a key that 401'd on first use was never valid and
+has to be reissued.
 
 ### Fixed
 
