@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The per-IP rate limits no longer trust a client-supplied `X-Forwarded-For`.
+  The header is honoured only when the direct peer is listed in the new
+  `TRUSTED_PROXIES` setting; by default it is ignored and the direct peer
+  address is used. Deployments behind a reverse proxy must set it. (#39)
+
 ### Changed
 
 - Removed the unused legacy per-IP summary rate limiter and its stale environment

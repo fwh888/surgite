@@ -80,6 +80,11 @@ SUMMARY_RATE_LIMIT_REQUESTS = int(os.environ.get("SUMMARY_RATE_LIMIT_REQUESTS", 
 SUMMARY_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("SUMMARY_RATE_LIMIT_WINDOW_SECONDS", "60"))
 IP_OUTER_RATE_LIMIT_REQUESTS = int(os.environ.get("IP_OUTER_RATE_LIMIT_REQUESTS", "100"))
 IP_OUTER_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("IP_OUTER_RATE_LIMIT_WINDOW_SECONDS", "60"))
+# Comma-separated list of trusted proxy IPs / CIDR ranges. When set,
+# X-Forwarded-For is only honoured when the direct peer is in this list.
+# Default is empty: no proxies trusted, use direct peer address.
+_TRUSTED_PROXIES_RAW = os.environ.get("TRUSTED_PROXIES", "")
+TRUSTED_PROXIES = [p.strip() for p in _TRUSTED_PROXIES_RAW.split(",") if p.strip()]
 # Per-user API key issuance throttle (slice 2 plan #65). 10 keys per 24h
 # per user is generous for normal use and catches a runaway script.
 API_KEY_ISSUE_LIMIT = int(os.environ.get("API_KEY_ISSUE_LIMIT", "10"))

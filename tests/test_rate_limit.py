@@ -46,11 +46,26 @@ def test_separate_buckets_per_ip():
     rate_limit.check_ip_outer_rate_limit(_StubRequest(ip="2.2.2.2"))
 
 
-def test_honors_x_forwarded_for():
+def test_honors_x_forwarded_for_when_trusted(monkeypatch):
+    """When the direct peer is trusted, X-Forwarded-For is used for bucketing."""
+    monkeypatch.setattr(rate_limit, "TRUSTED_PROXIES", ["10.0.0.0/8", "127.0.0.1"])
     for _ in range(rate_limit._SUMMARY_IP_REQUESTS):
-        rate_limit.check_ip_outer_rate_limit(_StubRequest(fwd="9.9.9.9"))
+        rate_limit.check_ip_outer_rate_limit(_StubRequest(fwd="9.9.9.9", ip="10.0.0.1"))
     # Direct peer can keep going; only the proxied IP is throttled.
-    rate_limit.check_ip_outer_rate_limit(_StubRequest(ip="127.0.0.1"))
+    rate_limit.check_ip_outer_rate_limit(_StubRequest(ip="10.0.0.1"))
+
+
+def test_ignores_x_forwarded_for_when_untrusted():
+    """When TRUSTED_PROXIES is empty (default), X-Forwarded-For is ignored
+    and the direct peer address is used for bucketing."""
+    for _ in range(rate_limit._SUMMARY_IP_REQUESTS):
+        rate_limit.check_ip_outer_rate_limit(_StubRequest(fwd="9.9.9.9", ip="1.2.3.4"))
+    # If X-Forwarded-For were honoured, the 9.9.9.9 bucket would be full
+    # and the direct peer 1.2.3.4 would still have a fresh budget. But
+    # since we ignore the header, the 1.2.3.4 bucket is full.
+    with pytest.raises(HTTPException) as exc:
+        rate_limit.check_ip_outer_rate_limit(_StubRequest(fwd="8.8.8.8", ip="1.2.3.4"))
+    assert exc.value.status_code == 429
 
 
 def test_window_expiry_resets_bucket(monkeypatch):

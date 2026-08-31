@@ -96,7 +96,7 @@ API:  POST /repos  →  create repo + per-repo BackgroundTask ingest (clone/fetc
   - `GET /health/deep` — DB + `git ls-remote` against one registered repo + provider reachability; 503 names the failing component (`no_repos`/`missing_key` aren't failures)
   - `SQLAlchemyError` is mapped to a 503 globally
 - `surgite/logging_config.py` — `configure_logging()` sets the root logger from `LOG_LEVEL` (default INFO) and `LOG_FORMAT` (default human-readable; set to `json` for log-shipping-friendly output). Extras on a `LogRecord` are flattened into top-level JSON keys.
-- `surgite/rate_limit.py` — hand-rolled per-user token bucket for AI summaries (default 5 req / 60 s) plus a per-IP outer backstop (default 100 req / 60 s). Trusts the first `X-Forwarded-For` entry; the project sits behind Traefik in production.
+- `surgite/rate_limit.py` — hand-rolled per-user token bucket for AI summaries (default 5 req / 60 s) plus a per-IP outer backstop (default 100 req / 60 s). `X-Forwarded-For` is only trusted when the direct peer is listed in `TRUSTED_PROXIES` — otherwise a client can mint a fresh bucket per request by varying the header. Set it to your reverse proxy's address; the project sits behind Traefik in production.
 - `scripts/backup.sh` / `scripts/restore.sh` — `pg_dump` / `psql` over `docker compose exec db` by default; `BACKUP_MODE=local` for a host-side Postgres. `backup.sh` rotates `BACKUP_KEEP` (default 14) dated dumps.
 - `alembic/` — migrations; `e5e311c2e5f0_create_commits_table.py` is the initial schema
 - `tests/` — pytest suite covering the API; `conftest.py` swaps in a temp SQLite DB and clears tables between tests
@@ -122,6 +122,7 @@ API:  POST /repos  →  create repo + per-repo BackgroundTask ingest (clone/fetc
 | `LOG_FORMAT` | Set to `json` for structured logs (Loki / vector / fluentbit); default is human-readable. |
 | `SUMMARY_RATE_LIMIT_REQUESTS` / `SUMMARY_RATE_LIMIT_WINDOW_SECONDS` | Per-user AI-summary guard (default `5` / `60`). |
 | `IP_OUTER_RATE_LIMIT_REQUESTS` / `IP_OUTER_RATE_LIMIT_WINDOW_SECONDS` | Per-IP AI-summary backstop (default `100` / `60`). |
+| `TRUSTED_PROXIES` | Comma-separated IPs / CIDRs whose `X-Forwarded-For` is trusted for rate-limit bucketing (default empty: header ignored, direct peer used). Set this when running behind a reverse proxy. |
 | `SHARE_TTL_DAYS` | Lifetime of a shared-summary `/s/<slug>` link (default `7`). |
 | `SECRETS_ENCRYPTION_KEY` | Fernet master for at-rest provider-key encryption. Generated on first run if unset. |
 | `SECRETS_KEY_FILE` | Where the generated fallback master key is written (default: `.secrets_key` at the project root). Must be durable storage — compose points it at the `surgite-data` volume, because the default path is inside the container's image layer. |
