@@ -25,6 +25,7 @@ from sqlalchemy import select
 from surgite import config, rate_limit, secrets
 from surgite.audit import audit
 from surgite.auth import (
+    _generate_api_key,
     create_session,
     create_user,
     verify_api_key,
@@ -176,6 +177,16 @@ def test_api_key_issued_once_and_verifiable(client, multi_user):
     # Use the key as Bearer on a protected route.
     r2 = client.get("/repos", headers=_bearer_header(body["key"]))
     assert r2.status_code == 200
+
+
+def test_api_key_prefix_never_breaks_parsing():
+    """Regression (1.0.0): token_urlsafe prefixes could contain "_", which
+    broke verify_api_key's split-based prefix reassembly — ~8% of issued keys
+    401'd on first use. The prefix alphabet must never contain "_"."""
+    for _ in range(500):
+        full, prefix, _secret = _generate_api_key()
+        parts = full.split("_", 2)
+        assert parts[0] + "_" + parts[1] == prefix
 
 
 def test_api_key_list_does_not_return_key_material(client, multi_user):

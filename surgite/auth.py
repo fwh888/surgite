@@ -83,9 +83,8 @@ def normalize_email(email: str) -> str:
 # 32 chars. The DB stores an argon2id hash of the *full* key plus the prefix
 # for a fast lookup index (argon2 is intentionally slow — we don't want to
 # hash every incoming Bearer just to identify the key).
-_API_KEY_PREFIX_LEN = 8
 _API_KEY_SECRET_LEN = 32
-_API_KEY_PREFIX_BYTES = 4  # 4 bytes -> 6 chars urlsafe; pad to 8 with sk_
+_API_KEY_PREFIX_BYTES = 4  # 4 bytes -> 8 hex chars after "sk_"
 _API_KEY_SECRET_BYTES = 24  # 24 bytes -> 32 chars urlsafe
 
 
@@ -94,7 +93,11 @@ def _generate_api_key() -> tuple[str, str, str]:
     caller stores; only the prefix and the argon2id hash of the full key hit
     the DB. The secret portion is the second half of the key, returned as
     part of `full_key` so the CLI can present it to the user once."""
-    prefix = "sk_" + secrets.token_urlsafe(_API_KEY_PREFIX_BYTES)[:_API_KEY_PREFIX_LEN]
+    # Hex, not token_urlsafe: urlsafe's alphabet includes "_", and a "_" in
+    # the prefix breaks verify_api_key's split("_", 2) reassembly (the 1.0.0
+    # bug where ~8% of issued keys 401'd on first use). The secret may
+    # contain "_" freely — maxsplit=2 keeps it intact.
+    prefix = "sk_" + secrets.token_hex(_API_KEY_PREFIX_BYTES)
     secret = secrets.token_urlsafe(_API_KEY_SECRET_BYTES)[:_API_KEY_SECRET_LEN]
     full = f"{prefix}_{secret}"
     return full, prefix, secret
