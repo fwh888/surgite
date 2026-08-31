@@ -1,0 +1,39 @@
+name: mirror
+
+# Codeberg.org has pull mirrors disabled instance-wide ("Pull mirrors have
+# been disabled by your site administrator"), so the Codeberg copy is kept
+# in sync by pushing from here on every push. Needs CODEBERG_MIRROR_TOKEN
+# (a Codeberg access token with repository write scope) in repo secrets;
+# until it is configured the job no-ops with a notice.
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  codeberg:
+    name: Push mirror to Codeberg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # every branch and tag, not just the pushed ref
+
+      - name: Push refs to Codeberg
+        env:
+          TOKEN: ${{ secrets.CODEBERG_MIRROR_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::CODEBERG_MIRROR_TOKEN is not configured - add it in repo secrets (Settings > Secrets and variables > Actions) to enable the Codeberg mirror."
+            exit 0
+          fi
+          # Drop the symbolic refs/remotes/origin/HEAD so the wildcard refspec
+          # below can't try to create an invalid refs/heads/HEAD on the remote.
+          git remote set-head origin -d || true
+          git push --prune \
+            "https://ncoleman:${TOKEN}@codeberg.org/ncolman/surgite.git" \
+            "refs/remotes/origin/*:refs/heads/*" \
+            "refs/tags/*:refs/tags/*"

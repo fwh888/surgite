@@ -2,8 +2,8 @@
 
 Standup summaries from your git history — in the browser, in the terminal, or as a shareable link.
 
+[![CI](https://github.com/nicoleman0/surgite/actions/workflows/ci.yml/badge.svg)](https://github.com/nicoleman0/surgite/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-<!-- TODO slice 4: add a build-status badge once the forgejo workflow runs on a public host -->
 
 The web app gives your team a shared dashboard: per-user repos, per-user prompt
 settings, AI-written summaries, and shareable links to specific summary views.
