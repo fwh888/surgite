@@ -121,13 +121,13 @@
 </script>
 
 <svelte:head>
-	<title>users — admin · standup</title>
+	<title>users — admin · surgite</title>
 </svelte:head>
 
 <main class="mx-auto min-h-screen max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
 	<div class="border border-border bg-surface">
 		<div class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-			<span class="flex-1 text-xs text-fg-muted">standup-gen</span>
+			<span class="flex-1 text-xs text-fg-muted">surgite</span>
 			<ThemePicker />
 		</div>
 
@@ -139,7 +139,7 @@
 			</div>
 			<p class="mt-1 text-sm text-fg-muted">
 				Manage accounts: unlock locked-out users, deactivate strays, send invites.
-				<a href="/" class="text-accent underline hover:text-accent-hover">back to standup ❯</a>
+				<a href="/" class="text-accent underline hover:text-accent-hover">back to surgite ❯</a>
 			</p>
 			<div class="mt-1 border-b border-dashed border-border-subtle"></div>
 		</div>
@@ -151,7 +151,7 @@
 		{:else if !me.is_admin}
 			<div class="px-4 pb-6 sm:px-6">
 				<p class="text-sm text-err">403 — admin only.</p>
-				<a href="/" class="mt-3 inline-block text-sm text-accent underline">back to standup ❯</a>
+				<a href="/" class="mt-3 inline-block text-sm text-accent underline">back to surgite ❯</a>
 			</div>
 		{:else}
 			<div class="px-4 pb-6 sm:px-6">

@@ -1,10 +1,10 @@
-"""Tests for backend.logging_config: format selection and JSON shape."""
+"""Tests for surgite.logging_config: format selection and JSON shape."""
 
 import json
 import logging
 import re
 
-from backend.logging_config import _JsonFormatter, configure_logging
+from surgite.logging_config import _JsonFormatter, configure_logging
 
 
 def test_json_formatter_emits_required_fields():

@@ -48,7 +48,7 @@
 </script>
 
 <svelte:head>
-	<title>standup — git standup summaries</title>
+	<title>surgite — git standup summaries</title>
 	<meta name="description" content="Generate standup summaries from your git commit history." />
 </svelte:head>
 
@@ -58,7 +58,7 @@
 	<div class="border border-border bg-surface">
 		<div class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
 			<span class="flex-1 text-xs text-fg-muted">
-				standup-gen
+				surgite
 			</span>
 			<div class="flex items-center gap-2">
 				<a href="/summaries" class="text-xs text-fg-muted transition hover:text-fg">summaries</a>
@@ -70,7 +70,7 @@
 		<div class="px-4 py-6 sm:px-6">
 			<div class="flex items-center gap-2">
 				<span class="text-accent" aria-hidden="true">&gt;_</span>
-				<h1 class="text-lg font-semibold text-fg">standup</h1>
+				<h1 class="text-lg font-semibold text-fg">surgite</h1>
 				<span class="cursor" aria-hidden="true"></span>
 			</div>
 			<p class="mt-1 text-sm text-fg-muted">Generate standup summaries from your git history.</p>

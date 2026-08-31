@@ -3,11 +3,27 @@ requires = ["uv_build>=0.9"]
 build-backend = "uv_build"
 
 [project]
-name = "standup-gen"
+name = "surgite"
 version = "0.6.0"
 description = "Git commit history summarizer with AI."
 readme = "README.md"
 requires-python = ">=3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Nick Coleman" }]
+keywords = ["standup", "git", "summary", "changelog", "ai", "llm", "fastapi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Text Processing :: General",
+]
 dependencies = [
     "python-dotenv>=1.2.2",
     "sqlalchemy>=2.0.49",
@@ -21,11 +37,18 @@ dependencies = [
     "keyring>=25.7.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/nicoleman0/surgite"
+Source = "https://github.com/nicoleman0/surgite"
+Documentation = "https://github.com/nicoleman0/surgite#readme"
+Changelog = "https://github.com/nicoleman0/surgite/blob/main/CHANGELOG.md"
+Issues = "https://github.com/nicoleman0/surgite/issues"
+
 [project.scripts]
-standup = "backend.standup:main"
+surgite = "surgite.cli:main"
 
 [tool.uv.build-backend]
-module-name = "backend"
+module-name = "surgite"
 module-root = ""
 
 [dependency-groups]
@@ -36,7 +59,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.9.0",
     # httpx2 is the successor to httpx, used by starlette's TestClient.
-    # Runtime code (backend/) keeps using httpx; only the test client
+    # Runtime code (surgite/) keeps using httpx; only the test client
     # migrates to httpx2 to clear the StarletteDeprecationWarning that
     # landed in starlette 1.3.x.
     "httpx2>=2.4.0",
@@ -59,10 +82,10 @@ line-length = 100
 select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-# conftest deliberately sets env vars before importing backend modules, so its
+# conftest deliberately sets env vars before importing surgite modules, so its
 # imports can't sit at the top of the file.
 "tests/conftest.py" = ["E402"]
 # Depends() in argument defaults is the standard FastAPI pattern.
-"backend/api.py" = ["B008"]
-"backend/auth.py" = ["B008"]
-"backend/scope.py" = ["B008"]
+"surgite/api.py" = ["B008"]
+"surgite/auth.py" = ["B008"]
+"surgite/scope.py" = ["B008"]

@@ -1,4 +1,4 @@
-from backend.models import Commit
+from surgite.models import Commit
 
 
 def format_commit(commit: Commit) -> str:

@@ -5,7 +5,7 @@ The dependency is the single gate the rest of the API leans on — route handler
 take `current_user: UserRow = Depends(get_current_user)` and scope their queries
 to `current_user.id` rather than sprinkling auth checks through every handler.
 
-Three modes, selected by `AUTH_MODE` (read fresh from `backend.config` on every
+Three modes, selected by `AUTH_MODE` (read fresh from `surgite.config` on every
 call so tests can flip it):
 
   off         — anonymous; resolves to the bootstrap user. 0.4.0 behaviour.
@@ -31,8 +31,8 @@ from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend import config
-from backend.db import (
+from surgite import config
+from surgite.db import (
     ApiKeyRow,
     InviteRow,
     OrgMemberRow,
@@ -571,8 +571,8 @@ def get_current_user(
 
     Auth precedence in multi_user mode:
       1. ``Authorization: Bearer sk_...`` (API key) — used by the CLI
-         (`STANDUP_API_KEY`) and any out-of-band caller.
-      2. The session cookie (``__Host-standup_session``) — used by the SPA.
+         (`SURGITE_API_KEY`) and any out-of-band caller.
+      2. The session cookie (``__Host-surgite_session``) — used by the SPA.
 
     The API key path is checked first because a CLI request that
     mistakenly also sends a stale cookie still authenticates; the cookie

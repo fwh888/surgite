@@ -1,24 +1,23 @@
-"""CLI-side auth for `standup` (0.5.0 slice 1, item 8).
+"""CLI-side auth for `surgite` (0.5.0 slice 1, item 8).
 
 The CLI is the bootstrap path for a multi_user deployment: an operator redeems
 the invite the server logs on first run, which creates their account and drops
-a session cookie into a local 0600 jar. Subsequent `standup --registered`
+a session cookie into a local 0600 jar. Subsequent `surgite --registered`
 calls reuse that session. `--login` / `--logout` switch users.
 
 Auth precedence for `--registered` calls:
   1. a saved session cookie for the target API URL (interactive operator), else
-  2. a long-lived API key from STANDUP_API_KEY (CI / scripts).
-
-STANDUP_API_TOKEN (0.4.0) is accepted as a deprecated alias for
-STANDUP_API_KEY with a one-time warning.
+  2. a long-lived API key from SURGITE_API_KEY (CI / scripts).
 
 Session storage (0.6.0): the cookie lives in the OS keyring by default —
 the login keychain on macOS, the Secret Service on Linux (GNOME Keyring,
 KWallet, KeePassXC), the Credential Manager on Windows. When no keyring
 backend is available (a headless box with no D-Bus) or `--keyring-file`
-is passed, it falls back to a 0600 file at $XDG_CONFIG_HOME/standup/session
-(default ~/.config/standup/session). An existing 0600 file from <=0.5.0 is
-migrated into the keyring on first read, then shredded.
+is passed, it falls back to a 0600 file at $XDG_CONFIG_HOME/surgite/session
+(default ~/.config/surgite/session). Pre-1.0.0 sessions migrate forward on
+first read: a keyring entry saved under the old `standup-gen` service name
+is moved to the new one, and a 0600 file from <=0.5.0 (or <=0.6.x at the
+old `~/.config/standup` path) is moved into the keyring, then shredded.
 """
 
 import getpass
@@ -31,8 +30,10 @@ import httpx
 import keyring
 import keyring.errors
 
-_KEYRING_SERVICE = "standup-gen"
+_KEYRING_SERVICE = "surgite"
 _KEYRING_USER = "session"
+# Pre-rename (<=0.6.x) keyring service name; migrated forward on first read.
+_LEGACY_KEYRING_SERVICE = "standup-gen"
 
 # Set by the CLI's --keyring-file flag (and by tests). When True we skip the
 # keyring entirely and use the 0600 file — for headless servers, CI, and the
@@ -60,9 +61,19 @@ def _keyring_available() -> bool:
         return False
 
 
+def _xdg_base() -> Path:
+    return Path(
+        os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    )
+
+
 def _config_dir() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
-    return Path(base) / "standup"
+    return _xdg_base() / "surgite"
+
+
+def _legacy_session_file() -> Path:
+    """The pre-rename (<=0.6.x) 0600 file location."""
+    return _xdg_base() / "standup" / "session"
 
 
 def session_file() -> Path:
@@ -80,31 +91,35 @@ def _write_session_file(blob: str) -> None:
 
 
 def _read_session_file() -> dict | None:
-    path = session_file()
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError, OSError:
-        return None
+    # Both the current path and the pre-rename (<=0.6.x) path, so an old
+    # install's file migrates forward on first read.
+    for path in (session_file(), _legacy_session_file()):
+        if not path.exists():
+            continue
+        try:
+            return json.loads(path.read_text())
+        except json.JSONDecodeError, OSError:
+            return None
+    return None
 
 
 def _shred_session_file() -> None:
-    """Overwrite then unlink the 0600 file. ponytail: a single overwrite is
-    best-effort — on an SSD/CoW filesystem wear-levelling may leave the old
-    block readable; the real protection is the keyring, this just avoids a
-    plaintext cookie lingering at a well-known path."""
-    path = session_file()
-    if not path.exists():
-        return
-    try:
-        with open(path, "r+b") as f:
-            f.write(os.urandom(max(path.stat().st_size, 1)))
-            f.flush()
-            os.fsync(f.fileno())
-    except OSError:
-        pass
-    path.unlink(missing_ok=True)
+    """Overwrite then unlink any 0600 session file (current or pre-rename
+    path). ponytail: a single overwrite is best-effort — on an SSD/CoW
+    filesystem wear-levelling may leave the old block readable; the real
+    protection is the keyring, this just avoids a plaintext cookie lingering
+    at a well-known path."""
+    for path in (session_file(), _legacy_session_file()):
+        if not path.exists():
+            continue
+        try:
+            with open(path, "r+b") as f:
+                f.write(os.urandom(max(path.stat().st_size, 1)))
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError:
+            pass
+        path.unlink(missing_ok=True)
 
 
 def save_session(api_url: str, cookie_name: str, cookie_value: str) -> None:
@@ -124,8 +139,18 @@ def load_session() -> dict | None:
         return _read_session_file()
     blob = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USER)
     if blob is None:
-        # Migration: a 0600 file from <=0.5.0. Move it into the keyring once,
-        # then shred the file so the plaintext cookie stops lingering on disk.
+        # Migration (1.0.0): a session saved under the pre-rename service
+        # name. Move it to the new name once, then delete the old entry.
+        legacy = keyring.get_password(_LEGACY_KEYRING_SERVICE, _KEYRING_USER)
+        if legacy is not None:
+            keyring.set_password(_KEYRING_SERVICE, _KEYRING_USER, legacy)
+            keyring.delete_password(_LEGACY_KEYRING_SERVICE, _KEYRING_USER)
+            print("Migrated CLI session from the old keyring service name.", file=sys.stderr)
+            blob = legacy
+    if blob is None:
+        # Migration: a 0600 file from <=0.5.0 (or <=0.6.x at the pre-rename
+        # path). Move it into the keyring once, then shred the file so the
+        # plaintext cookie stops lingering on disk.
         migrated = _read_session_file()
         if migrated is None:
             return None
@@ -141,10 +166,11 @@ def load_session() -> dict | None:
 
 def clear_session() -> None:
     if _keyring_available():
-        try:
-            keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USER)
-        except keyring.errors.PasswordDeleteError:
-            pass  # nothing stored; clearing is idempotent
+        for service in (_KEYRING_SERVICE, _LEGACY_KEYRING_SERVICE):
+            try:
+                keyring.delete_password(service, _KEYRING_USER)
+            except keyring.errors.PasswordDeleteError:
+                pass  # nothing stored; clearing is idempotent
     _shred_session_file()  # also remove any file copy (fallback or pre-migration)
 
 
@@ -160,17 +186,7 @@ def _parse_set_cookie(header: str | None) -> tuple[str | None, str | None]:
 
 
 def resolve_api_key() -> str | None:
-    key = os.environ.get("STANDUP_API_KEY")
-    if key:
-        return key
-    legacy = os.environ.get("STANDUP_API_TOKEN")
-    if legacy:
-        print(
-            "warning: STANDUP_API_TOKEN is deprecated; rename it to STANDUP_API_KEY.",
-            file=sys.stderr,
-        )
-        return legacy
-    return None
+    return os.environ.get("SURGITE_API_KEY")
 
 
 def auth_headers(api_url: str) -> dict[str, str]:
@@ -187,8 +203,8 @@ def auth_headers(api_url: str) -> dict[str, str]:
 
 
 def cmd_login(api_url: str, email: str | None = None, password: str | None = None) -> int:
-    email = email or os.environ.get("STANDUP_EMAIL") or input("Email: ")
-    password = password or os.environ.get("STANDUP_PASSWORD") or getpass.getpass("Password: ")
+    email = email or os.environ.get("SURGITE_EMAIL") or input("Email: ")
+    password = password or os.environ.get("SURGITE_PASSWORD") or getpass.getpass("Password: ")
     try:
         resp = httpx.post(
             f"{api_url}/auth/login", json={"email": email, "password": password}, timeout=30
@@ -226,11 +242,11 @@ def cmd_redeem_invite(
     api_url: str, token: str, password: str | None = None, email: str | None = None
 ) -> int:
     password = (
-        password or os.environ.get("STANDUP_PASSWORD") or getpass.getpass("Choose a password: ")
+        password or os.environ.get("SURGITE_PASSWORD") or getpass.getpass("Choose a password: ")
     )
     body: dict[str, str] = {"token": token, "password": password}
-    if email or os.environ.get("STANDUP_EMAIL"):
-        body["email"] = email or os.environ["STANDUP_EMAIL"]
+    if email or os.environ.get("SURGITE_EMAIL"):
+        body["email"] = email or os.environ["SURGITE_EMAIL"]
     try:
         resp = httpx.post(f"{api_url}/auth/redeem-invite", json=body, timeout=30)
     except httpx.HTTPError as e:

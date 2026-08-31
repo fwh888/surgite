@@ -9,9 +9,9 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from backend.auth import create_personal_org, create_user, slugify_org
-from backend.db import OrgMemberRow, OrgRow, UserRow, get_session
-from backend.scope import assert_org_member, resolve_scope
+from surgite.auth import create_personal_org, create_user, slugify_org
+from surgite.db import OrgMemberRow, OrgRow, UserRow, get_session
+from surgite.scope import assert_org_member, resolve_scope
 
 
 def test_slugify_rules():

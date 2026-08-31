@@ -1,4 +1,4 @@
-// Thin typed client for the standup-gen API.
+// Thin typed client for the surgite API.
 //
 // In dev, the Vite server (:5173) calls FastAPI (:8000) cross-origin, so we point at the
 // backend explicitly. In a production build the SPA is served same-origin by FastAPI, so the
@@ -38,10 +38,10 @@ export interface Summary {
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const CSRF_HEADER = 'X-Requested-With';
-const CSRF_VALUE = 'standup-web';
+const CSRF_VALUE = 'surgite-web';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-	// The CSRF middleware in backend/api.py requires this header on every
+	// The CSRF middleware in surgite/api.py requires this header on every
 	// non-safe method in multi_user mode. We send it unconditionally so
 	// callers don't have to think about it; the server ignores it on safe
 	// methods and in off/single_user mode.

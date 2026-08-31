@@ -85,7 +85,7 @@
 	}
 
 	function buildCliEcho(): string {
-		const parts = ['standup'];
+		const parts = ['surgite'];
 		if (repoName) parts.push(`--repo ${repoName}`);
 		const custom = range === 'custom';
 		if (custom && customSince) {

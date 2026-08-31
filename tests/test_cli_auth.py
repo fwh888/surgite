@@ -1,7 +1,8 @@
-"""Tests for the CLI-side auth helpers (backend/cli_auth.py).
+"""Tests for the CLI-side auth helpers (surgite/cli_auth.py).
 
 The network commands (cmd_login etc.) are thin httpx wrappers; the logic worth
-testing is the session jar, the API-key precedence, and the deprecation shim.
+testing is the session jar, the API-key resolution, and the pre-1.0.0
+session migrations (keyring service name, old 0600 file path).
 """
 
 import os
@@ -9,7 +10,7 @@ import stat
 
 import pytest
 
-from backend import cli_auth
+from surgite import cli_auth
 
 
 @pytest.fixture(autouse=True)
@@ -18,7 +19,7 @@ def _isolated_config(tmp_path, monkeypatch):
     0600-file backend so tests never touch the developer's real OS keyring.
     The keyring path gets its own tests with a fake backend below."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    for var in ("STANDUP_API_KEY", "STANDUP_API_TOKEN", "STANDUP_EMAIL", "STANDUP_PASSWORD"):
+    for var in ("SURGITE_API_KEY", "SURGITE_EMAIL", "SURGITE_PASSWORD"):
         monkeypatch.delenv(var, raising=False)
     cli_auth.use_file_fallback(True)
     yield
@@ -81,13 +82,39 @@ def test_keyring_migration_from_0600_file(fake_keyring):
     assert fake_keyring.get_password(cli_auth._KEYRING_SERVICE, cli_auth._KEYRING_USER) is not None
 
 
+def test_keyring_migration_from_legacy_service_name(fake_keyring):
+    """A session saved under the pre-rename `standup-gen` keyring service is
+    moved to the new service on first read, and the old entry is deleted."""
+    blob = '{"api_url": "http://api", "cookie_name": "n", "cookie_value": "v"}'
+    fake_keyring.set_password(cli_auth._LEGACY_KEYRING_SERVICE, cli_auth._KEYRING_USER, blob)
+    sess = cli_auth.load_session()
+    assert sess["cookie_value"] == "v"
+    assert fake_keyring.get_password(cli_auth._KEYRING_SERVICE, cli_auth._KEYRING_USER) == blob
+    assert (
+        fake_keyring.get_password(cli_auth._LEGACY_KEYRING_SERVICE, cli_auth._KEYRING_USER) is None
+    )
+
+
+def test_file_migration_from_legacy_config_dir(fake_keyring):
+    """A 0600 file left at the pre-rename ~/.config/standup path is migrated
+    into the keyring on first read, then shredded."""
+    legacy = cli_auth._legacy_session_file()
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text('{"api_url": "http://api", "cookie_name": "n", "cookie_value": "old"}')
+    assert legacy.exists()
+    sess = cli_auth.load_session()  # triggers the migration
+    assert sess["cookie_value"] == "old"
+    assert not legacy.exists(), "old-path file should be shredded after migration"
+    assert fake_keyring.get_password(cli_auth._KEYRING_SERVICE, cli_auth._KEYRING_USER) is not None
+
+
 def test_save_load_clear_session(tmp_path):
     assert cli_auth.load_session() is None
-    cli_auth.save_session("http://api", "__Host-standup_session", "abc123")
+    cli_auth.save_session("http://api", "__Host-surgite_session", "abc123")
     sess = cli_auth.load_session()
     assert sess == {
         "api_url": "http://api",
-        "cookie_name": "__Host-standup_session",
+        "cookie_name": "__Host-surgite_session",
         "cookie_value": "abc123",
     }
     cli_auth.clear_session()
@@ -110,7 +137,7 @@ def test_load_session_tolerates_corruption():
 @pytest.mark.parametrize(
     "header,expected",
     [
-        ("__Host-standup_session=xyz; HttpOnly; Secure", ("__Host-standup_session", "xyz")),
+        ("__Host-surgite_session=xyz; HttpOnly; Secure", ("__Host-surgite_session", "xyz")),
         ("session=abc", ("session", "abc")),
         ("", (None, None)),
         (None, (None, None)),
@@ -121,16 +148,9 @@ def test_parse_set_cookie(header, expected):
     assert cli_auth._parse_set_cookie(header) == expected
 
 
-def test_resolve_api_key_prefers_new_var(monkeypatch):
-    monkeypatch.setenv("STANDUP_API_KEY", "new-key")
-    monkeypatch.setenv("STANDUP_API_TOKEN", "old-token")
-    assert cli_auth.resolve_api_key() == "new-key"
-
-
-def test_resolve_api_key_falls_back_to_legacy_with_warning(monkeypatch, capsys):
-    monkeypatch.setenv("STANDUP_API_TOKEN", "old-token")
-    assert cli_auth.resolve_api_key() == "old-token"
-    assert "deprecated" in capsys.readouterr().err.lower()
+def test_resolve_api_key_reads_env(monkeypatch):
+    monkeypatch.setenv("SURGITE_API_KEY", "k")
+    assert cli_auth.resolve_api_key() == "k"
 
 
 def test_resolve_api_key_none_when_unset():
@@ -138,14 +158,14 @@ def test_resolve_api_key_none_when_unset():
 
 
 def test_auth_headers_prefers_matching_session():
-    cli_auth.save_session("http://api", "__Host-standup_session", "sid42")
+    cli_auth.save_session("http://api", "__Host-surgite_session", "sid42")
     headers = cli_auth.auth_headers("http://api")
-    assert headers == {"Cookie": "__Host-standup_session=sid42"}
+    assert headers == {"Cookie": "__Host-surgite_session=sid42"}
 
 
 def test_auth_headers_ignores_session_for_other_url(monkeypatch):
     cli_auth.save_session("http://other", "n", "v")
-    monkeypatch.setenv("STANDUP_API_KEY", "k")
+    monkeypatch.setenv("SURGITE_API_KEY", "k")
     assert cli_auth.auth_headers("http://api") == {"Authorization": "Bearer k"}
 
 
@@ -158,7 +178,7 @@ def test_cmd_login_saves_session(monkeypatch):
 
     class FakeResp:
         status_code = 200
-        headers = {"set-cookie": "__Host-standup_session=tok99; HttpOnly; Secure"}
+        headers = {"set-cookie": "__Host-surgite_session=tok99; HttpOnly; Secure"}
 
         @staticmethod
         def json():
@@ -193,7 +213,7 @@ def test_cmd_redeem_invite_creates_account_and_saves_session(monkeypatch):
 
     class FakeResp:
         status_code = 201
-        headers = {"set-cookie": "standup_session=newkid; HttpOnly"}
+        headers = {"set-cookie": "surgite_session=newkid; HttpOnly"}
 
         @staticmethod
         def json():
@@ -216,7 +236,7 @@ def test_cmd_redeem_invite_creates_account_and_saves_session(monkeypatch):
     sess = cli_auth.load_session()
     assert sess == {
         "api_url": "http://api",
-        "cookie_name": "standup_session",
+        "cookie_name": "surgite_session",
         "cookie_value": "newkid",
     }
 
@@ -226,7 +246,7 @@ def test_cmd_redeem_invite_omits_email_when_unset(monkeypatch):
 
     class FakeResp:
         status_code = 201
-        headers = {"set-cookie": "standup_session=tok"}
+        headers = {"set-cookie": "surgite_session=tok"}
         json = staticmethod(lambda: {"email": "x@example.com"})
 
     captured: dict = {}

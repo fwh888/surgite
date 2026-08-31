@@ -1,6 +1,6 @@
 # API stability policy — 0.6.0
 
-This document is the contract for the standup-gen HTTP API. It says what
+This document is the contract for the surgite HTTP API. It says what
 we promise not to break, what we reserve the right to change, and how
 you'll find out when something is going away. It applies from 0.6.0
 onward — the release that froze the surface.
@@ -34,7 +34,7 @@ stay stable:
   not — don't parse it). This is FastAPI's native shape, declared on the
   surface as the `ErrorResponse` schema.
 - **Header semantics.** `Retry-After` on `423` / `429`, the
-  `__Host-standup_session` cookie attributes, and `Authorization: Bearer`
+  `__Host-surgite_session` cookie attributes, and `Authorization: Bearer`
   for API keys keep working as documented in
   [`docs/security.md`](security.md).
 - **`operationId`s.** The OpenAPI `operationId` for each route is stable,

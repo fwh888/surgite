@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.db import AuditLogRow, UserRow, session_scope
+from surgite.db import AuditLogRow, UserRow, session_scope
 
 log = logging.getLogger("audit")
 

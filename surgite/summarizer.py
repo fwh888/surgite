@@ -50,7 +50,7 @@ class Provider:
 
     @property
     def api_key(self) -> str | None:
-        # Read at call time so .env (loaded by backend.config) is in effect.
+        # Read at call time so .env (loaded by surgite.config) is in effect.
         return os.environ.get(self.key_env) or None
 
     def model(self, override: str | None = None) -> str:
@@ -149,7 +149,7 @@ def _user_has_active_key(user_id: str, provider_name: str) -> bool:
     """True iff the user has a non-revoked provider_keys row for
     `provider_name`."""
     try:
-        from backend.db import ProviderKeyRow, get_session
+        from surgite.db import ProviderKeyRow, get_session
     except ImportError:
         return False
     with get_session() as s:
@@ -167,8 +167,8 @@ def user_provider_key(user_id: str, provider_name: str) -> str | None:
     """The active per-user provider key (decrypted), or None. Callers
     fall back to the env-var key when this is None."""
     try:
-        from backend.db import ProviderKeyRow, get_session
-        from backend.secrets import decrypt
+        from surgite.db import ProviderKeyRow, get_session
+        from surgite.secrets import decrypt
     except ImportError:
         return None
     with get_session() as s:
@@ -189,8 +189,8 @@ def user_provider_key(user_id: str, provider_name: str) -> str | None:
 
 def _build_system_prompt(settings: dict | None = None) -> str:
     s = settings or {}
-    user = s.get("user_name") or os.environ.get("STANDUP_USER", "")
-    role = s.get("user_role") or os.environ.get("STANDUP_ROLE", "")
+    user = s.get("user_name") or os.environ.get("SURGITE_USER", "")
+    role = s.get("user_role") or os.environ.get("SURGITE_ROLE", "")
     who = f"{user} ({role})" if user and role else user or "the developer"
     attribution = f"All commits were authored by {who}." if who != "the developer" else ""
 

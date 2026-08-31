@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Back up the standup-gen Postgres database.
+# Back up the surgite Postgres database.
 #
 # The pgdata named volume is the only persistent state in the stack, and
 # the user's PBS job (vmid 207 in the homelab) is the intended off-host
@@ -28,7 +28,7 @@ KEEP="${BACKUP_KEEP:-14}"
 MODE="${BACKUP_MODE:-docker}"
 PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-FILENAME="standup-${TS}.sql.gz"
+FILENAME="surgite-${TS}.sql.gz"
 TARGET="${BACKUP_DIR}/${FILENAME}"
 
 mkdir -p "$BACKUP_DIR"
@@ -44,7 +44,7 @@ if [[ "$MODE" == "docker" ]]; then
     # this shell. The `-T` disables a TTY (pg_dump insists on getting
     # its stdin closed cleanly when piped to gzip).
     docker compose -p "$PROJECT" exec -T db \
-        pg_dump -U "${POSTGRES_USER:-standup}" -d "${POSTGRES_DB:-standup}" --no-owner \
+        pg_dump -U "${POSTGRES_USER:-surgite}" -d "${POSTGRES_DB:-surgite}" --no-owner \
         | gzip -9 > "$TARGET"
 elif [[ "$MODE" == "local" ]]; then
     if [[ -z "${BACKUP_PG_URL:-}" ]]; then
@@ -62,7 +62,7 @@ echo "[backup] wrote $(du -h "$TARGET" | cut -f1)"
 # Rotate old dumps, keeping the most recent $KEEP. ls -1t sorts by mtime
 # newest-first; tail drops the first $KEEP lines and deletes the rest.
 if [[ -d "$BACKUP_DIR" ]]; then
-    mapfile -t OLD < <(ls -1t "$BACKUP_DIR"/standup-*.sql.gz 2>/dev/null | tail -n +$((KEEP + 1)) || true)
+    mapfile -t OLD < <(ls -1t "$BACKUP_DIR"/surgite-*.sql.gz 2>/dev/null | tail -n +$((KEEP + 1)) || true)
     for f in "${OLD[@]:-}"; do
         [[ -n "$f" ]] && rm -f -- "$f" && echo "[backup] pruned $f"
     done

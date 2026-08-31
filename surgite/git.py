@@ -4,7 +4,7 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
-from backend.models import Commit
+from surgite.models import Commit
 
 REMOTE_PATTERNS = re.compile(r"^(https?://|git@|git://|ssh://)")
 

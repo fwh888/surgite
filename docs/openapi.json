@@ -28,7 +28,7 @@
         "type": "object"
       },
       "ErrorResponse": {
-        "description": "The error envelope every route returns on failure. FastAPI's native\nshape — ``HTTPException(detail=...)`` and the CSRF / SQLAlchemy handlers\nin ``backend.api`` all serialise to ``{\"detail\": \"...\"}``. Declared here\nso the OpenAPI snapshot documents the stable error contract (0.6.0\napi-stability policy).",
+        "description": "The error envelope every route returns on failure. FastAPI's native\nshape — ``HTTPException(detail=...)`` and the CSRF / SQLAlchemy handlers\nin ``surgite.api`` all serialise to ``{\"detail\": \"...\"}``. Declared here\nso the OpenAPI snapshot documents the stable error contract (0.6.0\napi-stability policy).",
         "properties": {
           "detail": {
             "title": "Detail",
@@ -370,7 +370,7 @@
     }
   },
   "info": {
-    "title": "FastAPI",
+    "title": "surgite",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",
@@ -1677,7 +1677,7 @@
         ]
       },
       "put": {
-        "description": "Set (or clear) a per-user provider key (plan #73). The raw key is\nencrypted at rest with Fernet; the master key is the SHA-256 of\n``SECRETS_ENCRYPTION_KEY`` (see ``backend.secrets``). The response\nis just a confirmation — the key material is never echoed back.",
+        "description": "Set (or clear) a per-user provider key (plan #73). The raw key is\nencrypted at rest with Fernet; the master key is the SHA-256 of\n``SECRETS_ENCRYPTION_KEY`` (see ``surgite.secrets``). The response\nis just a confirmation — the key material is never echoed back.",
         "operationId": "upsert_provider_key",
         "requestBody": {
           "content": {

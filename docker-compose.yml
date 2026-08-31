@@ -3,13 +3,13 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-standup}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-standup}
-      POSTGRES_DB: ${POSTGRES_DB:-standup}
+      POSTGRES_USER: ${POSTGRES_USER:-surgite}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-surgite}
+      POSTGRES_DB: ${POSTGRES_DB:-surgite}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-standup}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-surgite}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -18,18 +18,18 @@ services:
     # Builds from source by default (`docker compose up --build`). A pre-built
     # registry image can be used instead by setting APP_IMAGE (see .env.example).
     build: .
-    image: ${APP_IMAGE:-standup-gen-app:latest}
+    image: ${APP_IMAGE:-surgite-app:latest}
     restart: unless-stopped
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
-      POSTGRES_USER: ${POSTGRES_USER:-standup}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-standup}
-      POSTGRES_DB: ${POSTGRES_DB:-standup}
+      POSTGRES_USER: ${POSTGRES_USER:-surgite}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-surgite}
+      POSTGRES_DB: ${POSTGRES_DB:-surgite}
       GIT_SSL_NO_VERIFY: "1"
-      REPO_CACHE_DIR: /var/standup/repos
+      REPO_CACHE_DIR: /var/surgite/repos
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
@@ -37,12 +37,12 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       GROQ_MODEL: ${GROQ_MODEL:-}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-}
-      STANDUP_USER: ${STANDUP_USER:-}
-      STANDUP_ROLE: ${STANDUP_ROLE:-}
+      SURGITE_USER: ${SURGITE_USER:-}
+      SURGITE_ROLE: ${SURGITE_ROLE:-}
       API_HOST: 0.0.0.0
       API_PORT: 8000
     volumes:
-      - standup-repos:/var/standup/repos
+      - surgite-repos:/var/surgite/repos
     depends_on:
       db:
         condition: service_healthy
@@ -55,4 +55,4 @@ services:
 
 volumes:
   pgdata:
-  standup-repos:
+  surgite-repos:

@@ -17,7 +17,7 @@
 # Usage:
 #   ./scripts/upgrade-from-0.4.sh
 # Non-interactive (e.g. CI):
-#   BOOTSTRAP_OWNER_EMAIL=me@example.com STANDUP_BOOTSTRAP_PASSWORD=... \
+#   BOOTSTRAP_OWNER_EMAIL=me@example.com SURGITE_BOOTSTRAP_PASSWORD=... \
 #     ./scripts/upgrade-from-0.4.sh --yes
 #
 # Back up first. There's scripts/backup.sh; or take a plain pg_dump. This
@@ -65,7 +65,7 @@ fi
 export BOOTSTRAP_OWNER_EMAIL="$EMAIL"
 
 # Password (silent prompt; not echoed).
-PASSWORD="${STANDUP_BOOTSTRAP_PASSWORD:-}"
+PASSWORD="${SURGITE_BOOTSTRAP_PASSWORD:-}"
 if [ -z "$PASSWORD" ]; then
   read -r -s -p "Set a password for ${EMAIL}: " PASSWORD; echo
   read -r -s -p "Confirm password: " PASSWORD_CONFIRM; echo
@@ -78,7 +78,7 @@ if [ -z "$PASSWORD" ]; then
   echo "error: password must not be empty." >&2
   exit 1
 fi
-export STANDUP_BOOTSTRAP_PASSWORD="$PASSWORD"
+export SURGITE_BOOTSTRAP_PASSWORD="$PASSWORD"
 
 if [ "$YES" -ne 1 ]; then
   echo
@@ -101,11 +101,11 @@ import sys
 
 from sqlalchemy import select
 
-from backend.auth import hash_password, normalize_email
-from backend.db import UserRow, get_session
+from surgite.auth import hash_password, normalize_email
+from surgite.db import UserRow, get_session
 
 email = normalize_email(os.environ["BOOTSTRAP_OWNER_EMAIL"])
-password = os.environ["STANDUP_BOOTSTRAP_PASSWORD"]
+password = os.environ["SURGITE_BOOTSTRAP_PASSWORD"]
 
 with get_session() as s:
     user = s.scalar(select(UserRow).where(UserRow.email == email))
@@ -123,5 +123,5 @@ echo "==> Done. Next steps:"
 echo "    1. Set AUTH_MODE=multi_user (or single_user) in your .env."
 echo "    2. Make sure the app terminates TLS — multi_user refuses plain HTTP."
 echo "    3. Restart the app, then log in:"
-echo "         standup --login --email ${EMAIL}"
+echo "         surgite --login --email ${EMAIL}"
 echo "       or in the browser at /login."

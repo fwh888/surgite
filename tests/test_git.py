@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.git import _repo_name_from_url, get_raw_log, is_remote_url, parse_log
-from backend.models import Commit
+from surgite.git import _repo_name_from_url, get_raw_log, is_remote_url, parse_log
+from surgite.models import Commit
 
 
 @pytest.mark.parametrize(

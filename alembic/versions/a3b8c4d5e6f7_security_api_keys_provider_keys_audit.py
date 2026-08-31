@@ -91,7 +91,7 @@ def upgrade() -> None:
         ),
         sa.Column("provider", sa.String(), nullable=False),
         # Fernet token; the master key is the SHA-256 of
-        # SECRETS_ENCRYPTION_KEY (see backend/secrets.py). Stored as text.
+        # SECRETS_ENCRYPTION_KEY (see surgite/secrets.py). Stored as text.
         sa.Column("encrypted_key", sa.String(), nullable=False),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()

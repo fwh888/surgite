@@ -37,13 +37,13 @@
 </script>
 
 <svelte:head>
-	<title>summaries — standup</title>
+	<title>summaries — surgite</title>
 </svelte:head>
 
 <main class="mx-auto min-h-screen max-w-2xl px-4 py-6 sm:px-6 sm:py-10">
 	<div class="border border-border bg-surface">
 		<div class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-			<span class="flex-1 text-xs text-fg-muted">standup-gen</span>
+			<span class="flex-1 text-xs text-fg-muted">surgite</span>
 			<a href="/" class="text-xs text-fg-muted transition hover:text-fg"> ← home </a>
 		</div>
 

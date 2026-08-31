@@ -6,7 +6,7 @@ from pydantic import BaseModel
 class ErrorResponse(BaseModel):
     """The error envelope every route returns on failure. FastAPI's native
     shape — ``HTTPException(detail=...)`` and the CSRF / SQLAlchemy handlers
-    in ``backend.api`` all serialise to ``{"detail": "..."}``. Declared here
+    in ``surgite.api`` all serialise to ``{"detail": "..."}``. Declared here
     so the OpenAPI snapshot documents the stable error contract (0.6.0
     api-stability policy)."""
 

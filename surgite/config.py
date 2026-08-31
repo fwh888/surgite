@@ -12,16 +12,16 @@ def _get_database_url() -> str:
         return url
     host = os.environ.get("POSTGRES_HOST", "db")
     port = os.environ.get("POSTGRES_PORT", "5432")
-    user = os.environ.get("POSTGRES_USER", "standup")
-    password = os.environ.get("POSTGRES_PASSWORD", "standup")
-    db = os.environ.get("POSTGRES_DB", "standup")
+    user = os.environ.get("POSTGRES_USER", "surgite")
+    password = os.environ.get("POSTGRES_PASSWORD", "surgite")
+    db = os.environ.get("POSTGRES_DB", "surgite")
     return f"postgresql://{user}:{password}@{host}:{port}/{db}"
 
 
 DATABASE_URL = _get_database_url()
 API_HOST = os.environ.get("API_HOST", "127.0.0.1")
 API_PORT = int(os.environ.get("API_PORT", 8000))
-REPO_CACHE_DIR = os.environ.get("REPO_CACHE_DIR", "/var/standup/repos")
+REPO_CACHE_DIR = os.environ.get("REPO_CACHE_DIR", "/var/surgite/repos")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 LOG_FORMAT = os.environ.get("LOG_FORMAT", "")  # "json" enables JSON logs; default is human-readable
 # Seconds between automatic background ingests of every registered repo.
@@ -31,10 +31,10 @@ INGEST_INTERVAL = int(os.environ.get("INGEST_INTERVAL", "300"))
 # Lifetime of a shared-summary slug (the /s/<slug> links).
 SHARE_TTL_DAYS = int(os.environ.get("SHARE_TTL_DAYS", "7"))
 # Summary provider keys (ANTHROPIC_API_KEY / GROQ_API_KEY / DEEPSEEK_API_KEY)
-# are read by backend.summarizer at call time, not here.
+# are read by surgite.summarizer at call time, not here.
 
 # --- Auth (0.5.0) -----------------------------------------------------------
-# AUTH_MODE selects how requests resolve to a user (see backend.auth):
+# AUTH_MODE selects how requests resolve to a user (see surgite.auth):
 #   off         — anonymous; every request resolves to the bootstrap user.
 #                 This is the backward-compatible 0.4.0 behaviour and the
 #                 default for the duration of the foundation slice.
@@ -56,9 +56,9 @@ SESSION_CLEANUP_INTERVAL = int(os.environ.get("SESSION_CLEANUP_INTERVAL", "3600"
 # DEBUG mode (plain-HTTP local dev) the prefix and Secure flag are dropped,
 # because __Host- cookies are rejected by browsers over http://.
 DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
-SESSION_COOKIE_NAME = "standup_session" if DEBUG else "__Host-standup_session"
+SESSION_COOKIE_NAME = "surgite_session" if DEBUG else "__Host-surgite_session"
 # Master key for at-rest provider-key encryption. Generated on first run if
-# unset and saved to .secrets_key with chmod 600 (see backend.secrets); the
+# unset and saved to .secrets_key with chmod 600 (see surgite.secrets); the
 # operator is told to back it up. Rotation: scripts/rotate-secrets.sh.
 SECRETS_ENCRYPTION_KEY = os.environ.get("SECRETS_ENCRYPTION_KEY", "")
 # When true, only admins can POST /repos (slice 2 plan #67). Default false so
@@ -94,7 +94,7 @@ SMTP_HOST = os.environ.get("SMTP_HOST", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-SMTP_FROM = os.environ.get("SMTP_FROM", "standup-gen <no-reply@localhost>")
+SMTP_FROM = os.environ.get("SMTP_FROM", "surgite <no-reply@localhost>")
 # "starttls" (default, port 587), "ssl" (implicit TLS, port 465), or "none".
 SMTP_TLS = os.environ.get("SMTP_TLS", "starttls").lower()
 # Base URL used to build links in emails (the reset link). Defaults to the

@@ -2,7 +2,7 @@ Review the current codebase and update AGENTS.md to accurately reflect the curre
 
 Steps:
 1. Read the current AGENTS.md
-2. Explore the project structure: list all files, read key source files in `standup/`, `docs/`, and config files (`pyproject.toml`, `docker-compose.yml`, etc.)
+2. Explore the project structure: list all files, read key source files in `surgite/`, `docs/`, and config files (`pyproject.toml`, `docker-compose.yml`, etc.)
 3. Check git log for recent changes since the AGENTS.md was last updated
 4. Compare what AGENTS.md says against what the code actually does today — look for:
    - Outdated architecture descriptions or data flow diagrams

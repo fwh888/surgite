@@ -16,8 +16,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from backend import config
-from backend.auth import (
+from surgite import config
+from surgite.auth import (
     create_invite,
     create_session,
     create_user,
@@ -26,7 +26,7 @@ from backend.auth import (
     revoke_session,
     verify_password,
 )
-from backend.db import SessionRow, UserRow, get_session
+from surgite.db import SessionRow, UserRow, get_session
 
 COOKIE = config.SESSION_COOKIE_NAME
 
@@ -39,13 +39,13 @@ def multi_user(monkeypatch):
 def _cookie_header(sid: str) -> dict:
     """Headers that carry a session cookie for an authenticated request.
 
-    In multi_user mode the SPA also sends ``X-Requested-With: standup-web``
+    In multi_user mode the SPA also sends ``X-Requested-With: surgite-web``
     on every state-changing request (CSRF defence in depth, plan #66).
     The test client mirrors that here so the auth+CSRF combination is
     exercised end-to-end."""
     return {
         "Cookie": f"{COOKIE}={sid}",
-        "X-Requested-With": "standup-web",
+        "X-Requested-With": "surgite-web",
     }
 
 
@@ -322,8 +322,8 @@ def test_providers_admin_only_in_multi_user(client, multi_user):
 
 
 def test_bootstrap_invite_minted_when_no_admin(multi_user):
-    from backend.auth import ensure_bootstrap_invite
-    from backend.db import InviteRow
+    from surgite.auth import ensure_bootstrap_invite
+    from surgite.db import InviteRow
 
     with get_session() as s:
         token = ensure_bootstrap_invite(s)
@@ -337,7 +337,7 @@ def test_bootstrap_invite_minted_when_no_admin(multi_user):
 
 def test_bootstrap_invite_skipped_when_admin_exists(multi_user):
     _make_user(email="admin@example.com", is_admin=True)
-    from backend.auth import ensure_bootstrap_invite
+    from surgite.auth import ensure_bootstrap_invite
 
     with get_session() as s:
         assert ensure_bootstrap_invite(s) is None
@@ -345,7 +345,7 @@ def test_bootstrap_invite_skipped_when_admin_exists(multi_user):
 
 def test_off_mode_no_bootstrap_invite():
     # AUTH_MODE defaults to off here; ensure_bootstrap_invite is a no-op.
-    from backend.auth import ensure_bootstrap_invite
+    from surgite.auth import ensure_bootstrap_invite
 
     with get_session() as s:
         assert ensure_bootstrap_invite(s) is None
@@ -511,7 +511,7 @@ def test_reset_token_redeem_revokes_all_sessions(client, multi_user):
 
 
 def test_reset_token_redeem_clears_lockout(client, multi_user):
-    from backend.auth import record_login_failure
+    from surgite.auth import record_login_failure
 
     admin = _make_user(email="admin@example.com", is_admin=True)
     target = _make_user(email="victim@example.com", password="old-pass-1234")
@@ -543,8 +543,8 @@ def test_reset_token_redeem_clears_lockout(client, multi_user):
 def test_reset_token_redeem_expired_returns_400(client, multi_user):
     from datetime import timedelta
 
-    from backend.auth import mint_password_reset
-    from backend.db import PasswordResetRow
+    from surgite.auth import mint_password_reset
+    from surgite.db import PasswordResetRow
 
     target = _make_user(email="victim@example.com", password="old-pass-1234")
     token, _ = mint_password_reset(target)
@@ -605,7 +605,7 @@ def test_admin_list_users_non_admin_403(client, multi_user):
 
 
 def test_admin_deactivate_user(client, multi_user):
-    from backend.db import AuditLogRow
+    from surgite.db import AuditLogRow
 
     admin = _make_user(email="admin@example.com", is_admin=True)
     target = _make_user(email="victim@example.com")
@@ -646,7 +646,7 @@ def test_admin_deactivate_unknown_404(client, multi_user):
 
 
 def test_admin_activate_user(client, multi_user):
-    from backend.db import AuditLogRow
+    from surgite.db import AuditLogRow
 
     admin = _make_user(email="admin@example.com", is_admin=True)
     target = _make_user(email="victim@example.com")
@@ -685,7 +685,7 @@ def test_admin_activate_unknown_404(client, multi_user):
 
 
 def test_summaries_mine_returns_only_caller_shares(client, multi_user):
-    from backend.auth import create_session
+    from surgite.auth import create_session
 
     alice = _make_user(email="alice@example.com", password="alice-pass-1234")
     bob = _make_user(email="bob@example.com", password="bob-pass-1234567")
@@ -712,7 +712,7 @@ def test_summaries_mine_returns_only_caller_shares(client, multi_user):
 
 
 def test_summaries_mine_pagination(client, multi_user):
-    from backend.auth import create_session
+    from surgite.auth import create_session
 
     uid = _make_user(email="pag@example.com", password="paginate-pass-1234")
     sid = create_session(uid).id
@@ -737,8 +737,8 @@ def test_summaries_mine_pagination(client, multi_user):
 def test_summaries_mine_excludes_expired(client, multi_user):
     from datetime import UTC, datetime, timedelta
 
-    from backend.auth import create_session
-    from backend.db import SharedSummaryRow, get_session
+    from surgite.auth import create_session
+    from surgite.db import SharedSummaryRow, get_session
 
     uid = _make_user(email="exp@example.com", password="expire-pass-12345")
     sid = create_session(uid).id
@@ -767,12 +767,12 @@ def test_summaries_mine_requires_auth_in_multi_user(client, multi_user):
 
 # --- Self-serve, email-delivered password reset (0.6.0) ---------------------
 # SMTP_HOST is unset in tests, so the app uses LoggingMailer: the reset email
-# (link + token) is written to the `backend.mail` logger. We read it back from
+# (link + token) is written to the `surgite.mail` logger. We read it back from
 # caplog and prove the token redeems end-to-end.
 
 
 def _reset_email_body(caplog) -> str:
-    msgs = [r.getMessage() for r in caplog.records if r.name == "backend.mail"]
+    msgs = [r.getMessage() for r in caplog.records if r.name == "surgite.mail"]
     assert msgs, "no email was logged"
     return "\n".join(msgs)
 
@@ -782,7 +782,7 @@ def test_self_serve_reset_emails_a_working_link(client, multi_user, caplog):
     import re
 
     _make_user(email="victim@example.com", password="old-pass-1234")
-    with caplog.at_level(logging.INFO, logger="backend.mail"):
+    with caplog.at_level(logging.INFO, logger="surgite.mail"):
         r = client.post("/auth/password-reset", json={"email": "victim@example.com"})
     assert r.status_code == 204
     body = _reset_email_body(caplog)
@@ -806,10 +806,10 @@ def test_self_serve_reset_emails_a_working_link(client, multi_user, caplog):
 def test_self_serve_reset_unknown_email_is_204_and_silent(client, multi_user, caplog):
     import logging
 
-    with caplog.at_level(logging.INFO, logger="backend.mail"):
+    with caplog.at_level(logging.INFO, logger="surgite.mail"):
         r = client.post("/auth/password-reset", json={"email": "nobody@example.com"})
     assert r.status_code == 204  # no enumeration: same response as a real account
-    assert not [rec for rec in caplog.records if rec.name == "backend.mail"]
+    assert not [rec for rec in caplog.records if rec.name == "surgite.mail"]
 
 
 def test_self_serve_reset_404s_outside_multi_user(client):

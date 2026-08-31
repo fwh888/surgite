@@ -8,14 +8,14 @@ membership row, and ``org_id`` on every per-user row resolved through the
 owning user's personal org.
 
 The API surface is unchanged by this migration — every existing endpoint keeps
-resolving to the user's personal org (see ``backend/scope.py``). Only the schema
+resolving to the user's personal org (see ``surgite/scope.py``). Only the schema
 moves. ``commits`` is intentionally left out: a commit's org is derivable via
 ``repo_id -> repos.org_id``.
 
 Single transaction (alembic's default). Targets Postgres, like the other
 migrations here; the test suite builds its schema from the ORM metadata, not
 from this file. The slug rule is re-implemented inline (kept trivial) rather
-than importing ``backend.auth.slugify_org``, so the migration never depends on
+than importing ``surgite.auth.slugify_org``, so the migration never depends on
 the app's current models.
 
 Revision ID: b9d4f1a7c2e8

@@ -3,7 +3,7 @@
 /** Build a safe, descriptive filename for a repo's summary export. */
 export function summaryFilename(repo: string, kind: 'summary' | 'log'): string {
 	const safe = repo.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
-	const base = safe ? `${safe}-standup` : 'standup';
+	const base = safe ? `${safe}-surgite` : 'surgite';
 	const ext = kind === 'summary' ? 'md' : 'txt';
 	return `${base}.${ext}`;
 }

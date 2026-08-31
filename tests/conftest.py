@@ -1,7 +1,7 @@
 """
 Test config. DATABASE_URL and the provider API keys must be set BEFORE any
-`standup.*` import, because `backend.config` reads them at module-load time and
-`backend.db` creates the engine at module-load time.
+`surgite.*` import, because `surgite.config` reads them at module-load time and
+`surgite.db` creates the engine at module-load time.
 """
 
 import os
@@ -9,12 +9,12 @@ import tempfile
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-_db_file = Path(tempfile.gettempdir()) / "standup_test.db"
+_db_file = Path(tempfile.gettempdir()) / "surgite_test.db"
 if _db_file.exists():
     _db_file.unlink()
 os.environ["DATABASE_URL"] = f"sqlite:///{_db_file}"
 # Force every provider key empty so ai-summary tests see "not set" regardless of
-# the developer's .env. load_dotenv() in backend.config respects pre-existing
+# the developer's .env. load_dotenv() in surgite.config respects pre-existing
 # env vars and won't override these.
 os.environ["GROQ_API_KEY"] = ""
 os.environ["DEEPSEEK_API_KEY"] = ""
@@ -28,9 +28,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, select
 
-from backend.api import app
-from backend.auth import ensure_bootstrap_user
-from backend.db import (
+from surgite.api import app
+from surgite.auth import ensure_bootstrap_user
+from surgite.db import (
     ApiKeyRow,
     AuditLogRow,
     Base,
@@ -89,7 +89,7 @@ def _reset_rate_limit_buckets():
     """The rate limiter is process-local. Without this, tests that hit
     /summary?ai=true in succession would start hitting 429s after the 5th
     call, regardless of which test made the earlier ones."""
-    from backend import rate_limit
+    from surgite import rate_limit
 
     rate_limit._reset_for_tests()
     yield

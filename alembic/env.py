@@ -3,8 +3,8 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
-from backend.config import DATABASE_URL
-from backend.db import Base
+from surgite.config import DATABASE_URL
+from surgite.db import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

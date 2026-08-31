@@ -16,7 +16,7 @@ latest `main` before reporting.
 
 ## Trust model
 
-standup-gen is designed to run as a **personal, self-hosted tool on a trusted
+surgite is designed to run as a **personal, self-hosted tool on a trusted
 network** — not as a public, multi-tenant service. Operators should understand:
 
 - **No authentication.** The API and web UI have no built-in auth. Do not expose

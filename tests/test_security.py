@@ -22,14 +22,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from backend import config, rate_limit, secrets
-from backend.audit import audit
-from backend.auth import (
+from surgite import config, rate_limit, secrets
+from surgite.audit import audit
+from surgite.auth import (
     create_session,
     create_user,
     verify_api_key,
 )
-from backend.db import (
+from surgite.db import (
     AuditLogRow,
     ProviderKeyRow,
     UserRow,
@@ -47,14 +47,14 @@ def multi_user(monkeypatch):
 def _cookie_header(sid: str) -> dict:
     return {
         "Cookie": f"{COOKIE}={sid}",
-        "X-Requested-With": "standup-web",
+        "X-Requested-With": "surgite-web",
     }
 
 
 def _bearer_header(key: str) -> dict:
     return {
         "Authorization": f"Bearer {key}",
-        "X-Requested-With": "standup-web",
+        "X-Requested-With": "surgite-web",
     }
 
 
@@ -264,9 +264,9 @@ def test_verify_api_key_rejects_malformed(client, multi_user):
 @pytest.fixture(autouse=True)
 def repo_cache(tmp_path, monkeypatch):
     """Redirect the ingest cache to a tmp path so background tasks don't
-    try to create /var/standup in the test environment. The
+    try to create /var/surgite in the test environment. The
     `_ingest_repo` helper imports ``REPO_CACHE_DIR`` from
-    ``backend.config`` on every call, so a monkeypatch on the module
+    ``surgite.config`` on every call, so a monkeypatch on the module
     attribute is enough."""
     cache_dir = str(tmp_path / "repos")
     monkeypatch.setattr(config, "REPO_CACHE_DIR", cache_dir)
@@ -276,7 +276,7 @@ def test_repo_add_gated_to_admins_when_enabled(client, multi_user, monkeypatch):
     """Plan #67: REPO_ADD_GLOBAL_ONLY=true → only admins can POST /repos."""
     # Stub the background ingest so we don't try to git clone from a
     # bogus URL during the test.
-    from backend import api as api_module
+    from surgite import api as api_module
 
     def fake_ingest(*args, **kwargs):
         return {
@@ -309,7 +309,7 @@ def test_repo_add_gated_to_admins_when_enabled(client, multi_user, monkeypatch):
 def test_repo_add_open_to_all_by_default(client, multi_user, monkeypatch):
     """Default (REPO_ADD_GLOBAL_ONLY unset) is the 0.4.0 UX: any
     authenticated user can add a repo."""
-    from backend import api as api_module
+    from surgite import api as api_module
 
     def fake_ingest(*args, **kwargs):
         return {"repo": "x", "inserted": 0, "updated": 0, "unchanged": 0}
@@ -377,7 +377,7 @@ def test_lockout_trips_after_threshold(client, multi_user, monkeypatch):
         r = client.post(
             "/auth/login",
             json={"email": "nick@example.com", "password": "wrong"},
-            headers={"X-Requested-With": "standup-web"},
+            headers={"X-Requested-With": "surgite-web"},
         )
         assert r.status_code == 401
     # 4th call: even the right password returns 423 because the user
@@ -385,7 +385,7 @@ def test_lockout_trips_after_threshold(client, multi_user, monkeypatch):
     r = client.post(
         "/auth/login",
         json={"email": "nick@example.com", "password": "right"},
-        headers={"X-Requested-With": "standup-web"},
+        headers={"X-Requested-With": "surgite-web"},
     )
     assert r.status_code == 423
     assert "Retry-After" in r.headers
@@ -399,7 +399,7 @@ def test_lockout_does_not_count_unknown_email(client, multi_user, monkeypatch):
         r = client.post(
             "/auth/login",
             json={"email": "ghost@example.com", "password": "x"},
-            headers={"X-Requested-With": "standup-web"},
+            headers={"X-Requested-With": "surgite-web"},
         )
         assert r.status_code == 401  # never 423
     # The real user is unaffected.
@@ -407,7 +407,7 @@ def test_lockout_does_not_count_unknown_email(client, multi_user, monkeypatch):
     r = client.post(
         "/auth/login",
         json={"email": "real@example.com", "password": "right"},
-        headers={"X-Requested-With": "standup-web"},
+        headers={"X-Requested-With": "surgite-web"},
     )
     assert r.status_code == 200
 
@@ -586,7 +586,7 @@ def test_audit_row_written_on_login_success(client, multi_user):
     client.post(
         "/auth/login",
         json={"email": "a@example.com", "password": "right"},
-        headers={"X-Requested-With": "standup-web"},
+        headers={"X-Requested-With": "surgite-web"},
     )
     with get_session() as s:
         rows = s.scalars(
@@ -600,7 +600,7 @@ def test_audit_row_written_on_login_failure(client, multi_user):
     client.post(
         "/auth/login",
         json={"email": "a@example.com", "password": "wrong"},
-        headers={"X-Requested-With": "standup-web"},
+        headers={"X-Requested-With": "surgite-web"},
     )
     with get_session() as s:
         rows = s.scalars(select(AuditLogRow).where(AuditLogRow.action == "auth.login.fail")).all()
@@ -609,7 +609,7 @@ def test_audit_row_written_on_login_failure(client, multi_user):
 
 
 def test_audit_row_written_on_repo_create(client, multi_user, monkeypatch):
-    from backend import api as api_module
+    from surgite import api as api_module
 
     def fake_ingest(*args, **kwargs):
         return {"repo": "x", "inserted": 0, "updated": 0, "unchanged": 0}
@@ -664,7 +664,7 @@ def test_rotate_secrets_script_smoke(tmp_path, monkeypatch):
     a subprocess (so a test failure is local to this function)."""
     from cryptography.fernet import Fernet
 
-    from backend.secrets import _derive_fernet_key
+    from surgite.secrets import _derive_fernet_key
 
     master_a = "test-master-A"
     master_b = "test-master-B"

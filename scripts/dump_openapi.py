@@ -1,4 +1,4 @@
-"""Dump the canonical OpenAPI document for the standup-gen API.
+"""Dump the canonical OpenAPI document for the surgite API.
 
 Used by the 0.6.0 OpenAPI snapshot gate. Imports the FastAPI app, calls
 ``app.openapi()``, normalises the result (sorted keys, stable whitespace,
@@ -35,15 +35,15 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-# The script must run before ``backend.api`` is imported, because
-# ``backend.config`` reads env vars at module-load time. Match the test
+# The script must run before ``surgite.api`` is imported, because
+# ``surgite.config`` reads env vars at module-load time. Match the test
 # setup in ``tests/conftest.py``: SQLite-backed ephemeral DB, all
 # provider keys blank, ingest scheduler disabled. AUTH_MODE defaults
 # to "off" (the only mode that doesn't try to bootstrap an admin on
 # lifespan startup), but we set it explicitly to make the intent
 # clear and to keep the dump free of any "we tried to talk to a DB"
 # side effects.
-_DEFAULT_DB = Path("/tmp/standup_openapi_dump.db")
+_DEFAULT_DB = Path("/tmp/surgite_openapi_dump.db")
 if "DATABASE_URL" not in os.environ:
     os.environ["DATABASE_URL"] = f"sqlite:///{_DEFAULT_DB}"
 os.environ.setdefault("AUTH_MODE", "off")
@@ -54,7 +54,7 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "")
 
 # Lazy import: do this AFTER env setup, not at module top, so the
 # import-order dance above is the first thing that runs.
-from backend.api import app  # noqa: E402
+from surgite.api import app  # noqa: E402
 
 
 def _normalise(obj: Any) -> Any:
@@ -131,9 +131,7 @@ def dump() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Dump the canonical OpenAPI document for standup-gen."
-    )
+    parser = argparse.ArgumentParser(description="Dump the canonical OpenAPI document for surgite.")
     parser.add_argument(
         "--output",
         "-o",
