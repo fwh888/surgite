@@ -23,15 +23,22 @@ locally; move it to a branch rather than trying to force it through.
    the result).
 5. Bump `version` in `pyproject.toml`, then `uv lock` — the lockfile records
    the project version too, and `uv lock --check` must pass.
-6. Move the `[Unreleased]` entries in `CHANGELOG.md` under the new version,
+6. Bump `version` in `frontend/package.json` to match. `vite.config.ts` reads
+   it at build time into `__APP_VERSION__`, which `StatusBar.svelte` renders,
+   so skipping this ships a web UI that reports the previous version. Nothing
+   fails if you forget — no gate checks the two against each other. Leave
+   `frontend/package-lock.json` alone: its `version` field has read `0.2.0`
+   since before the rename, `npm ci` does not check it, and every release so
+   far has left it as-is.
+7. Move the `[Unreleased]` entries in `CHANGELOG.md` under the new version,
    with a date.
-7. If the release changes the install story (the first PyPI release, a
+8. If the release changes the install story (the first PyPI release, a
    rename, new badges): refresh the README — the `pip install surgite` line
    and the PyPI badges.
-8. Open the PR, let CI go green, merge. Then tag from `main`:
+9. Open the PR, let CI go green, merge. Then tag from `main`:
    `git tag -a vX.Y.Z -m 'vX.Y.Z'`, and push the tag.
-9. Cut a GitHub release from the tag (notes: a summary plus a CHANGELOG
-   link). Publishing is automatic from there — see below.
+10. Cut a GitHub release from the tag (notes: a summary plus a CHANGELOG
+    link). Publishing is automatic from there — see below.
 
 ## Version numbering
 
