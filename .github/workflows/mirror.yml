@@ -46,7 +46,9 @@ jobs:
           # (feature branches). A fast-forward-only push would fail forever
           # on any ref whose history was rewritten — the mirror must reflect
           # the canonical repo, not merge with it.
+          # The Codeberg owner is "ncolman" (n-c-o-l-e-m-a-n; the GitHub
+          # owner is "nicoleman0"). This exact path was typo'd twice before.
           git push --prune --force \
-            "https://ncoleman:${TOKEN}@codeberg.org/ncolman/surgite.git" \
+            "https://ncoleman:${TOKEN}@codeberg.org/ncoleman/surgite.git" \
             "refs/remotes/origin/*:refs/heads/*" \
             "refs/tags/*:refs/tags/*"
