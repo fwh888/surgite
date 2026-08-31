@@ -1,4 +1,5 @@
 import argparse
+import importlib.metadata
 import os
 import sys
 from datetime import date, timedelta
@@ -68,6 +69,11 @@ def main():
     load_dotenv()
 
     parser = argparse.ArgumentParser(description="Generate a standup summary from git log.")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"surgite {importlib.metadata.version('surgite')}",
+    )
     parser.add_argument("repo_path", nargs="?", help="Path to a local git repository")
     parser.add_argument(
         "--registered",
