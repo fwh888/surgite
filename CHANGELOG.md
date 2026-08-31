@@ -5,6 +5,18 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **API keys: ~8% of issued keys were unusable.** The key prefix was drawn
+  from `secrets.token_urlsafe`, whose alphabet contains `_` — and a `_` in
+  the prefix broke verification's `split("_", 2)` prefix reassembly, so the
+  affected keys 401'd on first use. Prefixes are now hex (`sk_` + 8 hex
+  chars; the parsing is unchanged, so every previously working key keeps
+  working). Surfaced as a flaky-looking CI failure on the 1.0.0 merge and
+  measured at 8.1% of 2,000 sampled keys.
+
 ## [1.0.0] - 2026-08-31
 
 The first `surgite` release — and the first on PyPI. 1.0.0 carries the rename
