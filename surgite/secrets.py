@@ -1,9 +1,17 @@
 """At-rest encryption for per-user provider keys (slice 2, plan #73).
 
 The master key lives in the ``SECRETS_ENCRYPTION_KEY`` env var. If unset on
-import we generate a fresh Fernet key, save it to ``.secrets_key`` next to
-the project root with ``chmod 600``, log a one-time warning telling the
-operator to back it up, and use it for this process.
+import we generate a fresh Fernet key, save it to the path in
+``SECRETS_KEY_FILE`` (default: ``.secrets_key`` next to the project root)
+with ``chmod 600``, log a one-time warning telling the operator to back it
+up, and use it for this process.
+
+``SECRETS_KEY_FILE`` exists because the default location is only durable
+when the project root is. In a container it is not: the app lives in
+``/app``, which is an image layer, so a generated key dies with the
+container and every ``provider_keys`` row encrypted under it becomes
+permanently undecryptable on the next redeploy. The compose file points
+this at a named volume so the fallback survives a restart.
 
 This is a service-local secret, not a deployment-wide one — every process
 that needs to decrypt a row must see the same key. In production the
@@ -31,7 +39,9 @@ log = logging.getLogger(__name__)
 
 # Project root: two levels up from surgite/secrets.py. AGENTS.md lives there.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_SECRETS_FILE = _PROJECT_ROOT / ".secrets_key"
+# Override the fallback key's location for deployments where the project root
+# is not durable storage — see the module docstring.
+_SECRETS_FILE = Path(os.environ.get("SECRETS_KEY_FILE") or _PROJECT_ROOT / ".secrets_key")
 
 
 def _derive_fernet_key(material: str) -> bytes:
@@ -61,6 +71,7 @@ def _load_or_create_master_key() -> bytes:
     if _SECRETS_FILE.is_file():
         return _derive_fernet_key(_SECRETS_FILE.read_text().strip())
     key = Fernet.generate_key()
+    _SECRETS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _SECRETS_FILE.write_text(key.decode("ascii"))
     os.chmod(_SECRETS_FILE, 0o600)
     log.warning(
@@ -97,6 +108,7 @@ def rotate_to(new_material: str) -> None:
     a subsequent restart doesn't fall back to the old one."""
     global _fernet
     _fernet = Fernet(_derive_fernet_key(new_material))
+    _SECRETS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _SECRETS_FILE.write_text(new_material.strip())
     os.chmod(_SECRETS_FILE, 0o600)
 

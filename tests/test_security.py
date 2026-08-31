@@ -17,7 +17,11 @@ Covers plan items 13–22:
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -698,6 +702,77 @@ def test_rotate_secrets_script_smoke(tmp_path, monkeypatch):
     assert not old_still_works
 
     assert fernet_b.decrypt(new_ciphertext.encode("ascii")) == b"gsk-original"
+
+
+# --- SECRETS_KEY_FILE: the generated fallback key must land on durable storage
+
+
+def _import_secrets_with_env(tmp_path, **env_overrides) -> subprocess.CompletedProcess:
+    """Import surgite.secrets in a fresh interpreter with a patched environment.
+
+    A subprocess rather than importlib.reload: reload mutates the live module's
+    __dict__ in place, so the module-level _fernet other tests already hold a
+    reference to would be swapped underneath them, and rows encrypted earlier in
+    the session would stop decrypting.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "SECRETS_ENCRYPTION_KEY"}
+    env.update(env_overrides)
+    return subprocess.run(
+        [sys.executable, "-c", "import surgite.secrets as s; print(s.key_file_path())"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(__file__).resolve().parent.parent,
+    )
+
+
+def test_secrets_key_file_env_var_relocates_the_generated_key(tmp_path):
+    """SECRETS_KEY_FILE moves the fallback key off the project root.
+
+    Without this, a container writes the key into /app — an image layer — and
+    every provider_keys row encrypted under it is unrecoverable after a
+    redeploy. The compose file relies on this to put the key on a volume.
+    """
+    key_path = tmp_path / "data" / ".secrets_key"
+
+    result = _import_secrets_with_env(tmp_path, SECRETS_KEY_FILE=str(key_path))
+
+    assert result.stdout.strip() == str(key_path)
+    # The parent directory did not exist: importing must create it, not crash.
+    assert key_path.is_file()
+    assert oct(key_path.stat().st_mode)[-3:] == "600"
+
+
+def test_secrets_key_file_unset_still_defaults_to_the_project_root(tmp_path):
+    """The default path is unchanged, so existing installs keep their key."""
+    env = {k: v for k, v in os.environ.items() if k != "SECRETS_KEY_FILE"}
+    result = subprocess.run(
+        [sys.executable, "-c", "import surgite.secrets as s; print(s.key_file_path())"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(__file__).resolve().parent.parent,
+    )
+    expected = Path(__file__).resolve().parent.parent / ".secrets_key"
+    assert result.stdout.strip() == str(expected)
+
+
+def test_generated_key_is_reused_across_processes_at_the_same_path(tmp_path):
+    """Two starts pointed at the same durable path share one key.
+
+    This is the property the ephemeral-container bug violated: two starts
+    generated two different keys, silently orphaning every encrypted row.
+    """
+    key_path = tmp_path / "data" / ".secrets_key"
+
+    _import_secrets_with_env(tmp_path, SECRETS_KEY_FILE=str(key_path))
+    first = key_path.read_text()
+    _import_secrets_with_env(tmp_path, SECRETS_KEY_FILE=str(key_path))
+    second = key_path.read_text()
+
+    assert first == second
 
 
 # --- Item 13 lockdown: every documented authed route 401s in multi_user ----
