@@ -2,10 +2,13 @@
 
 **Status:** phases 0–3 complete (2026-08-31). GitHub is canonical
 (`github.com/nicoleman0/surgite`, `main` protected); the self-hosted Forgejo
-instance mirrors it (pull mirror, 8h); Codeberg is synced by a push-mirror
-Action (pending `CODEBERG_MIRROR_TOKEN` secret). Remaining: Phase 4 (PyPI
-publishing, cut with v1.0.0). This document is the authoritative resume point
-if a working session is lost mid-migration.
+instance mirrors it (pull mirror, 8h); Codeberg is synced by the push-mirror
+Action (`CODEBERG_MIRROR_TOKEN` configured; verified working after the
+repo-path fix in PR #5 — the initial run 404'd on a misspelled path). The
+Phase 4 pipeline (publish workflow, `pypi` environment, RELEASING.md) is in
+place; remaining: trusted-publisher registration on pypi.org, then cut
+`v1.0.0` once the orgs work lands. This document is the authoritative
+resume point if a working session is lost mid-migration.
 
 ## Context
 
@@ -76,10 +79,9 @@ produces.
       ("Pull mirrors have been disabled by your site administrator"), so the
       initial migration came over as a static copy. It is kept in sync by the
       `mirror` GitHub Action (push mirror on every push) instead.
-- [ ] Add `CODEBERG_MIRROR_TOKEN` (Codeberg access token, repository write
-      scope) to GitHub repo secrets — Settings → Secrets and variables →
-      Actions. Until then the mirror job no-ops with a notice. Optionally set
-      the Codeberg repo description to note it's a mirror of GitHub.
+- [x] Add `CODEBERG_MIRROR_TOKEN` (Codeberg access token, repository write
+      scope) to GitHub repo secrets — configured 2026-08-31; first real
+      mirror push verified after the path fix (PR #5).
 - [x] Local remote cleanup (done in Phase 1).
 
 ## Phase 3 — GitHub Actions CI — DONE
@@ -92,24 +94,27 @@ produces.
 - [x] `.github/dependabot.yml` (github-actions ecosystem, monthly).
 - [x] README CI badge (resolves the old "build-status badge" TODO).
 
-## Phase 4 — PyPI v1.0.0 — PENDING
+## Phase 4 — PyPI v1.0.0 — PIPELINE READY, release pending
 
-- [ ] `.github/workflows/publish.yml` (touchneedle shape): on
+- [x] `.github/workflows/publish.yml` (touchneedle shape): on
       `release: [published]` → build job (`python -m build`, `twine check`,
       artifact) → publish job (`environment: pypi`, `id-token: write`,
-      `pypa/gh-action-pypi-publish@release/v1`). The `uv_build` backend
-      works under `python -m build`. Wheel = `surgite` module only
-      (already validated locally: `uv build` + `twine check` passed).
-- [ ] One-time: register the trusted publisher at
-      `pypi.org/manage/account/publishing` (owner `nicoleman0`, repo
-      `surgite`, workflow `publish.yml`, env `pypi`); create the `pypi`
-      GitHub environment.
-- [ ] Adapt touchneedle's `RELEASING.md` (bump pyproject **and uv.lock**,
-      changelog, PR, tag `vX.Y.Z` from main, cut the Release → auto-publish,
-      verify on the simple index).
-- [ ] README: `pip install surgite`, PyPI/pyversions badges.
-- [ ] Cut `v1.0.0` once the orgs work lands (invite-org-role WIP is parked
-      on `feat/1.0.0-invite-org-role`, rebased and ready).
+      `pypa/gh-action-pypi-publish@release/v1`). Validated locally: both
+      `uv build` and `python -m build` + `twine check` pass; the wheel ships
+      `surgite/` + templates + LICENSE + entry point.
+- [x] `pypi` GitHub environment created.
+- [x] `RELEASING.md` runbook (adapted from touchneedle): gate → bump
+      pyproject + `uv lock` → changelog → PR → tag from main → GitHub
+      release → auto-publish → verify.
+- [ ] One-time (user): register the trusted publisher at
+      `pypi.org/manage/account/publishing` — owner `nicoleman0`, repo
+      `surgite`, workflow `publish.yml`, env `pypi`. It registers as a
+      *pending* publisher; the first successful upload (v1.0.0) creates the
+      project on PyPI.
+- [ ] README: `pip install surgite` + PyPI/pyversions badges — ride with
+      the v1.0.0 release PR (nothing is installable until then).
+- [ ] Cut `v1.0.0` once the orgs work lands (invite-org-role WIP parked on
+      `feat/1.0.0-invite-org-role`, rebased and ready).
 
 ## Standing notes
 
