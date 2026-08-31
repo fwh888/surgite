@@ -254,7 +254,7 @@ Then:
 
 There are no issue templates — write prose. The most useful bug report is the
 exact command or request, what happened, what you expected, and the version
-(`pip show surgite`, or the image tag). For the API, the status code and the
+(`surgite --version`, or the image tag). For the API, the status code and the
 response body; for a self-hosted deployment, whether you are on compose,
 plain Docker, or a local uv install, since the three differ in exactly the
 places bugs hide.
