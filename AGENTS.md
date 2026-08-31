@@ -17,6 +17,9 @@ This project is deliberately minimalist and easy to maintain. When suggesting or
 # Install / sync dependencies (uses uv, no requirements.txt)
 uv sync
 
+# Print the installed version
+uv run surgite --version
+
 # Run the CLI
 uv run surgite /path/to/repo --since 7.days.ago
 uv run surgite /path/to/repo --since 2026-05-01 --summarize     # requires a provider API key

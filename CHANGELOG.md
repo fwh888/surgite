@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `surgite --version` prints the installed version and exits. The version is
+  read from package metadata, so it stays in the one place `pyproject.toml`
+  already keeps it and needs no bump at release time. (#15)
+
 ### Fixed
 
 - The demo GIF is now referenced by absolute URL, so it renders on PyPI as
