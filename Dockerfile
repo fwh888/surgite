@@ -8,6 +8,8 @@ FROM python:3.14-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 RUN pip install uv --quiet
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 RUN uv sync --frozen --no-dev
 COPY --from=frontend /build/frontend/build /app/frontend/build
