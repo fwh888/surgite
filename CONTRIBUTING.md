@@ -134,12 +134,15 @@ send a PR whose diff is mostly reflow.
 
 ## The CI gates
 
-Every push to any branch runs three jobs, all of which must be green
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+Every push to any branch runs five jobs, all of which must be green
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). They are split by
+concern so that one failure still leaves you the other four results:
 
 | Gate | What it runs | Described in |
 | --- | --- | --- |
-| `quality` | `uv lock --check`, `ruff check`, `ruff format --check`, `mypy surgite/`, `pip-audit`, `pytest -q` | [Code style](#code-style), [Running the tests](#running-the-tests) |
+| `lint` | `uv lock --check`, `ruff check`, `ruff format --check`, `mypy surgite/` | [Code style](#code-style) |
+| `test` | `pytest -q` | [Running the tests](#running-the-tests) |
+| `audit` | `pip-audit` | below |
 | `frontend` | `npm run check` (svelte-check: types + a11y), `npm run test`, `npm run build` | [Frontend](#frontend) |
 | `snapshot` | `task openapi-snapshot-check` | [The OpenAPI snapshot](#the-openapi-snapshot) |
 
