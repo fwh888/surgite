@@ -1,10 +1,14 @@
 name: CI
 
 # GitHub is the canonical repo; the Forgejo and Codeberg copies are read-only
-# mirrors. Runs on every push (any branch) and every PR.
+# mirrors.
+#
+# Only main on push. A pull request branch is already covered by the
+# pull_request event, and listing both ran every job twice against the same
+# commit. The tradeoff: a branch pushed without an open PR gets no CI.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 permissions:

@@ -134,7 +134,8 @@ send a PR whose diff is mostly reflow.
 
 ## The CI gates
 
-Every push to any branch runs five jobs, all of which must be green
+Every pull request, and every push to `main`, runs five jobs, all of which
+must be green
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). They are split by
 concern so that one failure still leaves you the other four results:
 
@@ -158,7 +159,7 @@ the bumps.
 ## The OpenAPI snapshot
 
 The committed `docs/openapi.json` is the canonical baseline for the public API
-surface. The `snapshot` CI job regenerates the dump on every push and fails if
+surface. The `snapshot` CI job regenerates the dump on every CI run and fails if
 the committed baseline has drifted. This is the API-stability promise in
 [`docs/api-stability.md`](docs/api-stability.md): a route in the baseline
 keeps existing, byte-for-byte, in the dump.
