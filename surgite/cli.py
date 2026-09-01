@@ -18,7 +18,7 @@ _GIT_RELATIVE_RE = re.compile(r"^(\d+)\.(days?|weeks?)\.ago$")
 
 def _resolve_since(value: str | None, default_days: int = 7) -> str:
     """Return an ISO date string suitable for the API.
-    
+
     Accepts git's relative date syntax (e.g. "7.days.ago", "2.weeks.ago")
     and plain ISO dates (e.g. "2026-08-01"). Returns the ISO date string
     in both cases.

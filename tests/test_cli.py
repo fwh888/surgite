@@ -9,7 +9,7 @@ import importlib.metadata
 
 import pytest
 
-from surgite.cli import main
+from surgite.cli import _resolve_since, main
 
 
 def test_version_flag_prints_the_installed_version(capsys, monkeypatch):
@@ -34,18 +34,12 @@ def test_version_flag_is_listed_in_help(capsys, monkeypatch):
     assert "--version" in capsys.readouterr().out
 
 
-from surgite.cli import _resolve_since
-
-
 def test_resolve_since_translates_git_relative_dates():
     """#29: git's relative date syntax must be translated to ISO for the API."""
     from datetime import date, timedelta
-    assert _resolve_since("7.days.ago") == (
-        date.today() - timedelta(days=7)
-    ).isoformat()
-    assert _resolve_since("2.weeks.ago") == (
-        date.today() - timedelta(days=14)
-    ).isoformat()
+
+    assert _resolve_since("7.days.ago") == (date.today() - timedelta(days=7)).isoformat()
+    assert _resolve_since("2.weeks.ago") == (date.today() - timedelta(days=14)).isoformat()
 
 
 def test_resolve_since_passes_through_iso_dates():
@@ -56,6 +50,7 @@ def test_resolve_since_passes_through_iso_dates():
 def test_resolve_since_defaults_to_7_days():
     """#29: None defaults to the last 7 days, matching the local path."""
     from datetime import date, timedelta
+
     assert _resolve_since(None) == (date.today() - timedelta(days=7)).isoformat()
 
 
@@ -78,14 +73,16 @@ def test_output_write_uses_explicit_utf8(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(builtins, "open", fake_open)
     # Drive the exact write path main() uses for --output
-    with open(str(tmp_path / "out.txt"), "w") as f:  # noqa: F401 - exercise path
+    with open(str(tmp_path / "out.txt"), "w"):  # exercise the write path
         pass
     # The real check: our patched open should have been called with encoding
     # when main writes the summary. We assert the pattern used in cli.py by
     # invoking the same code shape directly.
-    from surgite import cli
     # Patch module-level open usage by checking the source write statement
     import inspect
+
+    from surgite import cli
+
     src = inspect.getsource(cli)
     assert 'open(args.output, "w", encoding="utf-8")' in src.replace("\n", ""), (
         "cli.py must write --output with explicit encoding='utf-8'"
