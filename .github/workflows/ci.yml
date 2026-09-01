@@ -1,10 +1,14 @@
 name: CI
 
 # GitHub is the canonical repo; the Forgejo and Codeberg copies are read-only
-# mirrors. Runs on every push (any branch) and every PR.
+# mirrors.
+#
+# Only main on push. A pull request branch is already covered by the
+# pull_request event, and listing both ran every job twice against the same
+# commit. The tradeoff: a branch pushed without an open PR gets no CI.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -14,9 +18,13 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+# One job per concern, so a failure in one still reports the others. These
+# were a single `quality` job until a PR with three ruff errors reported
+# nothing about its tests: the job stopped at the first red step, and the
+# contributor had to fix lint before learning whether the code worked.
 jobs:
-  quality:
-    name: Quality (lint, types, audit, tests)
+  lint:
+    name: Lint and types
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -24,6 +32,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
+      # A stale lockfile makes every other job's dependency set a guess, so it
+      # is checked here rather than repeated in each one.
       - name: Check uv.lock is up to date
         run: uv lock --check
 
@@ -36,14 +46,44 @@ jobs:
       - name: Ruff (format check)
         run: uv run ruff format --check .
 
+      # Mypy shares this job with ruff deliberately: both are static analysis
+      # over the same synced env, and a ruff failure is a one-command fix. If
+      # that stops being true, lift this into its own `types` job.
       - name: Mypy
         run: uv run mypy surgite/
 
-      - name: pip-audit
-        run: uv export --no-dev --no-hashes --no-emit-project | uv run pip-audit -r /dev/stdin
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Sync dependencies
+        run: uv sync --group dev
 
       - name: Pytest
         run: uv run pytest -q
+
+  # Separate because it fails on the calendar, not on the diff: a new advisory
+  # against a pinned dependency turns this red with no code change. That should
+  # not also hide the test results.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Sync dependencies
+        run: uv sync --group dev
+
+      - name: pip-audit
+        run: uv export --no-dev --no-hashes --no-emit-project | uv run pip-audit -r /dev/stdin
 
   frontend:
     name: Frontend build
