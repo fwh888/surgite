@@ -24,6 +24,4 @@ RUN uv sync --frozen --no-dev
 COPY --from=frontend /build/frontend/build /app/frontend/build
 RUN mkdir -p /var/surgite/repos /var/surgite/data
 EXPOSE 8000
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-CMD ["/entrypoint.sh"]
+CMD ["/app/entrypoint.sh"]
