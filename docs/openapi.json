@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "ApiKeyCreate": {
-        "description": "Mint a new per-user API key. The full key is returned in the response\nexactly once (slice 2 plan #65).",
+        "description": "Mint a new per-user API key. The full key is returned in the response\nexactly once.",
         "properties": {
           "expires_at": {
             "anyOf": [
@@ -42,7 +42,7 @@
         "type": "object"
       },
       "InviteCreateRequest": {
-        "description": "Create a new invite token. `email` is optional — an open invite\n(null email) can be redeemed by any new user; a pinned invite is\nlocked to one address. `role` is either ``\"user\"`` (default) or\n``\"admin\"``. The redeem token is returned in the response so the\nadmin can copy it out of band (slice 2 plan #74).",
+        "description": "Create a new invite token. `email` is optional — an open invite\n(null email) can be redeemed by any new user; a pinned invite is\nlocked to one address. `role` is either ``\"user\"`` (default) or\n``\"admin\"``. The redeem token is returned in the response so the\nadmin can copy it out of band.",
         "properties": {
           "email": {
             "anyOf": [
@@ -88,7 +88,7 @@
         "type": "object"
       },
       "PasswordChange": {
-        "description": "Self-service password change (issue #77). The user proves control\nof the current password; on success every other session is revoked\nand the current session is kept.",
+        "description": "Self-service password change. The user proves control\nof the current password; on success every other session is revoked\nand the current session is kept.",
         "properties": {
           "current_password": {
             "title": "Current Password",
@@ -212,7 +212,7 @@
         "type": "object"
       },
       "ProviderKeysUpdate": {
-        "description": "Set (or replace) a per-user provider key. The clear flag revokes the\nexisting row; the key field is required otherwise. The raw key is never\nreturned by the API (slice 2 plan #73).",
+        "description": "Set (or replace) a per-user provider key. The clear flag revokes the\nexisting row; the key field is required otherwise. The raw key is never\nreturned by the API.",
         "properties": {
           "clear": {
             "default": false,
@@ -377,7 +377,7 @@
   "paths": {
     "/admin/audit": {
       "get": {
-        "description": "Paginated read of the audit log (plan #75). Admin-only. Filters:\n`since` (inclusive on created_at), `action` (exact match). Newest\nfirst.",
+        "description": "Paginated read of the audit log. Admin-only. Filters: `since`\n(inclusive on created_at), `action` (exact match). Newest first.",
         "operationId": "admin_list_audit",
         "parameters": [
           {
@@ -465,7 +465,7 @@
     },
     "/admin/invites": {
       "post": {
-        "description": "Issue a new invite. Admin-only (plan #74). The redeem token is\nreturned in the response so the admin can deliver it out of band;\nthe plan defers the email story to 0.6.0.",
+        "description": "Issue a new invite. Admin-only. The redeem token is returned in the\nresponse so the admin can deliver it out of band.",
         "operationId": "admin_create_invite",
         "requestBody": {
           "content": {
@@ -505,7 +505,7 @@
     },
     "/admin/users": {
       "get": {
-        "description": "List every user, newest-first. Admin-only (issue #76). `q` is a\ncase-insensitive substring match on email; limit/offset paginate.",
+        "description": "List every user, newest-first. Admin-only. `q` is a\ncase-insensitive substring match on email; limit/offset paginate.",
         "operationId": "admin_list_users",
         "parameters": [
           {
@@ -576,7 +576,7 @@
     },
     "/admin/users/{user_id}/activate": {
       "post": {
-        "description": "Flip is_active=True for `user_id`. Admin-only (issue #76). The\nreverse of /deactivate — lets an admin bring a deactivated user\nback. 404 on unknown user.",
+        "description": "Flip is_active=True for `user_id`. Admin-only. The\nreverse of /deactivate — lets an admin bring a deactivated user\nback. 404 on unknown user.",
         "operationId": "admin_activate_user",
         "parameters": [
           {
@@ -612,7 +612,7 @@
     },
     "/admin/users/{user_id}/deactivate": {
       "post": {
-        "description": "Flip is_active=False for `user_id`. Admin-only (issue #76). A\ndeactivated user keeps their row but can't sign in. The calling admin\ncan't deactivate themselves (400) — that's how you lock yourself out.\n404 on unknown user.",
+        "description": "Flip is_active=False for `user_id`. Admin-only. A\ndeactivated user keeps their row but can't sign in. The calling admin\ncan't deactivate themselves (400) — that's how you lock yourself out.\n404 on unknown user.",
         "operationId": "admin_deactivate_user",
         "parameters": [
           {
@@ -689,7 +689,7 @@
     },
     "/admin/users/{user_id}/unlock": {
       "post": {
-        "description": "Clear the lockout and failure counter for `user_id` (plan #69).\nAdmin only. 204 on success, 404 if the user doesn't exist.",
+        "description": "Clear the lockout and failure counter for `user_id`. Admin only.\n204 on success, 404 if the user doesn't exist.",
         "operationId": "admin_unlock_user",
         "parameters": [
           {
@@ -753,7 +753,7 @@
         ]
       },
       "post": {
-        "description": "Mint a new per-user API key (slice 2 plan #65). The full key is\nreturned in the response and never again — callers must store it\nin their secret manager immediately. Rate limited to\n``API_KEY_ISSUE_LIMIT`` per user per ``API_KEY_ISSUE_WINDOW_HOURS``.",
+        "description": "Mint a new per-user API key. The full key is returned in the\nresponse and never again — callers must store it in their secret\nmanager immediately. Rate limited to\n``API_KEY_ISSUE_LIMIT`` per user per ``API_KEY_ISSUE_WINDOW_HOURS``.",
         "operationId": "create_api_key",
         "requestBody": {
           "content": {
@@ -847,7 +847,7 @@
     },
     "/auth/login": {
       "post": {
-        "description": "Verify credentials, open a session, set the hardened cookie. A bad\nemail or password is an indistinguishable 401 (no account enumeration).\nA locked account is a 423 with a Retry-After header.\n\nLockout (slice 2 plan #69): ``LOGIN_LOCKOUT_THRESHOLD`` consecutive\nfailures trip a ``LOGIN_LOCKOUT_DURATION_MINUTES``-minute lockout\nfor the user. The counter is reset on success. A locked user sees\nthe same 401 a wrong-password user does (no lockout-state leak).",
+        "description": "Verify credentials, open a session, set the hardened cookie. A bad\nemail or password is an indistinguishable 401 (no account enumeration).\nA locked account is a 423 with a Retry-After header.\n\nLockout: ``LOGIN_LOCKOUT_THRESHOLD`` consecutive failures trip a\n``LOGIN_LOCKOUT_DURATION_MINUTES``-minute lockout for the user. The\ncounter is reset on success. A locked user sees the same 401 a\nwrong-password user does (no lockout-state leak).",
         "operationId": "auth_login",
         "requestBody": {
           "content": {
@@ -1307,7 +1307,7 @@
     },
     "/health/deep": {
       "get": {
-        "description": "Deep health for a real uptime check: DB connectivity, a remote-reachable\nprobe against one registered repo, and provider-key reachability. Returns\n503 if any *checked* component is down (no_repos / missing_key are not\nfailures), else 200.\n\nThe git probe is scoped to a repo the *caller* owns and the response never\nnames a specific repo, so an exposed multi_user deployment can't be used to\nenumerate other users' repos via /health/deep (issue #64). An anonymous\ncaller in multi_user mode gets `git: no_repos` — the probe is skipped\nrather than run against an arbitrary user's repo.",
+        "description": "Deep health for a real uptime check: DB connectivity, a remote-reachable\nprobe against one registered repo, and provider-key reachability. Returns\n503 if any *checked* component is down (no_repos / missing_key are not\nfailures), else 200.\n\nThe git probe is scoped to a repo the *caller* owns and the response never\nnames a specific repo, so an exposed multi_user deployment can't be used to\nenumerate other users' repos via /health/deep. An anonymous\ncaller in multi_user mode gets `git: no_repos` — the probe is skipped\nrather than run against an arbitrary user's repo.",
         "operationId": "health_deep",
         "responses": {
           "200": {
@@ -1370,7 +1370,7 @@
     },
     "/providers": {
       "get": {
-        "description": "List summary providers, their default model, and whether each is\nconfigured. A client (UI/CLI) can use this to let the user pick one.\n\nIn multi_user mode this is admin-only: provider-key presence is an\ninformation-disclosure surface on an exposed deployment. The status\nshown is the *calling admin's* per-user view (their own\n``provider_keys`` rows + the env-var fallback), so the admin sees\nwhat they personally can use. In off/single_user mode it's the\nenv-var view and is open as before (slice 2 plan #73).",
+        "description": "List summary providers, their default model, and whether each is\nconfigured. A client (UI/CLI) can use this to let the user pick one.\n\nIn multi_user mode this is admin-only: provider-key presence is an\ninformation-disclosure surface on an exposed deployment. The status\nshown is the *calling admin's* per-user view (their own\n``provider_keys`` rows + the env-var fallback), so the admin sees\nwhat they personally can use. In off/single_user mode it's the\nenv-var view and is open as before.",
         "operationId": "list_providers",
         "responses": {
           "200": {
@@ -1428,7 +1428,7 @@
         ]
       },
       "post": {
-        "description": "Register a new repo. In multi_user mode with\n``REPO_ADD_GLOBAL_ONLY=true`` only admins can add (slice 2 plan #67) —\nthe clone-url path is a code-execution surface and the operator\nprobably wants to gate it. The default is open to every authenticated\nuser (the 0.4.0 UX).",
+        "description": "Register a new repo. In multi_user mode with\n``REPO_ADD_GLOBAL_ONLY=true`` only admins can add — the clone-url path\nis a code-execution surface and the operator probably wants to gate it.\nThe default is open to every authenticated user (the 0.4.0 UX).",
         "operationId": "create_repo",
         "requestBody": {
           "content": {
@@ -1649,7 +1649,7 @@
     },
     "/settings/provider-keys": {
       "get": {
-        "description": "Which providers the caller has configured. The raw key material is\nnever returned (plan #73) — only the provider name and timestamps.",
+        "description": "Which providers the caller has configured. The raw key material is\nnever returned — only the provider name and timestamps.",
         "operationId": "get_provider_keys",
         "responses": {
           "200": {
@@ -1677,7 +1677,7 @@
         ]
       },
       "put": {
-        "description": "Set (or clear) a per-user provider key (plan #73). The raw key is\nencrypted at rest with Fernet; the master key is the SHA-256 of\n``SECRETS_ENCRYPTION_KEY`` (see ``surgite.secrets``). The response\nis just a confirmation — the key material is never echoed back.",
+        "description": "Set (or clear) a per-user provider key. The raw key is encrypted\nat rest with Fernet; the master key is the SHA-256 of\n``SECRETS_ENCRYPTION_KEY`` (see ``surgite.secrets``). The response\nis just a confirmation — the key material is never echoed back.",
         "operationId": "upsert_provider_key",
         "requestBody": {
           "content": {
@@ -1785,7 +1785,7 @@
     },
     "/summaries": {
       "post": {
-        "description": "Persist the parameters of a summary behind a short slug. The slug is the\nonly secret guarding it — resolving /summaries/{slug} re-runs the query.\nThe share records its creator (`owner_id`); read-side ownership enforcement\nlands in slice 2 (issue #71).",
+        "description": "Persist the parameters of a summary behind a short slug. The slug is the\nonly secret guarding it — resolving /summaries/{slug} re-runs the query.\nThe share records its creator (`owner_id`), which GET /summaries/{slug}\nchecks — a non-owner gets the same 404 an unknown slug does.",
         "operationId": "create_share",
         "requestBody": {
           "content": {
@@ -1880,7 +1880,7 @@
     },
     "/summaries/{slug}": {
       "get": {
-        "description": "Resolve a slug to its stored summary params. 404 for unknown,\nexpired, OR not-owned-by-the-caller slugs (slice 2 plan #71). The\n404-not-403 is deliberate: a 403 would tell an attacker \"this slug\nexists, you just can't see it\", which is an enumeration vector.",
+        "description": "Resolve a slug to its stored summary params. 404 for unknown,\nexpired, OR not-owned-by-the-caller slugs. The 404-not-403 is\ndeliberate: a 403 would tell an attacker \"this slug exists, you just\ncan't see it\", which is an enumeration vector.",
         "operationId": "get_share",
         "parameters": [
           {
