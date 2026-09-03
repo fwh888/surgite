@@ -13,7 +13,7 @@ read-only mirrors; pull requests opened there will not be seen.
 
 **Fewer lines is better, all else equal.** The whole point of the project is
 that it reads top-to-bottom. No SPA framework beyond SvelteKit, no slowapi, no
-Celery, no Redis — the rate limiter is a hand-rolled token bucket in
+Celery, no Redis — the rate limiters are hand-rolled token buckets in
 `surgite/rate_limit.py` and the ingest scheduler is one `asyncio` task in the
 FastAPI lifespan. A change that adds surface area should earn it.
 

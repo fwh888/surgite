@@ -1576,11 +1576,8 @@ def _check_ai_preconditions(request: Request, provider: str | None, total: int, 
     one user can't burn the LLM budget for everyone. The 100/60s per-IP
     outer is the backstop for the "fresh signup spam" case (an attacker
     cycling accounts can't share a per-user bucket because they have no
-    user yet). The 0.4.0 per-IP 5/60s ``check_rate_limit`` is no longer
-    called here — it overlapped the per-user limit on the same key and
-    fired spuriously after the second user request (slice 2 plan #68
-    documents this consolidation). Raises the appropriate HTTPException;
-    returns the resolved provider on success."""
+    user yet). Raises the appropriate HTTPException; returns the resolved
+    provider on success."""
     check_summary_user_limit(request, user_id=user_id)
     check_ip_outer_rate_limit(request)
     if total > AI_SUMMARY_MAX_COMMITS:
