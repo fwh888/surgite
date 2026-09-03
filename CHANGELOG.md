@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-03
+
 ### Added
 
 - **Summaries can run against a self-hosted model.** A `local` provider talks
@@ -24,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Every provider's base URL is overridable** — `ANTHROPIC_BASE_URL`,
   `GROQ_BASE_URL`, `DEEPSEEK_BASE_URL`, `LOCAL_BASE_URL` — for a corporate
   proxy or an API gateway in front of a hosted provider.
+
+### Changed
+
+- `Provider.base_url` is now a call-time property reading `{PROVIDER}_BASE_URL`;
+  the literal moved to a `default_base_url` field and a `url_env` field names
+  the variable. Internal — `surgite/__init__.py` exports nothing and the HTTP
+  surface is unchanged — but a fork that constructs `Provider(...)` or edits
+  the `PROVIDERS` registry needs the two new field names.
+
+### Removed
+
+- The unused `surgite/scope.py`. Nothing imported it, and the org scoping it
+  sketched is not a shipped feature. (#48)
 
 ## [1.2.0] - 2026-09-03
 
