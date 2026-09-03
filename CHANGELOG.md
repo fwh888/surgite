@@ -7,17 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-03
+
+Released entirely from community pull requests. Thanks to
+[@anfine](https://github.com/anfine), [@Alesia0411](https://github.com/Alesia0411)
+and [@fwh888](https://github.com/fwh888), who between them contributed every
+change below.
+
+### Security
+
+- **The per-IP rate limits no longer trust a client-supplied
+  `X-Forwarded-For`.** Any client could mint a fresh bucket per request by
+  varying the header, which made both per-IP limits advisory rather than
+  enforced. The header is now honoured only when the direct peer is listed in
+  the new `TRUSTED_PROXIES` setting (comma-separated IPs or CIDR ranges); by
+  default it is ignored and the direct peer address is used. **Deployments
+  behind a reverse proxy must set `TRUSTED_PROXIES`** — otherwise every client
+  shares one bucket keyed on the proxy's own address. See
+  [`docs/self-host.md`](docs/self-host.md). (#39, @fwh888)
+
+### Added
+
+- A PEP 561 `py.typed` marker, so downstream type checkers see the
+  annotations that were already shipped. (#16, @fwh888)
+
 ### Fixed
 
-- The per-IP rate limits no longer trust a client-supplied `X-Forwarded-For`.
-  The header is honoured only when the direct peer is listed in the new
-  `TRUSTED_PROXIES` setting; by default it is ignored and the direct peer
-  address is used. Deployments behind a reverse proxy must set it. (#39)
+- **Ingest no longer truncates the history of busy repos.** Cloning at
+  `--depth 100` silently dropped commits for any repo with more than 100 in
+  the query window, so `total_commits` was confidently wrong. Clones now use
+  `--filter=blob:none`: the full commit history arrives and file contents are
+  fetched only on demand, which is what ingest never needs. (#34, @fwh888)
+- **A repo that renamed its default branch is picked up on the next ingest.**
+  `git fetch` does not update `origin/HEAD`, so ingest kept reading the old
+  branch (master after a rename to main) or failed with an unhelpful
+  `CalledProcessError`. (#35, @fwh888)
+- **`docker stop` is graceful again.** The container's `CMD` was shell form,
+  so uvicorn ran under `/bin/sh -c` and never received `SIGTERM`: every stop
+  burned the full 10-second grace period and killed in-flight SSE
+  connections. An entrypoint script now `exec`s uvicorn as PID 1. (#36,
+  @fwh888)
+- `--output` writes UTF-8 explicitly. The platform default on Windows is
+  cp1252, which raises on any non-Latin-1 character in a commit message,
+  an author name, or an LLM-generated summary. (#19, @fwh888)
+- `--since 7.days.ago` works with `--registered`. Git's relative date syntax
+  is what `--help` advertises, but it was passed straight to the API, which
+  filters by ISO date; the mismatch surfaced as an unhandled `httpx`
+  traceback. (#29, @fwh888)
+- `Taskfile.yml` picks the interpreter by platform, so the snapshot tasks run
+  for Windows contributors. (#33, @fwh888)
+
+### Removed
+
+- The unused legacy per-IP summary rate limiter, along with the
+  `RATE_LIMIT_REQUESTS` and `RATE_LIMIT_WINDOW_SECONDS` environment
+  variables. The function had not been called since the slice 2
+  consolidation, so the two variables configured nothing; the active
+  per-user limit and per-IP outer backstop are unchanged. (#30, @Alesia0411)
 
 ### Changed
 
-- Removed the unused legacy per-IP summary rate limiter and its stale environment
-  variables; the active per-user limit and per-IP outer backstop are unchanged. (#30)
+- The Docker build installs dependencies from `pyproject.toml`/`uv.lock` and
+  the frontend's from `package.json`/`package-lock.json` before copying
+  source, so editing a Python or Svelte file no longer reinstalls every
+  dependency on the next `docker compose up --build`. (#32, @anfine)
 
 ## [1.1.0] - 2026-08-31
 
