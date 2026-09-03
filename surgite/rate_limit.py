@@ -19,12 +19,15 @@ protection, sit this behind Traefik + fail2ban as the project docs
 already recommend.
 """
 
+import ipaddress
 import os
 import threading
 import time
 from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request
+
+from surgite.config import TRUSTED_PROXIES
 
 # Per-user + per-IP-outer buckets. Defaults match the plan (plan #68):
 #   summary:  5 / 60s per user, 100 / 60s per IP outer
@@ -43,14 +46,34 @@ _lock = threading.Lock()
 
 
 def _client_ip(request: Request) -> str:
-    """Pick the most plausible client IP. Trusts the first X-Forwarded-For
-    entry when present (the app is meant to sit behind Traefik), falling
-    back to the direct peer — no proxy-aware enumeration, just what we need
-    to bucket the same user behind the same key."""
+    """Pick the most plausible client IP. Only trusts X-Forwarded-For when
+    the direct peer is in TRUSTED_PROXIES (set via env var, default empty).
+    When no trusted proxies are configured, the header is ignored and the
+    direct peer address is used — this is the safe default for deployments
+    that expose the app directly (the shipped docker-compose.yml publishes
+    the app on the host with no reverse proxy in front)."""
+    direct_peer = request.client.host if request.client else "unknown"
     fwd = request.headers.get("x-forwarded-for")
-    if fwd:
+    if fwd and TRUSTED_PROXIES and _is_trusted(direct_peer):
         return fwd.split(",", 1)[0].strip()
-    return request.client.host if request.client else "unknown"
+    return direct_peer
+
+
+def _is_trusted(ip: str) -> bool:
+    """Check if an IP address is in the TRUSTED_PROXIES allowlist.
+    Supports exact matches and CIDR notation (e.g. 10.0.0.0/8)."""
+    for entry in TRUSTED_PROXIES:
+        if "/" not in entry:
+            if ip == entry:
+                return True
+            continue
+        # A malformed peer address or allowlist entry is simply not a match.
+        try:
+            if ipaddress.ip_address(ip) in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _check_bucket(bucket: deque, limit: int, window: int, label: str) -> None:

@@ -72,6 +72,12 @@ certificates to anything on your tailnet; Traefik terminates TLS and forwards
 plain HTTP to the app. Configure the router for the surgite hostname and
 the `X-Forwarded-For` header is set correctly out of the box.
 
+Set `TRUSTED_PROXIES` to the proxy's address (or its subnet, e.g.
+`172.16.0.0/12` for a docker network) whichever proxy you pick. The rate
+limiter ignores `X-Forwarded-For` from untrusted peers, so leaving it unset
+behind a proxy buckets every client under the proxy's own IP — one shared
+budget for the whole internet.
+
 **Caddy + Let's Encrypt (external).** The shortest Caddyfile that works:
 
 ```caddyfile
