@@ -44,6 +44,16 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       GROQ_MODEL: ${GROQ_MODEL:-}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-}
+      # Self-hosted model. LOCAL_BASE_URL must be reachable from inside this
+      # container: localhost is the container, not the host.
+      LOCAL_BASE_URL: ${LOCAL_BASE_URL:-}
+      LOCAL_API_KEY: ${LOCAL_API_KEY:-}
+      LOCAL_MODEL: ${LOCAL_MODEL:-}
+      LLM_LOCAL_ONLY: ${LLM_LOCAL_ONLY:-}
+      # Private CA for the internal endpoint. The bundle must also be mounted
+      # into the container (add it under volumes:) -- setting the path alone
+      # does nothing. Blank is safe: httpx falls back to the public CA list.
+      SSL_CERT_FILE: ${SSL_CERT_FILE:-}
       SURGITE_USER: ${SURGITE_USER:-}
       SURGITE_ROLE: ${SURGITE_ROLE:-}
       API_HOST: 0.0.0.0

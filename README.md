@@ -64,6 +64,9 @@ for the deployment walkthrough.
   `surgite --summarize` for AI-written prose.
 - **Per-user provider keys** — each user brings their own Anthropic / Groq /
   DeepSeek key. Fernet-encrypted at rest, never returned by the API.
+- **Self-hosted models** — point `LOCAL_BASE_URL` at any server speaking the
+  OpenAI chat API (vLLM, Ollama, LM Studio, LiteLLM) to keep summaries on
+  your own network. `LLM_LOCAL_ONLY=1` drops the hosted providers entirely.
 - **Shareable summary links** — `POST /summaries` mints a `/s/{slug}` URL that
   re-runs a saved query in a read-only view. Owner-scoped in multi-user mode.
 

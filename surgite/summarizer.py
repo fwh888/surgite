@@ -1,11 +1,14 @@
 """Model-agnostic commit summarization.
 
 One summary, any provider. Pick the provider via the LLM_PROVIDER env var or
-per call. GROQ and DeepSeek expose OpenAI-compatible chat endpoints, so they
-share a code path; Anthropic uses its Messages API. All calls go over plain
-HTTP via `httpx.AsyncClient` so no provider SDK is required and the per-repo
-fan-out runs concurrently on the event loop rather than on FastAPI's request
-threadpool.
+per call. GROQ, DeepSeek and a self-hosted server expose OpenAI-compatible chat
+endpoints, so they share a code path; Anthropic uses its Messages API. All
+calls go over plain HTTP via `httpx.AsyncClient` so no provider SDK is required
+and the per-repo fan-out runs concurrently on the event loop rather than on
+FastAPI's request threadpool.
+
+Deployments that must not reach outside their network set LLM_LOCAL_ONLY=1,
+which leaves only the self-hosted provider in the registry.
 """
 
 import asyncio
@@ -26,6 +29,11 @@ _MAX_TOKENS = 1024
 # per-repo round-trips without hammering the provider's rate limits.
 _MAX_PARALLEL_SUMMARIES = 4
 DEFAULT_PROVIDER = "anthropic"
+# Models discovered from a self-hosted server's GET /models, keyed by base_url.
+# ponytail: process-lifetime cache, one probe per server. A server that swaps
+# the model it serves needs a restart to be noticed; set the *_MODEL env var if
+# that's ever a problem.
+_discovered_models: dict[str, str] = {}
 
 _TONE_INSTRUCTIONS: dict[str, str] = {
     "neutral": "Write in plain, neutral language. Do not use first person.",
@@ -42,9 +50,10 @@ class ProviderError(Exception):
 @dataclass(frozen=True)
 class Provider:
     name: str
-    kind: str  # "openai" (GROQ/DeepSeek-compatible) or "anthropic"
-    base_url: str
+    kind: str  # "openai" (GROQ/DeepSeek/self-hosted) or "anthropic"
+    default_base_url: str
     key_env: str
+    url_env: str
     model_env: str
     default_model: str
 
@@ -53,40 +62,87 @@ class Provider:
         # Read at call time so .env (loaded by surgite.config) is in effect.
         return os.environ.get(self.key_env) or None
 
+    @property
+    def base_url(self) -> str:
+        # Also call-time: a self-hosted endpoint can't ship as a constant, and
+        # the hosted ones get an override for free (proxy, gateway, VCR test).
+        return os.environ.get(self.url_env) or self.default_base_url
+
     def model(self, override: str | None = None) -> str:
-        return override or os.environ.get(self.model_env) or self.default_model
+        """The configured model. Empty for a self-hosted server that ships no
+        default and hasn't been asked what it serves yet — `resolve_model`
+        fills that in, and the answer lands in the cache consulted here."""
+        return (
+            override
+            or os.environ.get(self.model_env)
+            or self.default_model
+            or _discovered_models.get(self.base_url, "")
+        )
 
 
-PROVIDERS: dict[str, Provider] = {
+_ALL_PROVIDERS: dict[str, Provider] = {
     "groq": Provider(
         name="groq",
         kind="openai",
-        base_url="https://api.groq.com/openai/v1",
+        default_base_url="https://api.groq.com/openai/v1",
         key_env="GROQ_API_KEY",
+        url_env="GROQ_BASE_URL",
         model_env="GROQ_MODEL",
         default_model="llama-3.1-8b-instant",
     ),
     "deepseek": Provider(
         name="deepseek",
         kind="openai",
-        base_url="https://api.deepseek.com",
+        default_base_url="https://api.deepseek.com",
         key_env="DEEPSEEK_API_KEY",
+        url_env="DEEPSEEK_BASE_URL",
         model_env="DEEPSEEK_MODEL",
         default_model="deepseek-chat",
     ),
     "anthropic": Provider(
         name="anthropic",
         kind="anthropic",
-        base_url="https://api.anthropic.com",
+        default_base_url="https://api.anthropic.com",
         key_env="ANTHROPIC_API_KEY",
+        url_env="ANTHROPIC_BASE_URL",
         model_env="ANTHROPIC_MODEL",
         default_model="claude-haiku-4-5-20251001",
+    ),
+    "local": Provider(
+        name="local",
+        kind="openai",
+        # Neither of these can have a sensible default: LOCAL_BASE_URL must
+        # point at the OpenAI-compatible root (e.g. http://llm.internal:8000/v1,
+        # the code appends the path), and the model is whatever that server
+        # happens to serve — asked for at call time, see `resolve_model`.
+        default_base_url="",
+        key_env="LOCAL_API_KEY",
+        url_env="LOCAL_BASE_URL",
+        model_env="LOCAL_MODEL",
+        default_model="",
     ),
 }
 
 
+def _visible(providers: dict[str, Provider]) -> dict[str, Provider]:
+    """LLM_LOCAL_ONLY=1 drops every hosted provider from the registry, so
+    nothing downstream — provider selection, per-user key storage, the
+    /health/deep reachability probe — can reach a host outside the network.
+    Read once at import; changing it needs a restart."""
+    if os.environ.get("LLM_LOCAL_ONLY", "").lower() in {"1", "true", "yes"}:
+        return {"local": providers["local"]}
+    return providers
+
+
+PROVIDERS: dict[str, Provider] = _visible(_ALL_PROVIDERS)
+
+
 def default_provider() -> str:
-    return (os.environ.get("LLM_PROVIDER") or DEFAULT_PROVIDER).lower()
+    env = os.environ.get("LLM_PROVIDER")
+    if env:
+        return env.lower()  # an unknown name still errors, rather than silently falling back
+    # LLM_LOCAL_ONLY can remove the built-in default from the registry.
+    return DEFAULT_PROVIDER if DEFAULT_PROVIDER in PROVIDERS else next(iter(PROVIDERS))
 
 
 def resolve_provider(name: str | None) -> Provider:
@@ -96,6 +152,51 @@ def resolve_provider(name: str | None) -> Provider:
     if provider is None:
         raise ProviderError(f"Unknown provider {name!r}; choose from {', '.join(PROVIDERS)}")
     return provider
+
+
+async def resolve_model(
+    client: httpx.AsyncClient,
+    provider: Provider,
+    api_key: str,
+    override: str | None = None,
+) -> str:
+    """The model to send. When nothing is configured — the self-hosted case —
+    ask the server what it serves rather than making the operator name it in
+    .env. Most self-hosted deployments serve exactly one model; more than one
+    is ambiguous, so that asks for an explicit choice instead of guessing."""
+    name = provider.model(override)
+    if name:
+        return name
+
+    url = f"{provider.base_url}/models"
+    try:
+        resp = await client.get(url, headers=_openai_headers(api_key), timeout=_TIMEOUT)
+        resp.raise_for_status()
+        served = [
+            m["id"] for m in resp.json().get("data", []) if isinstance(m, dict) and m.get("id")
+        ]
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError) as e:
+        raise ProviderError(
+            f"Could not ask {url} which model it serves ({type(e).__name__}); "
+            f"set {provider.model_env} to name it explicitly"
+        ) from e
+
+    if not served:
+        raise ProviderError(f"{url} lists no models; set {provider.model_env} to name one")
+    if len(served) > 1:
+        raise ProviderError(
+            f"{url} serves {len(served)} models ({', '.join(served[:3])}); "
+            f"set {provider.model_env} to choose one"
+        )
+
+    _discovered_models[provider.base_url] = served[0]
+    return served[0]
+
+
+def display_model(provider: Provider) -> str:
+    """What to show a user for a provider whose model isn't known yet. Never
+    used to build a request — `resolve_model` does that."""
+    return provider.model() or "auto"
 
 
 def _require_key(provider: Provider, key: str | None = None) -> str:
@@ -116,7 +217,7 @@ def provider_status() -> list[dict]:
     return [
         {
             "name": p.name,
-            "model": p.model(),
+            "model": display_model(p),
             "available": p.api_key is not None,
             "default": p.name == default,
         }
@@ -137,7 +238,7 @@ def provider_status_for(user_id: str) -> list[dict]:
         out.append(
             {
                 "name": p.name,
-                "model": p.model(),
+                "model": display_model(p),
                 "available": p.api_key is not None or _user_has_active_key(user_id, p.name),
                 "default": p.name == default,
             }
@@ -338,16 +439,17 @@ async def generate_summary(
     key when the user has no row)."""
     resolved = resolve_provider(provider)
     api_key = _resolve_key(resolved, user_id)
-    chosen_model = resolved.model(model)
     system = _build_system_prompt(settings)
 
-    if client is not None:
-        summary = await _post_json(client, resolved, api_key, chosen_model, system, commit_log)
-    else:
-        async with httpx.AsyncClient() as owned:
-            summary = await _post_json(owned, resolved, api_key, chosen_model, system, commit_log)
+    async def run(c: httpx.AsyncClient) -> dict:
+        chosen_model = await resolve_model(c, resolved, api_key, model)
+        summary = await _post_json(c, resolved, api_key, chosen_model, system, commit_log)
+        return {"summary": summary, "provider": resolved.name, "model": chosen_model}
 
-    return {"summary": summary, "provider": resolved.name, "model": chosen_model}
+    if client is not None:
+        return await run(client)
+    async with httpx.AsyncClient() as owned:
+        return await run(owned)
 
 
 async def generate_summary_per_repo(
@@ -407,24 +509,27 @@ async def stream_summary(
 ) -> AsyncIterator[str]:
     """Yield text deltas as the provider streams its summary. Resolves the
     provider and key up front (raising ProviderError before any I/O), then
-    opens a streaming request and yields each text fragment. httpx errors
-    propagate to the caller, which maps them to an SSE `error` event.
-    `user_id` selects the per-user provider key in multi_user mode."""
+    opens a streaming request and yields each text fragment. The model is
+    resolved on first iteration, not here, because discovering it needs the
+    client — so a self-hosted server with no usable model raises ProviderError
+    from the iterator rather than from the call. httpx errors propagate to the
+    caller, which maps them to an SSE `error` event. `user_id` selects the
+    per-user provider key in multi_user mode."""
     resolved = resolve_provider(provider)
     api_key = _resolve_key(resolved, user_id)
-    chosen_model = resolved.model(model)
     system = _build_system_prompt(settings)
 
-    if resolved.kind == "anthropic":
-        url = f"{resolved.base_url}/v1/messages"
-        headers = _anthropic_headers(api_key)
-        body = _anthropic_body(chosen_model, system, commit_log, stream=True)
-    else:
-        url = f"{resolved.base_url}/chat/completions"
-        headers = _openai_headers(api_key)
-        body = _openai_body(chosen_model, system, commit_log, stream=True)
-
     async def pump(c: httpx.AsyncClient) -> AsyncIterator[str]:
+        chosen_model = await resolve_model(c, resolved, api_key, model)
+        if resolved.kind == "anthropic":
+            url = f"{resolved.base_url}/v1/messages"
+            headers = _anthropic_headers(api_key)
+            body = _anthropic_body(chosen_model, system, commit_log, stream=True)
+        else:
+            url = f"{resolved.base_url}/chat/completions"
+            headers = _openai_headers(api_key)
+            body = _openai_body(chosen_model, system, commit_log, stream=True)
+
         async with c.stream("POST", url, headers=headers, json=body, timeout=_TIMEOUT) as resp:
             if resp.status_code >= 400:
                 await resp.aread()
