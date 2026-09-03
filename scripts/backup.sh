@@ -2,9 +2,9 @@
 # Back up the surgite Postgres database.
 #
 # The pgdata named volume is the only persistent state in the stack, and
-# the user's PBS job (vmid 207 in the homelab) is the intended off-host
-# consumer of these dumps. This script writes one gzip-compressed pg_dump
-# per run to $BACKUP_DIR with a date-stamped filename.
+# an off-host backup job (Proxmox Backup Server, restic, borg, ...) is the
+# intended consumer of these dumps. This script writes one gzip-compressed
+# pg_dump per run to $BACKUP_DIR with a date-stamped filename.
 #
 # Two modes, in order of preference:
 #   1. Inside the `db` container (default). Works whether the host has
