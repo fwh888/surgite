@@ -32,7 +32,7 @@ vars:
   # uv puts the interpreter at .venv/Scripts/python.exe on Windows and
   # .venv/bin/python elsewhere; pick by platform so the snapshot tasks
   # work for a Windows contributor too.
-  PYTHON: '{{if eq .OS "windows"}}.venv\Scripts\python.exe{{else}}.venv/bin/python{{end}}' 
+  PYTHON: '{{if eq .OS "windows"}}.venv\Scripts\python.exe{{else}}.venv/bin/python{{end}}'
 
 tasks:
   default:

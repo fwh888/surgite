@@ -5,10 +5,13 @@ summarizer); what needs a real `main()` invocation is argparse behaviour that
 exits the process.
 """
 
+import builtins
 import importlib.metadata
+import sys
 
 import pytest
 
+from surgite import cli
 from surgite.cli import _resolve_since, main
 
 
@@ -54,36 +57,28 @@ def test_resolve_since_defaults_to_7_days():
     assert _resolve_since(None) == (date.today() - timedelta(days=7)).isoformat()
 
 
-def test_output_write_uses_explicit_utf8(monkeypatch, tmp_path, capsys):
-    """#19: the --output write must pass encoding='utf-8' explicitly.
+def test_output_is_written_as_utf8(monkeypatch, tmp_path):
+    """#19: --output must pass encoding="utf-8" explicitly.
 
-    On Windows the platform default is cp1252, which fails on any
-    non-Latin-1 character in a commit message or author name. We assert the
-    call passes encoding explicitly — this test fails on the unfixed code
-    because open() is called without it.
+    Asserting the kwarg matters more than the round-trip: on a POSIX runner
+    the platform default is already UTF-8, so reading the file back passes
+    either way. Windows defaults to cp1252, where the unfixed code raises on
+    any non-Latin-1 character in a commit message or an LLM summary.
     """
-    import builtins
-    from unittest.mock import MagicMock
+    summary = "fix: café → 日本語 🎉"
+    out = tmp_path / "summary.txt"
+    open_kwargs = []
+    real_open = builtins.open
 
-    captured = {}
+    def recording_open(*args, **kwargs):
+        open_kwargs.append(kwargs)
+        return real_open(*args, **kwargs)
 
-    def fake_open(path, mode, **kwargs):
-        captured["kwargs"] = kwargs
-        return MagicMock()
+    monkeypatch.setattr(builtins, "open", recording_open)
+    monkeypatch.setattr(cli, "_run_local", lambda args: summary)
+    monkeypatch.setattr(sys, "argv", ["surgite", "some/repo", "--output", str(out)])
 
-    monkeypatch.setattr(builtins, "open", fake_open)
-    # Drive the exact write path main() uses for --output
-    with open(str(tmp_path / "out.txt"), "w"):  # exercise the write path
-        pass
-    # The real check: our patched open should have been called with encoding
-    # when main writes the summary. We assert the pattern used in cli.py by
-    # invoking the same code shape directly.
-    # Patch module-level open usage by checking the source write statement
-    import inspect
+    main()
 
-    from surgite import cli
-
-    src = inspect.getsource(cli)
-    assert 'open(args.output, "w", encoding="utf-8")' in src.replace("\n", ""), (
-        "cli.py must write --output with explicit encoding='utf-8'"
-    )
+    assert {"encoding": "utf-8"} in open_kwargs
+    assert out.read_text(encoding="utf-8") == summary

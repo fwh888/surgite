@@ -20,10 +20,10 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Typing :: Typed",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Version Control :: Git",
     "Topic :: Text Processing :: General",
+    "Typing :: Typed",
 ]
 dependencies = [
     "python-dotenv>=1.2.2",
