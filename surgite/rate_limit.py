@@ -1,11 +1,7 @@
-"""Per-IP token-bucket rate limit (slice 1) plus the slice 2 per-user /
-multi-bucket rate limits (plan #68).
+"""Per-user and per-IP-outer token-bucket rate limits (plan #68).
 
-Three limits live here:
+Two limits live here:
 
-  - ``check_rate_limit(request)`` — the original per-IP 5/60s guard. Kept as
-    a *coarse outer* check on the AI summary endpoints (still per IP, but
-    in practice it rarely trips because the per-user limit fires first).
   - ``check_user_rate_limit(user, request, *, requests, window, name)`` —
     a per-user token bucket. Used by the AI summary and login endpoints.
     Keyed on (user_id, name) so a single user can have separate budgets
@@ -15,7 +11,7 @@ Three limits live here:
     where a per-user limit doesn't catch a single attacker cycling
     accounts. Wired into the AI summary endpoints as a backstop.
 
-All three are hand-rolled in-memory token buckets keyed on
+Both are hand-rolled in-memory token buckets keyed on
 ``(client_ip)`` or ``(user_id, name)``. Process-local is fine: a restart
 resets the bucket, which is the lenient behaviour we want for an
 accidental button-mash guard, not a hardening boundary. For real abuse
@@ -29,10 +25,6 @@ import time
 from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request
-
-# Default: 5 requests per 60 seconds per client IP.
-_LIMIT = int(os.environ.get("RATE_LIMIT_REQUESTS", "5"))
-_WINDOW = int(os.environ.get("RATE_LIMIT_WINDOW_SECONDS", "60"))
 
 # Per-user + per-IP-outer buckets. Defaults match the plan (plan #68):
 #   summary:  5 / 60s per user, 100 / 60s per IP outer
@@ -84,15 +76,6 @@ def _drop_empty_ip_bucket(ip: str) -> None:
     bucket = _ip_buckets.get(ip)
     if bucket is not None and not bucket:
         del _ip_buckets[ip]
-
-
-def check_rate_limit(request: Request) -> None:
-    """Backward-compatible per-IP 5/60s guard. Retained as a coarse outer
-    check on the AI summary endpoints; the per-user limit fires first in
-    practice, so this is the second line of defence."""
-    with _lock:
-        _check_bucket(_ip_buckets[_client_ip(request)], _LIMIT, _WINDOW, "IP")
-        _drop_empty_ip_bucket(_client_ip(request))
 
 
 def check_user_rate_limit(

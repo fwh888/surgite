@@ -88,7 +88,7 @@ API:  POST /repos  →  create repo + per-repo BackgroundTask ingest (clone/fetc
   - `POST /repos` — creates a repo and immediately ingests it as a `BackgroundTask` (clone + git log → CommitRow upsert); ingest failures are logged but don't block creation. A lifespan-managed scheduler task also runs `_ingest_all_repos` every `INGEST_INTERVAL` seconds so the DB stays fresh without anyone hitting `/summary`
   - `GET /commits` — paginated list with `since`/`until`/`author`/`repo`/`limit`/`offset` filters
   - `GET /commits/{hash}` — lookup by full or prefix hash; 400 for invalid hex, 404 for not found, 409 for ambiguous prefix
-  - `GET /summary` — async, pure read against the DB; aggregates by repo and day. `ai=true` runs the summarizer (capped at `AI_SUMMARY_MAX_COMMITS = 500` to bound token cost) behind a per-IP rate limit; optional `provider=` overrides the default; per-repo summaries use that repo's prompt settings, falling back to the global default. The raw `commits` list is omitted unless `commits=true`. Unknown provider or missing key → 400; provider HTTP failure → 502; rate limit exceeded → 429
+  - `GET /summary` — async, pure read against the DB; aggregates by repo and day. `ai=true` runs the summarizer (capped at `AI_SUMMARY_MAX_COMMITS = 500` to bound token cost) behind per-user and per-IP-outer rate limits; optional `provider=` overrides the default; per-repo summaries use that repo's prompt settings, falling back to the global default. The raw `commits` list is omitted unless `commits=true`. Unknown provider or missing key → 400; provider HTTP failure → 502; rate limit exceeded → 429
   - `GET /summary/stream` — the AI summary as Server-Sent Events: a `meta` frame (stats), per-repo `delta` token frames, a `repo_done`/`repo_error` per repo, then `done`. Same preconditions as `/summary?ai=true`
   - `GET /providers` — lists providers, their default model, and whether each has a key configured (for a UI/CLI to offer a choice)
   - `GET`/`PUT /settings/prompt` — read/update prompt settings; `?repo_id=` scopes to one repo (GET falls back to the global row; PUT 404s on an unknown repo)
@@ -96,7 +96,7 @@ API:  POST /repos  →  create repo + per-repo BackgroundTask ingest (clone/fetc
   - `GET /health/deep` — DB + `git ls-remote` against one registered repo + provider reachability; 503 names the failing component (`no_repos`/`missing_key` aren't failures)
   - `SQLAlchemyError` is mapped to a 503 globally
 - `surgite/logging_config.py` — `configure_logging()` sets the root logger from `LOG_LEVEL` (default INFO) and `LOG_FORMAT` (default human-readable; set to `json` for log-shipping-friendly output). Extras on a `LogRecord` are flattened into top-level JSON keys.
-- `surgite/rate_limit.py` — hand-rolled per-IP token-bucket guard for `/summary?ai=true` (default 5 req / 60 s; override with `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS`). Trusts the first `X-Forwarded-For` entry; the project sits behind Traefik in production.
+- `surgite/rate_limit.py` — hand-rolled per-user token bucket for AI summaries (default 5 req / 60 s) plus a per-IP outer backstop (default 100 req / 60 s). Trusts the first `X-Forwarded-For` entry; the project sits behind Traefik in production.
 - `scripts/backup.sh` / `scripts/restore.sh` — `pg_dump` / `psql` over `docker compose exec db` by default; `BACKUP_MODE=local` for a host-side Postgres. `backup.sh` rotates `BACKUP_KEEP` (default 14) dated dumps.
 - `alembic/` — migrations; `e5e311c2e5f0_create_commits_table.py` is the initial schema
 - `tests/` — pytest suite covering the API; `conftest.py` swaps in a temp SQLite DB and clears tables between tests
@@ -120,7 +120,8 @@ API:  POST /repos  →  create repo + per-repo BackgroundTask ingest (clone/fetc
 | `INGEST_INTERVAL` | Seconds between automatic background ingests of all registered repos. Set to `0` to disable the scheduler. |
 | `LOG_LEVEL` | Root logger level (default `INFO`). |
 | `LOG_FORMAT` | Set to `json` for structured logs (Loki / vector / fluentbit); default is human-readable. |
-| `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS` | Per-IP guard on `/summary?ai=true` (default `5` / `60`). |
+| `SUMMARY_RATE_LIMIT_REQUESTS` / `SUMMARY_RATE_LIMIT_WINDOW_SECONDS` | Per-user AI-summary guard (default `5` / `60`). |
+| `IP_OUTER_RATE_LIMIT_REQUESTS` / `IP_OUTER_RATE_LIMIT_WINDOW_SECONDS` | Per-IP AI-summary backstop (default `100` / `60`). |
 | `SHARE_TTL_DAYS` | Lifetime of a shared-summary `/s/<slug>` link (default `7`). |
 | `SECRETS_ENCRYPTION_KEY` | Fernet master for at-rest provider-key encryption. Generated on first run if unset. |
 | `SECRETS_KEY_FILE` | Where the generated fallback master key is written (default: `.secrets_key` at the project root). Must be durable storage — compose points it at the `surgite-data` volume, because the default path is inside the container's image layer. |
