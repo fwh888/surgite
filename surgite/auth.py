@@ -256,8 +256,7 @@ def create_personal_org(session: Session, user: UserRow) -> OrgRow:
 
 
 def personal_org_id(session: Session, user_id: str) -> str | None:
-    """The user's personal org id, for insert sites that only carry a user_id
-    (the plain functions below have no Request to resolve a full scope from).
+    """The user's personal org id, for insert sites that only carry a user_id.
     None only for pre-migration data with no personal org."""
     return session.scalar(select(UserRow.personal_org_id).where(UserRow.id == user_id))
 
