@@ -1,6 +1,7 @@
 import argparse
 import importlib.metadata
 import os
+import re
 import sys
 from datetime import date, timedelta
 
@@ -11,6 +12,26 @@ from surgite import cli_auth
 from surgite.formatter import format_log
 from surgite.git import get_raw_log, parse_log
 from surgite.summarizer import summarize_commits
+
+_GIT_RELATIVE_RE = re.compile(r"^(\d+)\.(days?|weeks?)\.ago$")
+
+
+def _resolve_since(value: str | None, default_days: int = 7) -> str:
+    """Return an ISO date string suitable for the API.
+
+    Accepts git's relative date syntax (e.g. "7.days.ago", "2.weeks.ago")
+    and plain ISO dates (e.g. "2026-08-01"). Returns the ISO date string
+    in both cases.
+    """
+    if value is None:
+        return (date.today() - timedelta(days=default_days)).isoformat()
+    m = _GIT_RELATIVE_RE.match(value)
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2)
+        days = n * 7 if unit.startswith("week") else n
+        return (date.today() - timedelta(days=days)).isoformat()
+    return value
 
 
 def _api_base() -> str:
@@ -42,9 +63,10 @@ def _run_registered(args) -> str:
     base = _api_base()
     headers = cli_auth.auth_headers(base)
 
-    # The API filters by date, not git's relative syntax. Default to the last
-    # 7 days to match the local path's default window.
-    since = args.since or (date.today() - timedelta(days=7)).isoformat()
+    # The API filters by date, not git's relative syntax. Translate
+    # git's relative date forms (e.g. "7.days.ago") to ISO dates so the
+    # --help text works in both modes.
+    since = _resolve_since(args.since)
     params: dict[str, str] = {"repo": args.registered, "since": since}
     if args.until:
         params["until"] = args.until
@@ -137,7 +159,12 @@ def main():
     summary = _run_registered(args) if args.registered else _run_local(args)
 
     if args.output:
-        with open(args.output, "w") as f:
+        # UTF-8 is right rather than merely convenient here: the file holds git
+        # commit data, git stores commit messages as UTF-8 by default, and the
+        # summary may also contain LLM-generated prose with arbitrary Unicode.
+        # On Windows the platform default is cp1252, which would fail on any
+        # non-Latin-1 character (emoji, diacritics, CJK).
+        with open(args.output, "w", encoding="utf-8") as f:
             f.write(summary)
     else:
         print(summary)
