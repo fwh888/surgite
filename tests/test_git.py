@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from surgite.git import _repo_name_from_url, get_raw_log, is_remote_url, parse_log
+from surgite.git import _repo_name_from_url, ensure_repo, get_raw_log, is_remote_url, parse_log
 from surgite.models import Commit
 
 
@@ -92,3 +92,52 @@ def test_get_raw_log_roundtrips_on_a_real_repo(tmp_path):
 def test_get_raw_log_raises_runtimeerror_outside_a_repo(tmp_path):
     with pytest.raises(RuntimeError):
         get_raw_log(str(tmp_path), "1970-01-01", "now")
+
+
+def test_ensure_repo_clones_a_repo_with_no_recent_commits(tmp_path, monkeypatch):
+    """#34: a dormant repo must still clone.
+
+    A date-bounded shallow clone dies here with "no commits selected for
+    shallow requests"; a count-bounded one truncates a busy repo instead.
+    Two details make this bite: GIT_COMMITTER_DATE, because --shallow-since
+    filters on the committer date and --date only moves the author date; and
+    file://, because git ignores clone filters for a plain local path.
+    """
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2020-01-01T00:00:00")
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q")
+    (origin / "f.txt").write_text("hi")
+    _git(origin, "add", "f.txt")
+    _git(origin, "commit", "-q", "-m", "ancient commit", "--date=2020-01-01T00:00:00")
+
+    dest = ensure_repo("dormant", f"file://{origin}", str(tmp_path / "cache"))
+
+    assert Path(dest, ".git").is_dir()
+    assert "ancient commit" in get_raw_log(dest, "1970-01-01", "now")
+
+
+def test_ensure_repo_refetches_and_keeps_origin_head(tmp_path):
+    """#35: the origin/HEAD refresh must leave the ref resolvable.
+
+    `git remote set-head origin -d` deletes it, and the `reset --hard
+    origin/HEAD` that follows then exits 128 -- breaking every re-ingest of
+    an already-cloned repo.
+    """
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q")
+    (origin / "f.txt").write_text("one")
+    _git(origin, "add", "f.txt")
+    _git(origin, "commit", "-q", "-m", "first")
+
+    cache = str(tmp_path / "cache")
+    ensure_repo("repeat", f"file://{origin}", cache)
+
+    (origin / "f.txt").write_text("two")
+    _git(origin, "add", "f.txt")
+    _git(origin, "commit", "-q", "-m", "second")
+
+    dest = ensure_repo("repeat", f"file://{origin}", cache)
+
+    assert "second" in get_raw_log(dest, "1970-01-01", "now")
