@@ -1,4 +1,4 @@
-"""Audit log helpers (slice 2, plan #75).
+"""Audit log helpers.
 
 A thin wrapper around an append-only ``audit_log`` table. Use ``audit(...)``
 from request handlers to record security-relevant events (logins, repo

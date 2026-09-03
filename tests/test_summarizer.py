@@ -29,7 +29,7 @@ def _openai_response(text: str) -> httpx.Response:
     return httpx.Response(200, json={"choices": [{"message": {"content": text}}]})
 
 
-# --- provider resolution ---
+# --- provider resolution ----------------------------------------------------
 
 
 def test_default_provider_is_anthropic(monkeypatch):
@@ -56,7 +56,7 @@ def test_resolve_provider_unknown_raises():
         resolve_provider("bogus")
 
 
-# --- provider_status ---
+# --- provider_status --------------------------------------------------------
 
 
 def test_provider_status_all_unavailable_without_keys():
@@ -78,7 +78,7 @@ def test_provider_status_flags_the_default(monkeypatch):
     assert by_name["anthropic"]["default"] is False
 
 
-# --- system prompt ---
+# --- system prompt ----------------------------------------------------------
 
 
 def test_system_prompt_includes_identity(monkeypatch):
@@ -141,7 +141,7 @@ def test_system_prompt_settings_fallback_to_env(monkeypatch):
     assert "EnvUser (dev)" in prompt
 
 
-# --- generate_summary (async, httpx) ---
+# --- generate_summary (async, httpx) ----------------------------------------
 
 
 async def test_generate_summary_missing_key_raises():
@@ -214,7 +214,7 @@ def test_summarize_commits_returns_text_only(monkeypatch):
     assert summarize_commits("log", provider="deepseek") == "just text"
 
 
-# --- generate_summary_per_repo ---
+# --- generate_summary_per_repo ----------------------------------------------
 
 
 async def test_per_repo_blank_log_skips_provider():
@@ -274,7 +274,7 @@ async def test_per_repo_preserves_input_order(monkeypatch):
     assert out["blank"]["summary"] == "No commits in this period."
 
 
-# --- stream_summary ---
+# --- stream_summary ---------------------------------------------------------
 
 
 async def test_stream_summary_openai_yields_deltas(monkeypatch):

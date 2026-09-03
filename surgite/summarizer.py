@@ -125,7 +125,7 @@ def provider_status() -> list[dict]:
 
 
 def provider_status_for(user_id: str) -> list[dict]:
-    """Per-user provider status (slice 2 plan #73). A provider is
+    """Per-user provider status. A provider is
     ``available`` for this user if either their per-user DB row has a
     non-revoked key OR the env-var fallback is set. The single-user fallback
     is the env-var lookup (so a homelab operator who set
@@ -364,7 +364,7 @@ async def generate_summary_per_repo(
 
     Per-repo prompt overrides go in `settings_by_repo` (keyed by repo name);
     `settings` is the fallback for any repo without its own entry. `user_id`
-    selects the per-user provider key in multi_user mode (slice 2 plan #73)."""
+    selects the per-user provider key in multi_user mode."""
     pending = {name: log for name, log in log_by_repo.items() if log.strip()}
     by_repo = settings_by_repo or {}
     summaries: dict[str, dict[str, str]] = {}
@@ -409,7 +409,7 @@ async def stream_summary(
     provider and key up front (raising ProviderError before any I/O), then
     opens a streaming request and yields each text fragment. httpx errors
     propagate to the caller, which maps them to an SSE `error` event.
-    `user_id` selects the per-user provider key in multi_user mode (plan #73)."""
+    `user_id` selects the per-user provider key in multi_user mode."""
     resolved = resolve_provider(provider)
     api_key = _resolve_key(resolved, user_id)
     chosen_model = resolved.model(model)

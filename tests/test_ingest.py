@@ -48,7 +48,7 @@ def make_commits(n: int, commit_date=None) -> list[Commit]:
     ]
 
 
-# --- _ingest_all_repos: now a pure, no-arg, in-bulk ingester ---
+# --- _ingest_all_repos: now a pure, no-arg, in-bulk ingester ----------------
 
 
 def test_ingest_all_repos_ingests_every_registered_repo(add_repo, fake_git):
@@ -118,7 +118,7 @@ def test_summary_does_not_call_ingest(client, monkeypatch):
     assert called == []
 
 
-# --- background scheduler: runs on a timer, can be cancelled ---
+# --- background scheduler: runs on a timer, can be cancelled ----------------
 
 
 def test_scheduler_runs_periodically(client_with_scheduler, add_repo, fake_git):

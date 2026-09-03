@@ -1,4 +1,4 @@
-"""At-rest encryption for per-user provider keys (slice 2, plan #73).
+"""At-rest encryption for per-user provider keys.
 
 The master key lives in the ``SECRETS_ENCRYPTION_KEY`` env var. If unset on
 import we generate a fresh Fernet key, save it to the path in

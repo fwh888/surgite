@@ -46,10 +46,9 @@ from surgite.db import (
 
 log = logging.getLogger(__name__)
 
-# argon2id with the library defaults. The 0.5.0 plan calls for tuning the
-# parameters to ~250 ms on the target server; that tuning is deferred to the
-# security slice once there's a real box to measure against. The defaults are
-# already a safe, modern argon2id configuration.
+# argon2id with the library defaults, which are already a safe, modern
+# configuration. Tuning the parameters to ~250 ms on the target hardware
+# would be better still, but needs a real box to measure against.
 _ph = PasswordHasher()
 
 # A 256-bit opaque session id, url-safe so it's a valid cookie value as-is.
@@ -76,7 +75,7 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-# --- API keys (Bearer) -------------------------------------------------------
+# --- API keys (Bearer) ------------------------------------------------------
 
 
 # A full key is `sk_<prefix>_<secret>` where prefix is 8 chars and secret is
@@ -170,7 +169,7 @@ def revoke_api_key(key_id: str, *, user_id: str | None = None) -> bool:
         return True
 
 
-# --- Login lockout (plan #69) -----------------------------------------------
+# --- Login lockout ----------------------------------------------------------
 
 
 def is_locked(user: UserRow) -> bool:
@@ -235,7 +234,7 @@ def create_personal_org(session: Session, user: UserRow) -> OrgRow:
     """Create the user's personal org + owner membership and point
     ``user.personal_org_id`` at it. Idempotent: returns the existing personal
     org if one is already set. Called from both user-creation paths so the
-    slug/role invariants match the migration backfill (1.0.0 slice 1)."""
+    slug/role invariants match the 1.0.0 migration backfill."""
     if user.personal_org_id is not None:
         existing = session.get(OrgRow, user.personal_org_id)
         if existing is not None:
@@ -311,8 +310,8 @@ def create_invite(
         email=normalize_email(email) if email else None,
         role=role,
         created_by=created_by,
-        # Issuing org: the creator's personal org (org-issued invites arrive in
-        # slice 2). None for the bootstrap invite, which has no creator yet.
+        # Issuing org: the creator's personal org. None for the bootstrap
+        # invite, which has no creator yet.
         org_id=personal_org_id(session, created_by) if created_by else None,
         created_at=datetime.now(UTC),
         expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
@@ -429,7 +428,7 @@ def revoke_all_sessions(user_id: str, *, keep: str | None = None) -> int:
         return len(rows)
 
 
-# --- Password change (issue #77) --------------------------------------------
+# --- Password change --------------------------------------------------------
 
 
 def change_password(user_id: str, *, new_password: str) -> None:
@@ -447,7 +446,7 @@ def change_password(user_id: str, *, new_password: str) -> None:
         s.commit()
 
 
-# --- Password reset tokens (issue #77) --------------------------------------
+# --- Password reset tokens --------------------------------------------------
 # 15-minute expiry; one-time use. The full token is ``pr_<id>_<secret>``;
 # we keep only the argon2id hash and the 8-char ``id`` for the lookup
 # index, same as the api_keys design.

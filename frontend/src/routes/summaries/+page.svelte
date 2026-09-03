@@ -110,7 +110,6 @@
 				{/if}
 			</section>
 		{:else}
-			<!-- TODO slice 4: cross-user share isn't a thing yet — that page exists for the 0.6.0 feature. -->
 			<section class="px-4 pb-6 sm:px-6">
 				<p class="text-sm text-fg-muted">No shared-with-me summaries yet.</p>
 			</section>

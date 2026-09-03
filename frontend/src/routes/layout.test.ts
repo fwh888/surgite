@@ -14,7 +14,7 @@ const { load } = await import('./+layout');
 
 const urlFor = (pathname: string) => ({ pathname }) as URL;
 
-describe('root +layout.ts — client-side auth guard (issue #79)', () => {
+describe('root +layout.ts — client-side auth guard', () => {
 	beforeEach(() => {
 		fetchCurrentUser.mockReset();
 		redirect.mockClear();

@@ -1,9 +1,9 @@
-"""password reset tokens (issue #77)
+"""password reset tokens
 
 Adds a ``password_resets`` table for admin-minted one-time reset tokens.
 The token format is ``pr_<id>_<secret>``; we store the argon2id hash of
 the full token plus the ``id`` (8 chars) as a fast lookup index, exactly
-mirroring the ``api_keys`` design from slice 2.
+mirroring the ``api_keys`` design.
 
 Revision ID: g1b2c3d4e5f6
 Revises: a3b8c4d5e6f7

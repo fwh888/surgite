@@ -1,4 +1,4 @@
-"""Auth foundation tests (0.5.0 slice 1).
+"""Auth foundation tests.
 
 Covers the password/session primitives directly and the AUTH_MODE behaviour
 through the API: off/single_user stay anonymous-equivalent, multi_user gates
@@ -40,7 +40,7 @@ def _cookie_header(sid: str) -> dict:
     """Headers that carry a session cookie for an authenticated request.
 
     In multi_user mode the SPA also sends ``X-Requested-With: surgite-web``
-    on every state-changing request (CSRF defence in depth, plan #66).
+    on every state-changing request (CSRF defence in depth).
     The test client mirrors that here so the auth+CSRF combination is
     exercised end-to-end."""
     return {
@@ -242,7 +242,7 @@ def test_redeem_unknown_invite_rejected(client, multi_user):
     assert r.status_code == 400
 
 
-# --- /signup alias (issue #75) ---------------------------------------------
+# --- /signup alias ----------------------------------------------------------
 # /signup and /auth/redeem-invite are aliases of the same handler; one
 # parametrized test exercises both paths to keep the diff small.
 
@@ -306,7 +306,7 @@ def test_cannot_delete_another_users_repo(client, multi_user, add_repo):
     assert client.delete(f"/repos/{alice_repo}", headers=_cookie_header(bob_sid)).status_code == 404
 
 
-# --- /providers admin gating (#65) ------------------------------------------
+# --- /providers admin gating ------------------------------------------------
 
 
 def test_providers_admin_only_in_multi_user(client, multi_user):
@@ -351,7 +351,7 @@ def test_off_mode_no_bootstrap_invite():
         assert ensure_bootstrap_invite(s) is None
 
 
-# --- Password change (issue #77) --------------------------------------------
+# --- Password change --------------------------------------------------------
 
 
 def test_password_change_happy_path(client, multi_user):
@@ -424,7 +424,7 @@ def test_password_change_single_user_mode_returns_404(client, monkeypatch):
     assert r.status_code == 404
 
 
-# --- Admin-mediated password reset (issue #77) ------------------------------
+# --- Admin-mediated password reset ------------------------------------------
 
 
 def test_admin_reset_password_mints_token(client, multi_user):
@@ -459,7 +459,7 @@ def test_admin_reset_password_unknown_user_returns_404(client, multi_user):
     assert r.status_code == 404
 
 
-# --- Reset token redemption (issue #77) -------------------------------------
+# --- Reset token redemption -------------------------------------------------
 
 
 def test_reset_token_redeem_sets_new_password(client, multi_user):
@@ -571,7 +571,7 @@ def test_reset_token_redeem_off_mode_returns_404(client):
     assert r.status_code == 404
 
 
-# --- Admin: users (issue #76) -----------------------------------------------
+# --- Admin: users -----------------------------------------------------------
 
 
 def test_admin_list_users_paginated(client, multi_user):
@@ -681,7 +681,7 @@ def test_admin_activate_unknown_404(client, multi_user):
     assert r.status_code == 404
 
 
-# --- /summaries/mine (issue #78) ---
+# --- /summaries/mine --------------------------------------------------------
 
 
 def test_summaries_mine_returns_only_caller_shares(client, multi_user):

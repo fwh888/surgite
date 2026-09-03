@@ -287,8 +287,8 @@ app.add_middleware(
 )
 
 
-# CSRF defence in depth (slice 2 plan #66). The session cookie is
-# ``SameSite=Lax`` so the browser won't send it on cross-site POSTs; this
+# CSRF defence in depth. The session cookie is ``SameSite=Lax`` so the
+# browser won't send it on cross-site POSTs; this
 # adds a header check on top so a same-site XHR can't get away with a
 # missing intent signal either.
 #
@@ -464,7 +464,7 @@ async def health_deep(
 
     The git probe is scoped to a repo the *caller* owns and the response never
     names a specific repo, so an exposed multi_user deployment can't be used to
-    enumerate other users' repos via /health/deep (issue #64). An anonymous
+    enumerate other users' repos via /health/deep. An anonymous
     caller in multi_user mode gets `git: no_repos` — the probe is skipped
     rather than run against an arbitrary user's repo."""
     components: dict[str, object] = {}
@@ -518,7 +518,7 @@ def providers(current_user: UserRow = Depends(get_current_user)):
     shown is the *calling admin's* per-user view (their own
     ``provider_keys`` rows + the env-var fallback), so the admin sees
     what they personally can use. In off/single_user mode it's the
-    env-var view and is open as before (slice 2 plan #73)."""
+    env-var view and is open as before."""
     if config.AUTH_MODE == "multi_user" and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin only")
     if config.AUTH_MODE == "multi_user":
@@ -553,7 +553,7 @@ def _user_to_dict(user: UserRow) -> dict:
 def _user_admin_to_dict(user: UserRow) -> dict:
     """Full user dict for the admin /admin/users view — adds is_active, the
     login/lockout counters, and timestamps that the self-view deliberately
-    hides (issue #76)."""
+    hides."""
     return {
         "id": user.id,
         "email": user.email,
@@ -595,10 +595,10 @@ def auth_login(
     email or password is an indistinguishable 401 (no account enumeration).
     A locked account is a 423 with a Retry-After header.
 
-    Lockout (slice 2 plan #69): ``LOGIN_LOCKOUT_THRESHOLD`` consecutive
-    failures trip a ``LOGIN_LOCKOUT_DURATION_MINUTES``-minute lockout
-    for the user. The counter is reset on success. A locked user sees
-    the same 401 a wrong-password user does (no lockout-state leak)."""
+    Lockout: ``LOGIN_LOCKOUT_THRESHOLD`` consecutive failures trip a
+    ``LOGIN_LOCKOUT_DURATION_MINUTES``-minute lockout for the user. The
+    counter is reset on success. A locked user sees the same 401 a
+    wrong-password user does (no lockout-state leak)."""
     _require_multi_user()
     ip = request.client.host if request.client else None
     user = session.scalar(select(UserRow).where(UserRow.email == normalize_email(req.email)))
@@ -770,7 +770,7 @@ def auth_me(current_user: UserRow = Depends(get_current_user)):
     return _user_to_dict(current_user)
 
 
-# --- Password change (issue #77) --------------------------------------------
+# --- Password change --------------------------------------------------------
 
 
 @app.put(
@@ -806,7 +806,7 @@ def auth_change_password(
     return Response(status_code=204)
 
 
-# --- Password reset (issue #77, email delivery 0.6.0) -----------------------
+# --- Password reset ---------------------------------------------------------
 # Two ways in: the self-serve flow (user asks, gets an email) and the
 # admin-mediated flow (admin mints a token, useful when the user can't
 # receive mail). Both land on POST /auth/password-reset/confirm to redeem.
@@ -919,13 +919,11 @@ def auth_reset_password_confirm(
     return Response(status_code=204)
 
 
-# --- API keys (Bearer auth) --------------------------------------------------
-# Per-user long-lived keys for the CLI (slice 2 plan #65). The full key
-# material is shown exactly once on creation; only the argon2id hash is
-# persisted. Issue is throttled at 10/day per user (LOGIN_LOCKOUT-style
-# counter on a small KeyIssuanceRow, but the plan says "per-user rate
-# limit on key issuance"; we use a simple per-user counter in api_keys
-# and rely on the day-old windowing being done in the API call.)
+# --- API keys (Bearer auth) -------------------------------------------------
+# Per-user long-lived keys for the CLI. The full key material is shown
+# exactly once on creation; only the argon2id hash is persisted. Issue is
+# throttled at API_KEY_ISSUE_LIMIT per API_KEY_ISSUE_WINDOW_HOURS via a
+# per-user count over api_keys, windowed at query time.
 
 
 def _api_key_to_dict(row: ApiKeyRow) -> dict:
@@ -965,9 +963,9 @@ def create_api_key(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
-    """Mint a new per-user API key (slice 2 plan #65). The full key is
-    returned in the response and never again — callers must store it
-    in their secret manager immediately. Rate limited to
+    """Mint a new per-user API key. The full key is returned in the
+    response and never again — callers must store it in their secret
+    manager immediately. Rate limited to
     ``API_KEY_ISSUE_LIMIT`` per user per ``API_KEY_ISSUE_WINDOW_HOURS``."""
     _require_multi_user()
     recent = session.scalar(
@@ -1045,7 +1043,7 @@ def revoke_api_key_endpoint(
     return Response(status_code=204)
 
 
-# --- Admin: user unlock (plan #69) ------------------------------------------
+# --- Admin: user unlock -----------------------------------------------------
 
 
 def _require_admin(user: UserRow) -> None:
@@ -1066,8 +1064,8 @@ def admin_unlock_user(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
-    """Clear the lockout and failure counter for `user_id` (plan #69).
-    Admin only. 204 on success, 404 if the user doesn't exist."""
+    """Clear the lockout and failure counter for `user_id`. Admin only.
+    204 on success, 404 if the user doesn't exist."""
     _require_admin(current_user)
     target = session.get(UserRow, user_id)
     if target is None:
@@ -1084,7 +1082,7 @@ def admin_unlock_user(
     return Response(status_code=204)
 
 
-# --- Admin: users (issue #76) -----------------------------------------------
+# --- Admin: users -----------------------------------------------------------
 
 
 @app.get("/admin/users", summary="List users", tags=["admin"], operation_id="admin_list_users")
@@ -1095,7 +1093,7 @@ def admin_list_users(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
-    """List every user, newest-first. Admin-only (issue #76). `q` is a
+    """List every user, newest-first. Admin-only. `q` is a
     case-insensitive substring match on email; limit/offset paginate."""
     _require_admin(current_user)
     base = select(UserRow)
@@ -1121,7 +1119,7 @@ def admin_deactivate_user(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
-    """Flip is_active=False for `user_id`. Admin-only (issue #76). A
+    """Flip is_active=False for `user_id`. Admin-only. A
     deactivated user keeps their row but can't sign in. The calling admin
     can't deactivate themselves (400) — that's how you lock yourself out.
     404 on unknown user."""
@@ -1158,7 +1156,7 @@ def admin_activate_user(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
-    """Flip is_active=True for `user_id`. Admin-only (issue #76). The
+    """Flip is_active=True for `user_id`. Admin-only. The
     reverse of /deactivate — lets an admin bring a deactivated user
     back. 404 on unknown user."""
     _require_admin(current_user)
@@ -1179,7 +1177,7 @@ def admin_activate_user(
     return Response(status_code=204)
 
 
-# --- Admin: invites (plan #74) ----------------------------------------------
+# --- Admin: invites ---------------------------------------------------------
 
 
 @app.post(
@@ -1195,9 +1193,8 @@ def admin_create_invite(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
-    """Issue a new invite. Admin-only (plan #74). The redeem token is
-    returned in the response so the admin can deliver it out of band;
-    the plan defers the email story to 0.6.0."""
+    """Issue a new invite. Admin-only. The redeem token is returned in the
+    response so the admin can deliver it out of band."""
     _require_admin(current_user)
     if req.role not in ("user", "admin"):
         raise HTTPException(status_code=400, detail="role must be 'user' or 'admin'")
@@ -1228,7 +1225,7 @@ def admin_create_invite(
     }
 
 
-# --- Admin: audit log (plan #75) --------------------------------------------
+# --- Admin: audit log -------------------------------------------------------
 
 
 @app.get(
@@ -1245,9 +1242,8 @@ def admin_list_audit(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
-    """Paginated read of the audit log (plan #75). Admin-only. Filters:
-    `since` (inclusive on created_at), `action` (exact match). Newest
-    first."""
+    """Paginated read of the audit log. Admin-only. Filters: `since`
+    (inclusive on created_at), `action` (exact match). Newest first."""
     _require_admin(current_user)
     q = select(AuditLogRow)
     if since is not None:
@@ -1276,7 +1272,7 @@ def admin_list_audit(
     }
 
 
-# --- Per-user provider keys (plan #73) --------------------------------------
+# --- Per-user provider keys -------------------------------------------------
 
 
 def _provider_key_to_dict(row: ProviderKeyRow) -> dict:
@@ -1298,7 +1294,7 @@ def get_provider_keys(
     current_user: UserRow = Depends(get_current_user),
 ):
     """Which providers the caller has configured. The raw key material is
-    never returned (plan #73) — only the provider name and timestamps."""
+    never returned — only the provider name and timestamps."""
     _require_multi_user()
     rows = session.scalars(
         select(ProviderKeyRow)
@@ -1320,8 +1316,8 @@ def upsert_provider_key(
     session: Session = Depends(get_db),
     current_user: UserRow = Depends(get_current_user),
 ):
-    """Set (or clear) a per-user provider key (plan #73). The raw key is
-    encrypted at rest with Fernet; the master key is the SHA-256 of
+    """Set (or clear) a per-user provider key. The raw key is encrypted
+    at rest with Fernet; the master key is the SHA-256 of
     ``SECRETS_ENCRYPTION_KEY`` (see ``surgite.secrets``). The response
     is just a confirmation — the key material is never echoed back."""
     _require_multi_user()
@@ -1571,9 +1567,9 @@ def _repo_name_to_id(session: Session, owner_id: str) -> dict[str, int]:
 
 
 def _check_ai_preconditions(request: Request, provider: str | None, total: int, *, user_id: str):
-    """Shared gate for the AI paths: per-user + per-IP-outer rate limit
-    (slice 2 plan #68). The per-user 5/60s bucket is the primary throttle —
-    one user can't burn the LLM budget for everyone. The 100/60s per-IP
+    """Shared gate for the AI paths: per-user + per-IP-outer rate limit.
+    The per-user 5/60s bucket is the primary throttle — one user can't
+    burn the LLM budget for everyone. The 100/60s per-IP
     outer is the backstop for the "fresh signup spam" case (an attacker
     cycling accounts can't share a per-user bucket because they have no
     user yet). Raises the appropriate HTTPException; returns the resolved
@@ -1801,10 +1797,9 @@ def create_repo(
     current_user: UserRow = Depends(get_current_user),
 ):
     """Register a new repo. In multi_user mode with
-    ``REPO_ADD_GLOBAL_ONLY=true`` only admins can add (slice 2 plan #67) —
-    the clone-url path is a code-execution surface and the operator
-    probably wants to gate it. The default is open to every authenticated
-    user (the 0.4.0 UX)."""
+    ``REPO_ADD_GLOBAL_ONLY=true`` only admins can add — the clone-url path
+    is a code-execution surface and the operator probably wants to gate it.
+    The default is open to every authenticated user (the 0.4.0 UX)."""
     from surgite.git import _repo_name_from_url, is_remote_url
 
     if config.REPO_ADD_GLOBAL_ONLY and not current_user.is_admin:
@@ -1880,8 +1875,8 @@ def create_share(
 ):
     """Persist the parameters of a summary behind a short slug. The slug is the
     only secret guarding it — resolving /summaries/{slug} re-runs the query.
-    The share records its creator (`owner_id`); read-side ownership enforcement
-    lands in slice 2 (issue #71)."""
+    The share records its creator (`owner_id`), which GET /summaries/{slug}
+    checks — a non-owner gets the same 404 an unknown slug does."""
     now = datetime.now(UTC)
     slug = secrets.token_urlsafe(8)
     row = SharedSummaryRow(
@@ -1951,9 +1946,9 @@ def get_share(
     current_user: UserRow = Depends(get_current_user),
 ):
     """Resolve a slug to its stored summary params. 404 for unknown,
-    expired, OR not-owned-by-the-caller slugs (slice 2 plan #71). The
-    404-not-403 is deliberate: a 403 would tell an attacker "this slug
-    exists, you just can't see it", which is an enumeration vector."""
+    expired, OR not-owned-by-the-caller slugs. The 404-not-403 is
+    deliberate: a 403 would tell an attacker "this slug exists, you just
+    can't see it", which is an enumeration vector."""
     row = session.get(SharedSummaryRow, slug)
     if (
         row is None

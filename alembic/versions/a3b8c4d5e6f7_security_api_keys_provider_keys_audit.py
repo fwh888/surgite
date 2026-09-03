@@ -1,6 +1,6 @@
 """security slice: api_keys + provider_keys (encrypted) + audit_log + lockout columns
 
-0.5.0 slice 2 (plan items #64, #71, #73). Adds:
+Added in 0.5.0:
 
 - ``api_keys``: per-user, long-lived Bearer keys for the CLI. Key material is
   stored as an argon2id hash (matching how passwords are stored) and shown
@@ -43,7 +43,7 @@ def upgrade() -> None:
     is_pg = bind.dialect.name == "postgresql"
     json_type = postgresql.JSONB() if is_pg else sa.JSON()
 
-    # --- users: lockout columns --------------------------------------------
+    # --- users: lockout columns ---------------------------------------------
     op.add_column(
         "users",
         sa.Column("failed_login_count", sa.Integer(), nullable=False, server_default="0"),
@@ -53,7 +53,7 @@ def upgrade() -> None:
         sa.Column("locked_until", sa.DateTime(timezone=True), nullable=True),
     )
 
-    # --- api_keys ----------------------------------------------------------
+    # --- api_keys -----------------------------------------------------------
     op.create_table(
         "api_keys",
         sa.Column("id", sa.String(), primary_key=True),
@@ -79,7 +79,7 @@ def upgrade() -> None:
     op.create_index("ix_api_keys_user_id", "api_keys", ["user_id"])
     op.create_index("ix_api_keys_prefix", "api_keys", ["prefix"], unique=True)
 
-    # --- provider_keys (Fernet-encrypted) ---------------------------------
+    # --- provider_keys (Fernet-encrypted) -----------------------------------
     op.create_table(
         "provider_keys",
         sa.Column("id", sa.String(), primary_key=True),
@@ -101,7 +101,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_provider_keys_user_id", "provider_keys", ["user_id"])
 
-    # --- audit_log ---------------------------------------------------------
+    # --- audit_log ----------------------------------------------------------
     op.create_table(
         "audit_log",
         sa.Column("id", sa.String(), primary_key=True),

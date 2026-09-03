@@ -1,7 +1,7 @@
 """auth foundation: users / sessions / invites tables + owner_id partitioning
 
-The 0.5.0 foundation slice (plan items #55-#58). Creates the three auth tables
-and adds a non-nullable ``owner_id`` FK to every pre-existing table.
+Added in 0.5.0. Creates the three auth tables and adds a non-nullable
+``owner_id`` FK to every pre-existing table.
 
 Data migration: a single bootstrap user (BOOTSTRAP_OWNER_EMAIL, default
 ``owner@localhost``) is created and every existing repo / commit /

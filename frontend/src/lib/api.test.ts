@@ -132,7 +132,7 @@ describe('signup()', () => {
 	});
 });
 
-describe('admin endpoints (issue #76)', () => {
+describe('admin endpoints', () => {
 	it('fetchAdminUsers GETs /admin/users with query params', async () => {
 		const { fetchAdminUsers } = await import('./api');
 		fetchSpy.mockResolvedValueOnce(okBody({ total: 0, users: [] }));
@@ -169,7 +169,7 @@ describe('admin endpoints (issue #76)', () => {
 	});
 });
 
-describe('fetchMySummaries (issue #78)', () => {
+describe('fetchMySummaries', () => {
 	it('GETs /summaries/mine with no query params by default', async () => {
 		const { fetchMySummaries } = await import('./api');
 		fetchSpy.mockResolvedValueOnce(okBody({ total: 0, summaries: [] }));
@@ -189,7 +189,7 @@ describe('fetchMySummaries (issue #78)', () => {
 	});
 });
 
-describe('logout (issue #78)', () => {
+describe('logout', () => {
 	it('POSTs to /auth/logout and returns void on 204', async () => {
 		const { logout } = await import('./api');
 		fetchSpy.mockResolvedValueOnce({
@@ -207,7 +207,7 @@ describe('logout (issue #78)', () => {
 	});
 });
 
-describe('resetPassword (issue #79)', () => {
+describe('resetPassword', () => {
 	it('POSTs to /auth/password-reset/confirm with token + new_password', async () => {
 		const { resetPassword } = await import('./api');
 		fetchSpy.mockResolvedValueOnce({

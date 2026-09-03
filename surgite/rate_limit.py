@@ -1,4 +1,4 @@
-"""Per-user and per-IP-outer token-bucket rate limits (plan #68).
+"""Per-user and per-IP-outer token-bucket rate limits.
 
 Two limits live here:
 
@@ -29,10 +29,10 @@ from fastapi import HTTPException, Request
 
 from surgite.config import TRUSTED_PROXIES
 
-# Per-user + per-IP-outer buckets. Defaults match the plan (plan #68):
+# Per-user + per-IP-outer buckets. Defaults:
 #   summary:  5 / 60s per user, 100 / 60s per IP outer
-# Login throttling is the lockout story (plan #69), not a separate rate
-# limit; the per-IP outer guard is the only extra layer on /auth/login.
+# Login throttling is the lockout story, not a separate rate limit; the
+# per-IP outer guard is the only extra layer on /auth/login.
 _SUMMARY_USER_REQUESTS = int(os.environ.get("SUMMARY_RATE_LIMIT_REQUESTS", "5"))
 _SUMMARY_USER_WINDOW = int(os.environ.get("SUMMARY_RATE_LIMIT_WINDOW_SECONDS", "60"))
 _SUMMARY_IP_REQUESTS = int(os.environ.get("IP_OUTER_RATE_LIMIT_REQUESTS", "100"))
@@ -119,7 +119,7 @@ def check_ip_outer_rate_limit(request: Request) -> None:
         _drop_empty_ip_bucket(ip)
 
 
-# Convenience preset that matches the documented default (plan #68).
+# Convenience preset that matches the documented default.
 def check_summary_user_limit(request: Request, *, user_id: str) -> None:
     check_user_rate_limit(
         request,

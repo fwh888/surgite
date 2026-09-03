@@ -80,7 +80,7 @@ def test_window_expiry_resets_bucket(monkeypatch):
     rate_limit.check_ip_outer_rate_limit(_StubRequest())
 
 
-# --- wired into the /summary handler ---
+# --- wired into the /summary handler ----------------------------------------
 
 
 def test_summary_without_ai_is_not_rate_limited(client):
