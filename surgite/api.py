@@ -1740,7 +1740,7 @@ async def summary_stream(
         "by_day": dict(sorted(by_day.items())),
         "repos": list(log_by_repo),
         "provider": resolved.name,
-        "model": resolved.model(),
+        "model": summarizer.display_model(resolved),
     }
 
     async def event_stream():
@@ -1758,7 +1758,11 @@ async def summary_stream(
                         yield _sse("delta", {"repo": name, "text": chunk})
                     yield _sse(
                         "repo_done",
-                        {"repo": name, "provider": resolved.name, "model": resolved.model()},
+                        {
+                            "repo": name,
+                            "provider": resolved.name,
+                            "model": summarizer.display_model(resolved),
+                        },
                     )
                 except (ProviderError, httpx.HTTPError) as e:
                     log.warning("Stream failed for repo %s: %s", name, e, extra={"repo": name})

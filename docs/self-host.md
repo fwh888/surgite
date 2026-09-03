@@ -61,6 +61,74 @@ your account with a password you set in the prompt. You're logged in; invite
 the rest of your team from the web UI (admins land in slice 2; until then the
 API endpoints are in `docs/security.md`).
 
+## Using your own LLM
+
+Summaries can run against a model you host, with no call leaving your network.
+Any server speaking the OpenAI chat API works — vLLM, Ollama, LM Studio,
+llama.cpp, or a LiteLLM proxy in front of something else:
+
+```bash
+LLM_PROVIDER=local
+LOCAL_BASE_URL=http://llm.internal:8000/v1   # API root, not /chat/completions
+LOCAL_API_KEY=<token>                        # whatever your server expects
+# LOCAL_MODEL=<id>                          # optional -- asked for if omitted
+```
+
+`LOCAL_BASE_URL` has no default and must be reachable **from inside the
+container** — `localhost` there is the container, not the Docker host. For
+Ollama the root is `http://host:11434/v1`; for vLLM, usually
+`http://host:8000/v1`.
+
+On a network that must not reach a hosted provider at all, add:
+
+```bash
+LLM_LOCAL_ONLY=1
+```
+
+That drops anthropic, groq and deepseek from the provider registry when the
+app starts. They then can't be selected, can't have per-user keys stored
+against them, and aren't contacted by `/health/deep`'s reachability probe.
+`GET /providers` returning only `local` is the check that it took effect.
+
+`LOCAL_MODEL` is optional. Left unset, the app asks your server what it
+serves (`GET /models`) on the first summary and uses that, caching the answer
+for the life of the process. A box serving one model therefore needs no model
+config at all — which is the common self-hosted case, and it avoids anyone
+having to know that vLLM reports the full `--model` path
+(`Qwen/Qwen3.6-32B`) while Ollama reports a tag like `qwen3.6:32b`.
+
+Set `LOCAL_MODEL` explicitly in two cases: your endpoint serves **more than
+one** model (a LiteLLM proxy, say), which is ambiguous enough that the app
+refuses to guess and asks you to name one; or you want to skip the lookup.
+Nothing validates the name, so a typo surfaces as a 404 from your server.
+
+### A private CA
+
+If your internal endpoint uses a certificate from your own CA, point
+`SSL_CERT_FILE` at the CA bundle:
+
+```yaml
+    environment:
+      SSL_CERT_FILE: /etc/ssl/internal/ca-bundle.pem
+    volumes:
+      - /etc/ssl/internal:/etc/ssl/internal:ro
+```
+
+The file has to be mounted into the container, not just present on the host.
+
+**`SSL_CERT_FILE` replaces the trust store, it does not add to it.** httpx
+builds its SSL context from that file *instead of* the bundled public CA list,
+so while it is set, the hosted providers' certificates no longer verify. That
+is harmless alongside `LLM_LOCAL_ONLY=1` — nothing public is contacted anyway.
+But if you want the self-hosted model *and* a hosted provider on the same
+deployment, `SSL_CERT_FILE` must point at a **combined** bundle: your CA
+concatenated with a public root list (`cat internal-ca.pem "$(python -c 'import
+certifi;print(certifi.where())')" > ca-bundle.pem`).
+
+One other thing to know if summaries come back wrong: the OpenAI request body
+sends no `max_tokens`, so a server that defaults to a short completion will
+truncate mid-sentence.
+
 ## TLS
 
 `multi_user` mode **refuses to start over plain HTTP** — the session cookie uses

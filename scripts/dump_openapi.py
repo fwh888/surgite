@@ -51,6 +51,8 @@ os.environ.setdefault("INGEST_INTERVAL", "0")
 os.environ.setdefault("GROQ_API_KEY", "")
 os.environ.setdefault("DEEPSEEK_API_KEY", "")
 os.environ.setdefault("ANTHROPIC_API_KEY", "")
+os.environ.setdefault("LOCAL_API_KEY", "")
+os.environ.setdefault("LLM_LOCAL_ONLY", "")
 
 # Lazy import: do this AFTER env setup, not at module top, so the
 # import-order dance above is the first thing that runs.

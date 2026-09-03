@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -29,6 +31,15 @@ def _openai_response(text: str) -> httpx.Response:
     return httpx.Response(200, json={"choices": [{"message": {"content": text}}]})
 
 
+@pytest.fixture(autouse=True)
+def _clear_discovered_models():
+    """`_discovered_models` lives for the process; without this a discovery in
+    one test would satisfy the next one and hide a regression."""
+    summarizer._discovered_models.clear()
+    yield
+    summarizer._discovered_models.clear()
+
+
 # --- provider resolution ----------------------------------------------------
 
 
@@ -54,6 +65,28 @@ def test_resolve_provider_explicit():
 def test_resolve_provider_unknown_raises():
     with pytest.raises(ProviderError):
         resolve_provider("bogus")
+
+
+# --- LLM_LOCAL_ONLY ---------------------------------------------------------
+
+
+def test_local_only_leaves_just_the_self_hosted_provider(monkeypatch):
+    monkeypatch.setenv("LLM_LOCAL_ONLY", "1")
+    assert set(summarizer._visible(summarizer._ALL_PROVIDERS)) == {"local"}
+
+
+def test_registry_is_unfiltered_without_the_flag(monkeypatch):
+    monkeypatch.setenv("LLM_LOCAL_ONLY", "")
+    visible = summarizer._visible(summarizer._ALL_PROVIDERS)
+    assert set(visible) == {"groq", "deepseek", "anthropic", "local"}
+
+
+def test_default_provider_falls_back_when_the_default_is_filtered_out(monkeypatch):
+    """With LLM_LOCAL_ONLY the built-in "anthropic" default is gone; an unset
+    LLM_PROVIDER must land on what's left rather than raising."""
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setattr(summarizer, "PROVIDERS", {"local": summarizer._ALL_PROVIDERS["local"]})
+    assert default_provider() == "local"
 
 
 # --- provider_status --------------------------------------------------------
@@ -186,6 +219,26 @@ async def test_generate_summary_openai_path_with_model_override(monkeypatch):
     assert out["model"] == "custom-model"
 
 
+async def test_local_provider_uses_the_base_url_override(monkeypatch):
+    """The self-hosted provider ships with no base_url, so LOCAL_BASE_URL has to
+    reach the request — otherwise every call goes to /chat/completions on no host."""
+    monkeypatch.setenv("LOCAL_API_KEY", "internal-token")
+    monkeypatch.setenv("LOCAL_BASE_URL", "http://llm.internal:8000/v1")
+    monkeypatch.setenv("LOCAL_MODEL", "internal-model")
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["url"] = str(req.url)
+        seen["auth"] = req.headers.get("Authorization")
+        return _openai_response("ok")
+
+    out = await generate_summary("log", provider="local", client=_mock_client(handler))
+    assert seen["url"] == "http://llm.internal:8000/v1/chat/completions"
+    assert seen["auth"] == "Bearer internal-token"
+    assert out["provider"] == "local"
+    assert out["model"] == "internal-model"
+
+
 async def test_generate_summary_propagates_request_errors(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
@@ -315,3 +368,120 @@ async def test_stream_summary_raises_on_http_error_status(monkeypatch):
     with pytest.raises(httpx.HTTPStatusError):
         async for _ in stream_summary("log", provider="groq", client=client):
             pass
+
+
+# --- self-hosted model discovery --------------------------------------------
+
+
+def _models_response(*ids: str) -> httpx.Response:
+    return httpx.Response(200, json={"data": [{"id": i} for i in ids]})
+
+
+def _local_env(monkeypatch, model: str | None = None):
+    monkeypatch.setenv("LOCAL_API_KEY", "internal-token")
+    monkeypatch.setenv("LOCAL_BASE_URL", "http://llm.internal:8000/v1")
+    if model is None:
+        monkeypatch.delenv("LOCAL_MODEL", raising=False)
+    else:
+        monkeypatch.setenv("LOCAL_MODEL", model)
+
+
+async def test_local_model_is_discovered_when_unset(monkeypatch):
+    """No LOCAL_MODEL: ask the server what it serves rather than guessing a
+    vendor default. The discovered id must reach the chat request, not just
+    the return value."""
+    _local_env(monkeypatch)
+    seen: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(str(req.url))
+        if req.url.path.endswith("/models"):
+            assert req.headers.get("Authorization") == "Bearer internal-token"
+            return _models_response("Qwen/Qwen3.6-32B")
+        assert json.loads(req.content)["model"] == "Qwen/Qwen3.6-32B"
+        return _openai_response("ok")
+
+    out = await generate_summary("log", provider="local", client=_mock_client(handler))
+    assert out["model"] == "Qwen/Qwen3.6-32B"
+    assert seen[0].endswith("/v1/models")
+
+
+async def test_discovered_model_is_cached_across_calls(monkeypatch):
+    _local_env(monkeypatch)
+    probes = 0
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        nonlocal probes
+        if req.url.path.endswith("/models"):
+            probes += 1
+            return _models_response("some-model")
+        return _openai_response("ok")
+
+    client = _mock_client(handler)
+    await generate_summary("log", provider="local", client=client)
+    await generate_summary("log again", provider="local", client=client)
+    assert probes == 1, "should ask the server once, then reuse the answer"
+
+
+async def test_explicit_local_model_skips_discovery(monkeypatch):
+    _local_env(monkeypatch, model="my-model")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert not req.url.path.endswith("/models"), "should not probe when configured"
+        return _openai_response("ok")
+
+    out = await generate_summary("log", provider="local", client=_mock_client(handler))
+    assert out["model"] == "my-model"
+
+
+async def test_ambiguous_model_list_asks_for_an_explicit_choice(monkeypatch):
+    """A proxy fronting several models can't be guessed at; silently picking
+    one would be a wrong-model bug nobody notices."""
+    _local_env(monkeypatch)
+    client = _mock_client(lambda req: _models_response("model-a", "model-b"))
+    with pytest.raises(ProviderError, match="LOCAL_MODEL"):
+        await generate_summary("log", provider="local", client=client)
+
+
+async def test_empty_model_list_raises(monkeypatch):
+    _local_env(monkeypatch)
+    client = _mock_client(lambda req: _models_response())
+    with pytest.raises(ProviderError, match="LOCAL_MODEL"):
+        await generate_summary("log", provider="local", client=client)
+
+
+async def test_unreachable_models_endpoint_names_the_env_var(monkeypatch):
+    """The failure a misconfigured deployment actually hits — the message has
+    to point at the fix, not just report a connection error."""
+    _local_env(monkeypatch)
+
+    def boom(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused")
+
+    with pytest.raises(ProviderError, match="LOCAL_MODEL"):
+        await generate_summary("log", provider="local", client=_mock_client(boom))
+
+
+async def test_streaming_discovers_the_model_too(monkeypatch):
+    _local_env(monkeypatch)
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/models"):
+            return _models_response("streamed-model")
+        assert json.loads(req.content)["model"] == "streamed-model"
+        body = 'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n'
+        return httpx.Response(200, text=body)
+
+    chunks = [
+        c async for c in stream_summary("log", provider="local", client=_mock_client(handler))
+    ]
+    assert chunks == ["hi"]
+
+
+def test_display_model_is_auto_until_discovery(monkeypatch):
+    """The provider dropdown would otherwise render "local ()"."""
+    _local_env(monkeypatch)
+    local = summarizer._ALL_PROVIDERS["local"]
+    assert summarizer.display_model(local) == "auto"
+    summarizer._discovered_models[local.base_url] = "found-model"
+    assert summarizer.display_model(local) == "found-model"

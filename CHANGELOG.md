@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Summaries can run against a self-hosted model.** A `local` provider talks
+  to any server speaking the OpenAI chat API — vLLM, Ollama, LM Studio,
+  llama.cpp, a LiteLLM proxy — so a deployment can keep commit data on its own
+  network. Set `LOCAL_BASE_URL` (the API root; there is no default) and
+  `LOCAL_API_KEY`. `LOCAL_MODEL` is optional: left unset, the app asks the
+  server what it serves via `GET /models` and caches the answer, so a box
+  serving one model needs no model config at all. It raises rather than
+  guessing when the server lists none or several.
+- **`LLM_LOCAL_ONLY=1` drops the hosted providers from the registry** at
+  startup, for networks that must not reach a third party. They can then not
+  be selected, cannot have per-user keys stored against them, and are not
+  contacted by `/health/deep`'s reachability probe.
+- **Every provider's base URL is overridable** — `ANTHROPIC_BASE_URL`,
+  `GROQ_BASE_URL`, `DEEPSEEK_BASE_URL`, `LOCAL_BASE_URL` — for a corporate
+  proxy or an API gateway in front of a hosted provider.
+
 ## [1.2.0] - 2026-09-03
 
 Released entirely from community pull requests. Thanks to

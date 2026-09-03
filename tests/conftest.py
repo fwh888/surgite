@@ -19,6 +19,11 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_db_file}"
 os.environ["GROQ_API_KEY"] = ""
 os.environ["DEEPSEEK_API_KEY"] = ""
 os.environ["ANTHROPIC_API_KEY"] = ""
+os.environ["LOCAL_API_KEY"] = ""
+os.environ["LOCAL_BASE_URL"] = ""
+# Keep the full provider registry regardless of the developer's .env: with
+# LLM_LOCAL_ONLY set, summarizer.PROVIDERS would shrink to one at import time.
+os.environ["LLM_LOCAL_ONLY"] = ""
 # Disable the background ingest scheduler in tests by default. A single test
 # (test_scheduler_runs_periodically) opts back in via the
 # `client_with_scheduler` fixture.
