@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 env:
-  IMAGE: ${{ vars.REGISTRY_HOST }}/ncoleman/standup-gen-app:latest
+  IMAGE: ${{ vars.REGISTRY_HOST }}/ncoleman/surgite-app:latest
 
 jobs:
   deploy:
