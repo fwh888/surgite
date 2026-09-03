@@ -157,7 +157,7 @@ export function generateSummary(params: SummaryParams = {}, signal?: AbortSignal
 export const fetchProviders = () =>
 	request<ProvidersResponse>('/providers');
 
-// --- admin (issue #76) ----------------------------------------------------
+// --- admin -----------------------------------------------------------------
 
 export interface AdminUser {
 	id: string;

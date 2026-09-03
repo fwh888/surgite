@@ -1,4 +1,4 @@
-"""CLI-side auth for `surgite` (0.5.0 slice 1, item 8).
+"""CLI-side auth for `surgite`.
 
 The CLI is the bootstrap path for a multi_user deployment: an operator redeems
 the invite the server logs on first run, which creates their account and drops

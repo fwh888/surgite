@@ -67,7 +67,7 @@ class RedeemInviteRequest(BaseModel):
 
 class ApiKeyCreate(BaseModel):
     """Mint a new per-user API key. The full key is returned in the response
-    exactly once (slice 2 plan #65)."""
+    exactly once."""
 
     name: str
     expires_at: datetime | None = None
@@ -78,7 +78,7 @@ class InviteCreateRequest(BaseModel):
     (null email) can be redeemed by any new user; a pinned invite is
     locked to one address. `role` is either ``"user"`` (default) or
     ``"admin"``. The redeem token is returned in the response so the
-    admin can copy it out of band (slice 2 plan #74)."""
+    admin can copy it out of band."""
 
     email: str | None = None
     role: str = "user"
@@ -88,7 +88,7 @@ class InviteCreateRequest(BaseModel):
 class ProviderKeysUpdate(BaseModel):
     """Set (or replace) a per-user provider key. The clear flag revokes the
     existing row; the key field is required otherwise. The raw key is never
-    returned by the API (slice 2 plan #73)."""
+    returned by the API."""
 
     provider: str
     key: str | None = None
@@ -96,7 +96,7 @@ class ProviderKeysUpdate(BaseModel):
 
 
 class PasswordChange(BaseModel):
-    """Self-service password change (issue #77). The user proves control
+    """Self-service password change. The user proves control
     of the current password; on success every other session is revoked
     and the current session is kept."""
 

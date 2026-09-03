@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateNewPassword } from './validation';
 
-describe('validateNewPassword (issue #79)', () => {
+describe('validateNewPassword', () => {
 	it('returns null for a valid matching pair', () => {
 		expect(validateNewPassword('correct-horse', 'correct-horse')).toBeNull();
 	});

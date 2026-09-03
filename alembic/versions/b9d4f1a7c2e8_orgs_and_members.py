@@ -1,4 +1,4 @@
-"""orgs + org_members tables and org_id partitioning (1.0.0 slice 1)
+"""orgs + org_members tables and org_id partitioning (1.0.0)
 
 The multi-tenant foundation. Adds the two org tables, a ``personal_org_id`` FK
 on ``users``, and a nullable ``org_id`` FK to the nine per-user tables. Then
@@ -48,7 +48,7 @@ _ALL_ORG_TABLES = (
     *_ORG_BY_USER,
     *(t for t, _ in _ORG_BY_NULLABLE),
 )
-# Drop NOT NULL here: these resources become org-ownable (owner_id NULL) in slice 2.
+# Drop NOT NULL here: these resources become org-ownable (owner_id NULL).
 _OWNER_NULLABLE = ("repos", "prompt_settings", "shared_summaries")
 
 
@@ -129,7 +129,7 @@ def upgrade() -> None:
             {"oid": org_id, "uid": u.id},
         )
 
-    # --- org_id column + FK on every per-user table, then backfill. ---
+    # --- org_id column + FK on every per-user table, then backfill. ---------
     for table in _ALL_ORG_TABLES:
         op.add_column(table, sa.Column("org_id", sa.String(), nullable=True))
         op.create_foreign_key(
@@ -161,7 +161,7 @@ def upgrade() -> None:
             )
         )
 
-    # --- owner_id becomes nullable where org ownership is coming in slice 2. ---
+    # --- owner_id becomes nullable for org-owned resources. -----------------
     for table in _OWNER_NULLABLE:
         op.alter_column(table, "owner_id", existing_type=sa.String(), nullable=True)
 

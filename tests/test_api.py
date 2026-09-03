@@ -187,7 +187,7 @@ def test_summary_ai_without_key_returns_400_even_with_no_commits(client):
     assert "GROQ_API_KEY" in r.json()["detail"]
 
 
-# --- /repos ---
+# --- /repos -----------------------------------------------------------------
 
 
 def test_list_repos_empty(client):
@@ -310,7 +310,7 @@ def test_cli_output_writes_to_file(monkeypatch, tmp_path):
     assert "Alice" in written
 
 
-# --- /settings/prompt ---
+# --- /settings/prompt -------------------------------------------------------
 
 
 def test_get_prompt_settings_returns_defaults(client):
@@ -370,7 +370,7 @@ def test_put_prompt_settings_all_fields(client):
     assert body["custom_instructions"] == "Focus on bug fixes."
 
 
-# --- item 5: /summary omits the commits list by default ---
+# --- item 5: /summary omits the commits list by default ---------------------
 
 
 def test_summary_omits_commits_list_by_default(client, add_commit):
@@ -389,7 +389,7 @@ def test_summary_includes_commits_when_requested(client, add_commit):
     assert body["commits"][0]["repo"] == "demo"
 
 
-# --- item 7: per-repo prompt settings ---
+# --- item 7: per-repo prompt settings ---------------------------------------
 
 
 def test_prompt_settings_default_repo_id_is_null(client):
@@ -422,7 +422,7 @@ def test_prompt_settings_put_unknown_repo_returns_404(client):
     assert client.put("/settings/prompt?repo_id=999", json={"user_name": "x"}).status_code == 404
 
 
-# --- item 6: shareable summary links ---
+# --- item 6: shareable summary links ----------------------------------------
 
 
 def test_create_share_returns_slug(client):
@@ -503,7 +503,7 @@ def test_expired_share_cleanup():
     assert remaining == ["live"]
 
 
-# --- item 12: /health/deep ---
+# --- item 12: /health/deep --------------------------------------------------
 
 
 def test_health_deep_no_repos_no_keys_is_ok(client):
@@ -537,7 +537,7 @@ def test_health_deep_git_failure_returns_503(client, add_repo, monkeypatch):
     assert r.json()["components"]["git"] == "error"
 
 
-# --- item 4: /summary/stream (SSE) ---
+# --- item 4: /summary/stream (SSE) ------------------------------------------
 
 
 def test_summary_stream_emits_meta_deltas_and_done(client, add_commit, monkeypatch):
@@ -565,7 +565,7 @@ def test_summary_stream_without_key_returns_400(client):
     assert client.get("/summary/stream?provider=groq").status_code == 400
 
 
-# --- item 8: CLI --registered ---
+# --- item 8: CLI --registered -----------------------------------------------
 
 
 class _FakeApiResp:

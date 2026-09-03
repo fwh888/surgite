@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rotate the SECRETS_ENCRYPTION_KEY (slice 2 plan #74).
+# Rotate the SECRETS_ENCRYPTION_KEY.
 #
 # Re-encrypts every active provider_keys row under the new key and swaps
 # the master key in place. The running API process is unaffected — the

@@ -1,4 +1,4 @@
-"""Email delivery (0.6.0 slice 3).
+"""Email delivery.
 
 A tiny mailer abstraction with two implementations:
 

@@ -32,10 +32,9 @@ class Base(DeclarativeBase):  # Base class for SQLAlchemy models
 
 class OrgRow(Base):
     """An organisation — the tenancy boundary introduced in 1.0.0. Every user
-    has exactly one *personal* org (see surgite.auth.create_personal_org), and
-    in later slices can belong to shared orgs too. Ownership lives in
-    org_members (there is no owner_id here); `deleted_at` is a soft-delete
-    marker that stays null until slice 2 wires up org deletion."""
+    has exactly one *personal* org (see surgite.auth.create_personal_org).
+    Ownership lives in org_members (there is no owner_id here); `deleted_at`
+    is a soft-delete marker, currently always null."""
 
     __tablename__ = "orgs"
 
@@ -95,8 +94,8 @@ class UserRow(Base):
     personal_org_id: Mapped[str | None] = mapped_column(
         ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
     )
-    # Lockout (slice 2, plan #69): consecutive failed logins trip a per-user
-    # lockout window. `failed_login_count` is reset to 0 on a successful login.
+    # Lockout: consecutive failed logins trip a per-user lockout window.
+    # `failed_login_count` is reset to 0 on a successful login.
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -149,8 +148,8 @@ class InviteRow(Base):
     used_by: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    # The issuing org (1.0.0): a personal org for self-issued invites, a shared
-    # org for admin-issued ones (slice 2). Distinct from created_by/used_by.
+    # The issuing org (1.0.0): a personal org for self-issued invites, a
+    # shared org for admin-issued ones. Distinct from created_by/used_by.
     org_id: Mapped[str | None] = mapped_column(
         ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
     )
@@ -234,8 +233,7 @@ class SharedSummaryRow(Base):
     """A saved, shareable summary query. The slug is the only secret; resolving
     it re-runs the stored params. Expired rows are swept by the scheduler and
     rejected on read (see surgite.api). In multi_user mode, resolution is
-    owner-scoped (a non-owner gets 404 to avoid slug existence leak; see
-    slice 2 plan #71)."""
+    owner-scoped (a non-owner gets 404 to avoid slug existence leak)."""
 
     __tablename__ = "shared_summaries"
 
@@ -259,7 +257,7 @@ class ApiKeyRow(Base):
     the first 8 chars of the key (used as a fast lookup index — the
     `Authorization: Bearer *** header carries the full key, and we verify
     the rest against the argon2id `key_hash`). Revoking sets `revoked_at`;
-    the row stays for audit (slice 2 plan #65)."""
+    the row stays for audit."""
 
     __tablename__ = "api_keys"
 
@@ -285,7 +283,7 @@ class ProviderKeyRow(Base):
     is the lowercase name (`anthropic`, `groq`, `deepseek`). The raw key is
     never returned by the API; the master key comes from
     `SECRETS_ENCRYPTION_KEY` (see surgite/secrets.py). Revoking sets
-    `revoked_at`; the row stays for audit (slice 2 plan #73)."""
+    `revoked_at`; the row stays for audit."""
 
     __tablename__ = "provider_keys"
     __table_args__ = (
@@ -307,7 +305,7 @@ class ProviderKeyRow(Base):
 
 
 class PasswordResetRow(Base):
-    """A one-time password-reset token (issue #77). The admin mints a
+    """A one-time password-reset token. The admin mints a
     token, delivers it out of band, the user redeems it at
     ``POST /auth/password-reset/confirm``. The row stores only an
     argon2id hash of the token (we look it up via the prefix index on
@@ -337,7 +335,7 @@ class AuditLogRow(Base):
     """An append-only event log. `actor_id` is nullable so pre-auth events
     (login failures, invite redemptions) can be recorded against an
     unauthenticated request. `metadata` is JSONB on Postgres for
-    indexable search (slice 2 plan #75)."""
+    indexable search."""
 
     __tablename__ = "audit_log"
 

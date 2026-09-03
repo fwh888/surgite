@@ -1,18 +1,17 @@
-"""0.5.0 slice 2 tests: security, API keys, lockout, audit, provider keys.
+"""Security tests: API keys, lockout, audit, provider keys.
 
-Covers plan items 13–22:
-  13 — every authed route 401s in multi_user without a session
-  14 — per-user API keys (POST/GET/DELETE + Bearer auth on the dep)
-  15 — CSRF header check on unsafe methods
-  16 — REPO_ADD_GLOBAL_ONLY gates POST /repos
-  17 — per-user + per-IP-outer rate limits on /summary?ai=true
-  18 — account lockout on failed logins + admin unlock
-  19 — shareable links user-scoped (404 cross-user)
-  20 — per-user provider keys in DB, encrypted at rest
-  21 — rotation script (smoke test only — the script is tested by
-       running it against a temp DB and checking the keys still
-       decrypt)
-  22 — audit log + GET /admin/audit
+Covers:
+  - every authed route 401s in multi_user without a session
+  - per-user API keys (POST/GET/DELETE + Bearer auth on the dep)
+  - CSRF header check on unsafe methods
+  - REPO_ADD_GLOBAL_ONLY gates POST /repos
+  - per-user + per-IP-outer rate limits on /summary?ai=true
+  - account lockout on failed logins + admin unlock
+  - shareable links user-scoped (404 cross-user)
+  - per-user provider keys in DB, encrypted at rest
+  - the rotation script (smoke test only — run against a temp DB,
+    checking the keys still decrypt)
+  - audit log + GET /admin/audit
 """
 
 from __future__ import annotations
@@ -82,7 +81,7 @@ def _make_session(user_id: str) -> str:
 
 
 def test_every_documented_authed_route_requires_session(client, multi_user):
-    """Plan #64: in multi_user, every route except the small allowlist
+    """In multi_user, every route except the small allowlist
     returns 401 without a session. Unsafe methods (POST/PUT/DELETE) may
     also 403 (the CSRF middleware fires before the auth check on those,
     so a missing-CSRF-header request gets 403 before the no-session 401).
@@ -114,7 +113,7 @@ def test_every_documented_authed_route_requires_session(client, multi_user):
 
 
 def test_unauthed_routes_open_in_multi_user(client, multi_user):
-    """Plan #64: /health, /auth/login, /auth/redeem-invite, /auth/logout
+    """/health, /auth/login, /auth/redeem-invite, /auth/logout
     are open in multi_user (logout is idempotent)."""
     assert client.get("/health").status_code == 200
     # /auth/login, /logout, /redeem-invite are 4xx on bad input but
@@ -253,7 +252,7 @@ def test_api_key_only_owner_can_revoke(client, multi_user):
 
 
 def test_api_key_issuance_is_throttled_per_user(client, multi_user, monkeypatch):
-    """Plan #65: per-user rate limit on key issuance."""
+    """Per-user rate limit on key issuance."""
     monkeypatch.setattr(config, "API_KEY_ISSUE_LIMIT", 2)
     monkeypatch.setattr(config, "API_KEY_ISSUE_WINDOW_HOURS", 24)
     uid = _make_user()
@@ -288,7 +287,7 @@ def repo_cache(tmp_path, monkeypatch):
 
 
 def test_repo_add_gated_to_admins_when_enabled(client, multi_user, monkeypatch):
-    """Plan #67: REPO_ADD_GLOBAL_ONLY=true → only admins can POST /repos."""
+    """REPO_ADD_GLOBAL_ONLY=true → only admins can POST /repos."""
     # Stub the background ingest so we don't try to git clone from a
     # bogus URL during the test.
     from surgite import api as api_module
@@ -344,7 +343,7 @@ def test_repo_add_open_to_all_by_default(client, multi_user, monkeypatch):
 
 
 def test_summary_ai_rate_limit_is_per_user(client, multi_user, add_commit):
-    """Plan #68: 5/60s per user. Two users have independent buckets."""
+    """5/60s per user. Two users have independent buckets."""
     rate_limit._reset_for_tests()
     alice = _make_user(email="alice@example.com")
     bob = _make_user(email="bob@example.com")
@@ -428,7 +427,7 @@ def test_lockout_does_not_count_unknown_email(client, multi_user, monkeypatch):
 
 
 def test_admin_can_unlock_user(client, multi_user, add_commit):
-    """Plan #69: POST /admin/users/{id}/unlock clears the lockout."""
+    """POST /admin/users/{id}/unlock clears the lockout."""
     uid = _make_user(email="victim@example.com", password="right")
     with get_session() as s:
         u = s.get(UserRow, uid)
@@ -467,7 +466,7 @@ def test_admin_unlock_unknown_user_is_404(client, multi_user):
 
 
 def test_share_resolution_is_owner_scoped(client, multi_user, add_commit):
-    """Plan #71: GET /summaries/{slug} returns 404 (not 403) to a
+    """GET /summaries/{slug} returns 404 (not 403) to a
     non-owner — the 404 doesn't leak the slug's existence."""
     alice = _make_user(email="alice@example.com")
     bob = _make_user(email="bob@example.com")
@@ -494,7 +493,7 @@ def test_share_requires_auth_in_multi_user(client, multi_user):
 
 
 def test_provider_keys_encrypted_at_rest(client, multi_user):
-    """Plan #73: the stored value is a Fernet token, not the raw key."""
+    """The stored value is a Fernet token, not the raw key."""
     uid = _make_user()
     sid = _make_session(uid)
     r = client.put(
@@ -593,7 +592,7 @@ def test_per_user_provider_status_in_multi_user(client, multi_user, monkeypatch)
     assert statuses["groq"] is True
 
 
-# --- Item 22: audit log ----------------------------------------------------
+# --- Item 22: audit log -----------------------------------------------------
 
 
 def test_audit_row_written_on_login_success(client, multi_user):
@@ -775,5 +774,5 @@ def test_generated_key_is_reused_across_processes_at_the_same_path(tmp_path):
     assert first == second
 
 
-# --- Item 13 lockdown: every documented authed route 401s in multi_user ----
+# --- Item 13 lockdown: every documented authed route 401s in multi_user -----
 # (already covered at the top of the file)
