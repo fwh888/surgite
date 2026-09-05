@@ -22,6 +22,17 @@ COPY . .
 # because .dockerignore excludes it.
 RUN uv sync --frozen --no-dev
 COPY --from=frontend /build/frontend/build /app/frontend/build
-RUN mkdir -p /var/surgite/repos /var/surgite/data
+# Run as an unprivileged user. The app binds port 8000 (above the privileged
+# range) and touches only /app and the two /var/surgite mounts, so root is
+# not needed. Data directories are created here (build time) and their
+# ownership is repaired by entrypoint.sh (runtime) for pre-existing volumes.
+# The container deliberately starts as root so entrypoint.sh can repair the
+# ownership of pre-existing volumes (named volumes from older images are
+# root-owned); it then drops to `surgite` via setpriv before running the app.
+RUN useradd -r -M surgite \
+    && mkdir -p /var/surgite/repos /var/surgite/data \
+    && chown -R surgite:surgite /app /var/surgite \
+    && command -v setpriv >/dev/null \
+    && chmod +x /app/entrypoint.sh
 EXPOSE 8000
 CMD ["/app/entrypoint.sh"]
