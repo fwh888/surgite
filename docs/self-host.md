@@ -180,6 +180,30 @@ and `Secure` flag on the cookie so the app runs over plain HTTP — but only in
 If you serve this on the public internet over plain HTTP, your session cookies
 travel in cleartext. Don't.
 
+### Git over HTTPS: verifying your hosts
+
+Every `git clone`/`fetch`/`ls-remote` the app performs uses git's TLS
+verification. The shipped `docker-compose.yml` verifies by default
+(`GIT_SSL_NO_VERIFY: ${GIT_SSL_NO_VERIFY:-0}`), so a self-signed or
+private-CA git host needs an explicit trust path rather than silently
+disabling verification.
+
+**Preferred: trust the CA for git.** Mount the bundle into the container and
+point git at it:
+
+```yaml
+    environment:
+      GIT_SSL_CAINFO: /etc/ssl/internal/git-ca-bundle.pem
+      GIT_SSL_NO_VERIFY: "0"
+    volumes:
+      - /etc/ssl/internal:/etc/ssl/internal:ro
+```
+
+**Last resort.** Set `GIT_SSL_NO_VERIFY=1` in `.env` only if you must disable
+certificate verification for every git operation and every registered repo —
+it makes the app vulnerable to MITM on clone/fetch. Prefer `GIT_SSL_CAINFO`
+whenever the host's CA is available.
+
 ## Backup and restore
 
 `scripts/backup.sh` dumps the database to a gzip file in `BACKUP_DIR` (default

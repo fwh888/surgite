@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Git TLS verification is now on by default in the shipped compose file.**
+  `docker-compose.yml` previously set `GIT_SSL_NO_VERIFY: "1"`, disabling
+  certificate verification for every `git clone`/`fetch`/`ls-remote` the app
+  performs. It is now `${GIT_SSL_NO_VERIFY:-0}` (verify by default).
+  Deployments that relied on the old behaviour must set
+  `GIT_SSL_NO_VERIFY=1` in `.env`; deployments with a private-CA git host
+  should mount the CA bundle and set `GIT_SSL_CAINFO` instead. See
+  [`docs/self-host.md`](docs/self-host.md). (#20)
+
 ## [1.3.2] - 2026-09-04
 
 ### Fixed
