@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   then drops to that user with `setpriv` before running migrations and the
   app. Existing deployments upgrade without manual `chown` — the entrypoint
   handles it on first start. See [`docs/self-host.md`](docs/self-host.md). (#21)
+
 ## [1.3.2] - 2026-09-04
 
 ### Fixed

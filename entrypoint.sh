@@ -6,7 +6,17 @@ set -e
 # by an older root-running image is root-owned). After the repair we drop to
 # `surgite` with setpriv for the lifetime of the container.
 if [ "$(id -u)" = "0" ]; then
-    chown -R surgite:surgite /var/surgite/repos /var/surgite/data /app
+    # /app is chowned at build time, so only the mounts can be wrong here, and
+    # only when the volume predates the unprivileged image. Guarding the walk
+    # matters: a populated repo cache is thousands of git objects, and this
+    # runs on every container start.
+    #
+    # ponytail: tests the mount root's owner only. That is the case this
+    # exists for -- a whole volume left root-owned by an older image. A tree
+    # that is half-chowned needs a manual `chown -R`.
+    for d in /var/surgite/repos /var/surgite/data; do
+        [ "$(stat -c %U "$d")" = surgite ] || chown -R surgite:surgite "$d"
+    done
     setpriv --reuid=surgite --regid=surgite --init-groups \
         /app/.venv/bin/alembic upgrade head
     exec setpriv --reuid=surgite --regid=surgite --init-groups \

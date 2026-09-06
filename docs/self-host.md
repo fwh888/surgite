@@ -217,6 +217,7 @@ volumes that were populated root-owned by an older image, so no manual `chown`
 is needed. If you run the container with an explicit `--user`, make sure that
 user can write to `/var/surgite/repos`, `/var/surgite/data` and `/app`, or the
 app will fail at startup.
+
 ## Backup and restore
 
 `scripts/backup.sh` dumps the database to a gzip file in `BACKUP_DIR` (default
