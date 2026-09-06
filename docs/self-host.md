@@ -203,6 +203,7 @@ point git at it:
 certificate verification for every git operation and every registered repo —
 it makes the app vulnerable to MITM on clone/fetch. Prefer `GIT_SSL_CAINFO`
 whenever the host's CA is available.
+
 ## Backup and restore
 
 `scripts/backup.sh` dumps the database to a gzip file in `BACKUP_DIR` (default
